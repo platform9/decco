@@ -30,6 +30,7 @@ import (
 	"os"
 	// Only required to authenticate against GKE clusters
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	log "github.com/sirupsen/logrus"
 	"github.com/platform9/decco/pkg/controller"
 )
 
@@ -60,7 +61,9 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-	fmt.Print("decco operator started\n")
+	log.Println("decco operator started")
+	ctrl := controller.New()
+	ctrl.SayHi()
 	for {
 		pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{})
 		if err != nil {
