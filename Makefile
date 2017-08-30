@@ -11,6 +11,16 @@ OPERATOR_DEVEL_IMAGE_TAG ?= platform9systems/decco-operator-devel
 $(BIN_DIR):
 	mkdir -p $@
 
+deps:
+	cd $(SRC_DIR)/cmd/operator && \
+	export GOPATH=$(BUILD_DIR) && \
+	go get -d
+
+controller-deps:
+	cd $(SRC_DIR)/cmd/operator/pkg/controller && \
+	export GOPATH=$(BUILD_DIR) && \
+	go get -d
+
 $(OPERATOR_EXE): | $(BIN_DIR)
 	cd $(SRC_DIR)/cmd/operator && \
 	export GOPATH=$(BUILD_DIR) && \
