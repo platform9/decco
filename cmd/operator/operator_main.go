@@ -20,48 +20,22 @@ package main
 import (
 	"fmt"
 	"time"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	//"k8s.io/client-go/rest"
-	"flag"
-	"path/filepath"
-	"os"
 	// Only required to authenticate against GKE clusters
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	log "github.com/sirupsen/logrus"
 	"github.com/platform9/decco/pkg/controller"
+	"github.com/platform9/decco/pkg/k8sutil"
 )
 
 func main() {
-	var kubeconfig *string
-	if home := homeDir(); home != "" {
-		kubeconfig = flag.String(
-			"kubeconfig",
-			filepath.Join(home, ".kube", "config"),
-			"(optional) absolute path to the kubeconfig file")
-	} else {
-		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-	}
+	config := k8sutil.GetClusterConfigOrDie()
+	clientset := kubernetes.NewForConfigOrDie(config)
 
-	flag.Parse()
-	if _, err := os.Stat(*kubeconfig); os.IsNotExist(err) {
-		empty := ""
-		kubeconfig = &empty // assume in-cluster configuration if kubeconfig does not exist
-	}
-	// creates the in-cluster config
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	// config, err := rest.InClusterConfig()
-	if err != nil {
-		panic(err.Error())
-	}
-	// creates the clientset
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(err.Error())
-	}
-	log.Println("decco operator started")
+	log.Println("decco operator started!")
 	ctrl := controller.New()
 	ctrl.SayHi()
 	for {
@@ -89,9 +63,3 @@ func main() {
 	}
 }
 
-func homeDir() string {
-	if h := os.Getenv("HOME"); h != "" {
-		return h
-	}
-	return os.Getenv("USERPROFILE") // windows
-}
