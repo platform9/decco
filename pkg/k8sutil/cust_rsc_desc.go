@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/platform9/decco/pkg/spec"
-//	"github.com/coreos/etcd-operator/pkg/util/retryutil"
+	"github.com/coreos/etcd-operator/pkg/util/retryutil"
 
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"

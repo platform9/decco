@@ -1,0 +1,19 @@
+package: github.com/platform9/decco
+import:
+- package: github.com/sirupsen/logrus
+- package: k8s.io/apiextensions-apiserver
+  subpackages:
+  - pkg/apis/apiextensions/v1beta1
+  - pkg/client/clientset/clientset
+- package: k8s.io/apimachinery
+  subpackages:
+  - pkg/api/errors
+  - pkg/apis/meta/v1
+  - pkg/runtime
+  - pkg/runtime/schema
+- package: k8s.io/client-go
+  subpackages:
+  - kubernetes
+  - plugin/pkg/client/auth/gcp
+  - rest
+  - tools/clientcmd
