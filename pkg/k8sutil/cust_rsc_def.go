@@ -25,7 +25,6 @@ import (
 
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-//	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 )
@@ -35,13 +34,13 @@ func WatchCustomerRegions(host, ns string, httpClient *http.Client, resourceVers
 		host, spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, resourceVersion))
 }
 
-func GetCustomerRegionList(restcli rest.Interface, ns string) (*spec.CustomerRegionList, error) {
+func GetCustomerRegionRscList(restcli rest.Interface, ns string) (*spec.CustomerRegionRscList, error) {
 	b, err := restcli.Get().RequestURI(listCustomerRegionsURI(ns)).DoRaw()
 	if err != nil {
 		return nil, err
 	}
 
-	customerRegions := &spec.CustomerRegionList{}
+	customerRegions := &spec.CustomerRegionRscList{}
 	if err := json.Unmarshal(b, customerRegions); err != nil {
 		return nil, err
 	}
@@ -52,7 +51,8 @@ func listCustomerRegionsURI(ns string) string {
 	return fmt.Sprintf("/apis/%s/namespaces/%s/%s", spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural)
 }
 
-func GetCustomerRegionTPRObject(restcli rest.Interface, ns, name string) (*spec.CustomerRegion, error) {
+/*
+func GetCustomerRegionTPRObject(restcli rest.Interface, ns, name string) (*spec.CustomerRegionRsc, error) {
 	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s", spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, name)
 	b, err := restcli.Get().RequestURI(uri).DoRaw()
 	if err != nil {
@@ -61,7 +61,7 @@ func GetCustomerRegionTPRObject(restcli rest.Interface, ns, name string) (*spec.
 	return readCustomerRegionCR(b)
 }
 
-func UpdateCustomerRegionTPRObject(restcli rest.Interface, ns string, c *spec.CustomerRegion) (*spec.CustomerRegion, error) {
+func UpdateCustomerRegionTPRObject(restcli rest.Interface, ns string, c *spec.CustomerRegionRsc) (*spec.CustomerRegionRsc, error) {
 	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s", spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, c.Name)
 	b, err := restcli.Put().RequestURI(uri).Body(c).DoRaw()
 	if err != nil {
@@ -69,9 +69,10 @@ func UpdateCustomerRegionTPRObject(restcli rest.Interface, ns string, c *spec.Cu
 	}
 	return readCustomerRegionCR(b)
 }
+*/
 
-func readCustomerRegionCR(b []byte) (*spec.CustomerRegion, error) {
-	customerRegion := &spec.CustomerRegion{}
+func readCustomerRegionCR(b []byte) (*spec.CustomerRegionRsc, error) {
+	customerRegion := &spec.CustomerRegionRsc{}
 	if err := json.Unmarshal(b, customerRegion); err != nil {
 		return nil, fmt.Errorf("read customerRegion CR from json data failed: %v", err)
 	}
@@ -90,7 +91,7 @@ func CreateCRD(clientset apiextensionsclient.Interface) error {
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
 				Plural:     spec.CRDResourcePlural,
 				Kind:       spec.CRDResourceKind,
-				ShortNames: []string{"custreg"},
+				ShortNames: []string{spec.CRDShortName},
 			},
 		},
 	}

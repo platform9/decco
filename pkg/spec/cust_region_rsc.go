@@ -30,27 +30,27 @@ var (
 	ErrCaSecretNameMissing = errors.New("spec: missing CA secret name")
 )
 
-// CustomerRegionList is a list of customerregions.
-type CustomerRegionList struct {
+// CustomerRegionRscList is a list of customerregions.
+type CustomerRegionRscList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata
 	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []CustomerRegion `json:"items"`
+	Items           []CustomerRegionRsc `json:"items"`
 }
 
-func (crl CustomerRegionList) DeepCopyObject() runtime.Object {
+func (crl CustomerRegionRscList) DeepCopyObject() runtime.Object {
 	return &crl
 }
 
-type CustomerRegion struct {
+type CustomerRegionRsc struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              CustomerRegionSpec   `json:"spec"`
 	Status            CustomerRegionStatus `json:"status"`
 }
 
-func (c *CustomerRegion) AsOwner() metav1.OwnerReference {
+func (c *CustomerRegionRsc) AsOwner() metav1.OwnerReference {
 	trueVar := true
 	return metav1.OwnerReference{
 		APIVersion: c.APIVersion,
@@ -61,7 +61,7 @@ func (c *CustomerRegion) AsOwner() metav1.OwnerReference {
 	}
 }
 
-func (c CustomerRegion) DeepCopyObject() runtime.Object {
+func (c CustomerRegionRsc) DeepCopyObject() runtime.Object {
 	return &c
 }
 
@@ -86,19 +86,19 @@ func (c *CustomerRegionSpec) Validate() error {
 
 // Cleanup cleans up user passed spec, e.g. defaulting, transforming fields.
 // TODO: move this to admission controller
-/*
 func (c *CustomerRegionSpec) Cleanup() {
-	if len(c.BaseImage) == 0 {
-		c.BaseImage = defaultBaseImage
-	}
+	/*
+		if len(c.BaseImage) == 0 {
+			c.BaseImage = defaultBaseImage
+		}
 
-	if len(c.Version) == 0 {
-		c.Version = defaultVersion
-	}
+		if len(c.Version) == 0 {
+			c.Version = defaultVersion
+		}
 
-	c.Version = strings.TrimLeft(c.Version, "v")
+		c.Version = strings.TrimLeft(c.Version, "v")
+	*/
 }
-*/
 
 type CustomerRegionPhase string
 
@@ -118,22 +118,22 @@ type CustomerRegionCondition struct {
 type CustomerRegionConditionType string
 
 type CustomerRegionStatus struct {
-	// Phase is the CustomerRegion running phase
+	// Phase is the CustomerRegionRsc running phase
 	Phase  CustomerRegionPhase `json:"phase"`
 	Reason string       `json:"reason"`
 }
 
 func (cs CustomerRegionStatus) Copy() CustomerRegionStatus {
-	newCS := CustomerRegionStatus{}
+	newCRS := CustomerRegionStatus{}
 	b, err := json.Marshal(cs)
 	if err != nil {
 		panic(err)
 	}
-	err = json.Unmarshal(b, &newCS)
+	err = json.Unmarshal(b, &newCRS)
 	if err != nil {
 		panic(err)
 	}
-	return newCS
+	return newCRS
 }
 
 func (cs *CustomerRegionStatus) IsFailed() bool {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"flag"
 	"path/filepath"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 var kubeconfig *string
@@ -41,4 +42,8 @@ func homeDir() string {
 		return h
 	}
 	return os.Getenv("USERPROFILE") // windows
+}
+
+func IsKubernetesResourceAlreadyExistError(err error) bool {
+	return apierrors.IsAlreadyExists(err)
 }
