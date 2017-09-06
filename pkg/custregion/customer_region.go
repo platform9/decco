@@ -16,40 +16,40 @@ const (
 
 type custRegRscEvent struct {
 	typ     custRegRscEventType
-	custRegRsc spec.CustomerRegionRsc
+	custRegRsc spec.CustomerRegion
 }
 
-type CustomerRegion struct {
+type CustomerRegionRuntime struct {
 	kubeApi kubernetes.Interface
 	log *logrus.Entry
 
 	//config Config
 
-	crr spec.CustomerRegionRsc
+	crg spec.CustomerRegion
 
 	// in memory state of the custRegRsc
-	// status is the source of truth after CustomerRegion struct is materialized.
+	// status is the source of truth after CustomerRegionRuntime struct is materialized.
 	status spec.CustomerRegionStatus
 	eventCh chan custRegRscEvent
 	stopCh  chan struct{}
 }
 
 func New(
-	crr spec.CustomerRegionRsc,
+	crg spec.CustomerRegion,
 	kubeApi kubernetes.Interface,
 	stopC <-chan struct{},
 	wg *sync.WaitGroup,
-) *CustomerRegion {
+) *CustomerRegionRuntime {
 	lg := logrus.WithField("pkg","custregion",
-		).WithField("custregion-name", crr.Name)
+		).WithField("custregion-name", crg.Name)
 
-	c := &CustomerRegion{
+	c := &CustomerRegionRuntime{
 		kubeApi:  kubeApi,
 		log:      lg,
-		crr:      crr,
+		crg:      crg,
 		eventCh:     make(chan custRegRscEvent, 100),
 		stopCh:      make(chan struct{}),
-		status:      crr.Status.Copy(),
+		status:      crg.Status.Copy(),
 	}
 
 	wg.Add(1)
@@ -75,14 +75,14 @@ func New(
 	return c
 }
 
-func (c *CustomerRegion) Update(crr spec.CustomerRegionRsc) {
+func (c *CustomerRegionRuntime) Update(crg spec.CustomerRegion) {
 	c.send(custRegRscEvent{
 		typ:     eventModifyCustomerRegion,
-		custRegRsc: crr,
+		custRegRsc: crg,
 	})
 }
 
-func (c *CustomerRegion) send(ev custRegRscEvent) {
+func (c *CustomerRegionRuntime) send(ev custRegRscEvent) {
 	select {
 	case c.eventCh <- ev:
 		l, ecap := len(c.eventCh), cap(c.eventCh)

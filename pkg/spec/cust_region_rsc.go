@@ -30,27 +30,27 @@ var (
 	ErrCaSecretNameMissing = errors.New("spec: missing CA secret name")
 )
 
-// CustomerRegionRscList is a list of customerregions.
-type CustomerRegionRscList struct {
+// CustomerRegionList is a list of customerregions.
+type CustomerRegionList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata
 	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []CustomerRegionRsc `json:"items"`
+	metav1.ListMeta                  `json:"metadata,omitempty"`
+	Items           []CustomerRegion `json:"items"`
 }
 
-func (crl CustomerRegionRscList) DeepCopyObject() runtime.Object {
+func (crl CustomerRegionList) DeepCopyObject() runtime.Object {
 	return &crl
 }
 
-type CustomerRegionRsc struct {
+type CustomerRegion struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              CustomerRegionSpec   `json:"spec"`
 	Status            CustomerRegionStatus `json:"status"`
 }
 
-func (c *CustomerRegionRsc) AsOwner() metav1.OwnerReference {
+func (c *CustomerRegion) AsOwner() metav1.OwnerReference {
 	trueVar := true
 	return metav1.OwnerReference{
 		APIVersion: c.APIVersion,
@@ -61,7 +61,7 @@ func (c *CustomerRegionRsc) AsOwner() metav1.OwnerReference {
 	}
 }
 
-func (c CustomerRegionRsc) DeepCopyObject() runtime.Object {
+func (c CustomerRegion) DeepCopyObject() runtime.Object {
 	return &c
 }
 
@@ -118,7 +118,7 @@ type CustomerRegionCondition struct {
 type CustomerRegionConditionType string
 
 type CustomerRegionStatus struct {
-	// Phase is the CustomerRegionRsc running phase
+	// Phase is the CustomerRegion running phase
 	Phase  CustomerRegionPhase `json:"phase"`
 	Reason string       `json:"reason"`
 }

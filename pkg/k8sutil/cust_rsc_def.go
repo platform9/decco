@@ -34,13 +34,13 @@ func WatchCustomerRegions(host, ns string, httpClient *http.Client, resourceVers
 		host, spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, resourceVersion))
 }
 
-func GetCustomerRegionRscList(restcli rest.Interface, ns string) (*spec.CustomerRegionRscList, error) {
+func GetCustomerRegionRscList(restcli rest.Interface, ns string) (*spec.CustomerRegionList, error) {
 	b, err := restcli.Get().RequestURI(listCustomerRegionsURI(ns)).DoRaw()
 	if err != nil {
 		return nil, err
 	}
 
-	customerRegions := &spec.CustomerRegionRscList{}
+	customerRegions := &spec.CustomerRegionList{}
 	if err := json.Unmarshal(b, customerRegions); err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func listCustomerRegionsURI(ns string) string {
 }
 
 /*
-func GetCustomerRegionTPRObject(restcli rest.Interface, ns, name string) (*spec.CustomerRegionRsc, error) {
+func GetCustomerRegionTPRObject(restcli rest.Interface, ns, name string) (*spec.CustomerRegion, error) {
 	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s", spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, name)
 	b, err := restcli.Get().RequestURI(uri).DoRaw()
 	if err != nil {
@@ -61,7 +61,7 @@ func GetCustomerRegionTPRObject(restcli rest.Interface, ns, name string) (*spec.
 	return readCustomerRegionCR(b)
 }
 
-func UpdateCustomerRegionTPRObject(restcli rest.Interface, ns string, c *spec.CustomerRegionRsc) (*spec.CustomerRegionRsc, error) {
+func UpdateCustomerRegionTPRObject(restcli rest.Interface, ns string, c *spec.CustomerRegion) (*spec.CustomerRegion, error) {
 	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s", spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, c.Name)
 	b, err := restcli.Put().RequestURI(uri).Body(c).DoRaw()
 	if err != nil {
@@ -71,8 +71,8 @@ func UpdateCustomerRegionTPRObject(restcli rest.Interface, ns string, c *spec.Cu
 }
 */
 
-func readCustomerRegionCR(b []byte) (*spec.CustomerRegionRsc, error) {
-	customerRegion := &spec.CustomerRegionRsc{}
+func readCustomerRegionCR(b []byte) (*spec.CustomerRegion, error) {
+	customerRegion := &spec.CustomerRegion{}
 	if err := json.Unmarshal(b, customerRegion); err != nil {
 		return nil, fmt.Errorf("read customerRegion CR from json data failed: %v", err)
 	}

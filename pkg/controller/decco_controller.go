@@ -49,7 +49,7 @@ func init() {
 
 type Event struct {
 	Type   kwatch.EventType
-	Object *spec.CustomerRegionRsc
+	Object *spec.CustomerRegion
 }
 
 type Controller struct {
@@ -63,7 +63,7 @@ type Controller struct {
 }
 
 type CustRegionInfo struct {
-	custRegion *custregion.CustomerRegion
+	custRegion *custregion.CustomerRegionRuntime
 	rscVersion *string
 	stopCh chan struct{}
 }
@@ -85,39 +85,39 @@ func New(ns string) *Controller {
 
 func (ctl *Controller) findAllCustomerRegions() (string, error) {
 	ctl.log.Info("finding existing customerRegions...")
-	crrList, err := k8sutil.GetCustomerRegionRscList(
+	crgList, err := k8sutil.GetCustomerRegionRscList(
 		ctl.kubeApi.CoreV1().RESTClient(),
 		ctl.namespace)
 	if err != nil {
 		return "", err
 	}
 
-	for i := range crrList.Items {
-		crr := crrList.Items[i]
+	for i := range crgList.Items {
+		crg := crgList.Items[i]
 
-		if crr.Status.IsFailed() {
-			ctl.log.Infof("ignore failed customerRegion (%s). Please delete its custom resource", crr.Name)
+		if crg.Status.IsFailed() {
+			ctl.log.Infof("ignore failed customerRegion (%s). Please delete its custom resource", crg.Name)
 			continue
 		}
 
-		crr.Spec.Cleanup()
+		crg.Spec.Cleanup()
 
 		stopC := make(chan struct{})
-		initialRV := crr.ResourceVersion
+		initialRV := crg.ResourceVersion
 		newCr := custregion.New(
-			crr,
+			crg,
 			ctl.kubeApi,
 			stopC,
 			&ctl.waitCustomerRegion)
-		ctl.crInfo[crr.Name] = CustRegionInfo{
+		ctl.crInfo[crg.Name] = CustRegionInfo{
 			stopCh: stopC,
 			custRegion: newCr,
 			rscVersion: &initialRV,
 		}
-		ctl.log.Infof("instantiated customer region '%s' ", crr.Name)
+		ctl.log.Infof("instantiated customer region '%s' ", crg.Name)
 	}
 
-	return crrList.ResourceVersion, nil
+	return crgList.ResourceVersion, nil
 }
 
 // ----------------------------------------------------------------------------
@@ -294,7 +294,7 @@ func (c *Controller) watch(watchVersion string, httpClient *http.Client) (<-chan
 // ----------------------------------------------------------------------------
 
 func (c *Controller) isCustRegRscCacheStale(
-	currentCustRegRscs []spec.CustomerRegionRsc,
+	currentCustRegRscs []spec.CustomerRegion,
 ) bool {
 	if len(c.crInfo) != len(currentCustRegRscs) {
 		return true
@@ -311,36 +311,36 @@ func (c *Controller) isCustRegRscCacheStale(
 // ----------------------------------------------------------------------------
 
 func (c *Controller) handleCustRegRscEvent(event *Event) error {
-	crr := event.Object
+	crg := event.Object
 
-	if crr.Status.IsFailed() {
+	if crg.Status.IsFailed() {
 		// custRegRscsFailed.Inc()
 		if event.Type == kwatch.Deleted {
-			delete(c.crInfo, crr.Name)
+			delete(c.crInfo, crg.Name)
 			return nil
 		}
-		return fmt.Errorf("ignore failed custRegRsc (%s). Please delete its CR", crr.Name)
+		return fmt.Errorf("ignore failed custRegRsc (%s). Please delete its CR", crg.Name)
 	}
 
 	// TODO: add validation to spec update.
-	crr.Spec.Cleanup()
+	crg.Spec.Cleanup()
 
 	switch event.Type {
 	case kwatch.Added:
-		if _, ok := c.crInfo[crr.Name]; ok {
-			return fmt.Errorf("unsafe state. custRegRsc (%s) was created before but we received event (%s)", crr.Name, event.Type)
+		if _, ok := c.crInfo[crg.Name]; ok {
+			return fmt.Errorf("unsafe state. custRegRsc (%s) was created before but we received event (%s)", crg.Name, event.Type)
 		}
 
 		stopC := make(chan struct{})
-		newCustReg := custregion.New(*crr, c.kubeApi, stopC, &c.waitCustomerRegion)
-		initialRV := crr.ResourceVersion
-		c.crInfo[crr.Name] = CustRegionInfo{
+		newCustReg := custregion.New(*crg, c.kubeApi, stopC, &c.waitCustomerRegion)
+		initialRV := crg.ResourceVersion
+		c.crInfo[crg.Name] = CustRegionInfo{
 			stopCh: stopC,
 			custRegion: newCustReg,
 			rscVersion: &initialRV,
 		}
 		c.log.Printf("customer region (%s) added. There are now (%d)",
-			crr.Name, len(c.crInfo))
+			crg.Name, len(c.crInfo))
 		/*
 		analytics.CustRegRscCreated()
 		custRegRscsCreated.Inc()
@@ -348,22 +348,22 @@ func (c *Controller) handleCustRegRscEvent(event *Event) error {
 		*/
 
 	case kwatch.Modified:
-		if _, ok := c.crInfo[crr.Name]; !ok {
-			return fmt.Errorf("unsafe state. custRegRsc (%s) was never created but we received event (%s)", crr.Name, event.Type)
+		if _, ok := c.crInfo[crg.Name]; !ok {
+			return fmt.Errorf("unsafe state. custRegRsc (%s) was never created but we received event (%s)", crg.Name, event.Type)
 		}
-		c.crInfo[crr.Name].custRegion.Update(*crr)
-		*(c.crInfo[crr.Name].rscVersion) = crr.ResourceVersion
+		c.crInfo[crg.Name].custRegion.Update(*crg)
+		*(c.crInfo[crg.Name].rscVersion) = crg.ResourceVersion
 		c.log.Printf("customer region (%s) modified. There are now (%d)",
-			crr.Name, len(c.crInfo))
+			crg.Name, len(c.crInfo))
 		//custRegRscsModified.Inc()
 
 	case kwatch.Deleted:
-		if _, ok := c.crInfo[crr.Name]; !ok {
-			return fmt.Errorf("unsafe state. custRegRsc (%s) was never created but we received event (%s)", crr.Name, event.Type)
+		if _, ok := c.crInfo[crg.Name]; !ok {
+			return fmt.Errorf("unsafe state. custRegRsc (%s) was never created but we received event (%s)", crg.Name, event.Type)
 		}
-		delete(c.crInfo, crr.Name)
+		delete(c.crInfo, crg.Name)
 		c.log.Printf("customer region (%s) deleted. There are now (%d)",
-			crr.Name, len(c.crInfo))
+			crg.Name, len(c.crInfo))
 		/*
 		analytics.CustRegRscDeleted()
 		custRegRscsDeleted.Inc()

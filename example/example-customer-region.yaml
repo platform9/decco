@@ -1,4 +1,4 @@
-apiVersion: "customerregion.decco.platform9.com/v1beta2"
+apiVersion: "decco.platform9.com/v1beta2"
 kind: "CustomerRegion"
 metadata:
   name: "example-customer-region"
