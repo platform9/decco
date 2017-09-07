@@ -34,7 +34,7 @@ func WatchCustomerRegions(host, ns string, httpClient *http.Client, resourceVers
 		host, spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, resourceVersion))
 }
 
-func GetCustomerRegionRscList(restcli rest.Interface, ns string) (*spec.CustomerRegionList, error) {
+func GetCustomerRegionList(restcli rest.Interface, ns string) (*spec.CustomerRegionList, error) {
 	b, err := restcli.Get().RequestURI(listCustomerRegionsURI(ns)).DoRaw()
 	if err != nil {
 		return nil, err

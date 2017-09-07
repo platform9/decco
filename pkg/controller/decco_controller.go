@@ -72,12 +72,15 @@ type CustRegionInfo struct {
 
 func New(ns string) *Controller {
 	clustConfig := k8sutil.GetClusterConfigOrDie()
+	logger := logrus.WithField("pkg", "controller")
+	logger.Logger.SetLevel(logrus.DebugLevel)
 	return &Controller{
-		log: logrus.WithField("pkg", "controller"),
+		log: logger,
 		apiHost: clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
 		kubeApi: kubernetes.NewForConfigOrDie(clustConfig),
 		namespace: ns,
+		crInfo: make(map[string] CustRegionInfo),
 	}
 }
 
@@ -85,7 +88,7 @@ func New(ns string) *Controller {
 
 func (ctl *Controller) findAllCustomerRegions() (string, error) {
 	ctl.log.Info("finding existing customerRegions...")
-	crgList, err := k8sutil.GetCustomerRegionRscList(
+	crgList, err := k8sutil.GetCustomerRegionList(
 		ctl.kubeApi.CoreV1().RESTClient(),
 		ctl.namespace)
 	if err != nil {
@@ -114,7 +117,6 @@ func (ctl *Controller) findAllCustomerRegions() (string, error) {
 			custRegion: newCr,
 			rscVersion: &initialRV,
 		}
-		ctl.log.Infof("instantiated customer region '%s' ", crg.Name)
 	}
 
 	return crgList.ResourceVersion, nil
@@ -191,7 +193,7 @@ func (c *Controller) Run() error {
 
 		for ev := range eventCh {
 			//pt.start()
-			if err := c.handleCustRegRscEvent(ev); err != nil {
+			if err := c.handleCustRegEvent(ev); err != nil {
 				c.log.Warningf("fail to handle event: %v", err)
 			}
 			//pt.stop()
@@ -206,7 +208,11 @@ func (c *Controller) Run() error {
 // the given watch version. It emits events on the resources through the returned
 // event chan. Errors will be reported through the returned error chan. The go routine
 // exits on any error.
-func (c *Controller) watch(watchVersion string, httpClient *http.Client) (<-chan *Event, <-chan error) {
+func (c *Controller) watch(
+	watchVersion string, httpClient *http.Client) (
+		<-chan *Event,
+		<-chan error) {
+
 	eventCh := make(chan *Event)
 	// On unexpected error case, controller should exit
 	errCh := make(chan error, 1)
@@ -221,70 +227,22 @@ func (c *Controller) watch(watchVersion string, httpClient *http.Client) (<-chan
 				httpClient,
 				watchVersion,
 			)
+			c.log.Infof("start watching at %v", watchVersion)
+
 			if err != nil {
 				errCh <- err
 				return
 			}
-			if resp.StatusCode != http.StatusOK {
-				resp.Body.Close()
-				errCh <- errors.New("invalid status code: " + resp.Status)
+
+			watchVersion, err = c.processWatchResponse(
+				watchVersion,
+				resp,
+				eventCh,
+			)
+			if err != nil {
+				errCh <- err
 				return
 			}
-
-			c.log.Infof("start watching at %v", watchVersion)
-
-			decoder := json.NewDecoder(resp.Body)
-			for {
-				ev, st, err := pollEvent(decoder)
-				if err != nil {
-					if err == io.EOF { // apiserver will close stream periodically
-						c.log.Info("apiserver closed watch stream, retrying after 5s...")
-						time.Sleep(5 * time.Second)
-						break
-					}
-
-					c.log.Errorf("received invalid event from API server: %v", err)
-					errCh <- err
-					return
-				}
-
-				if st != nil {
-					resp.Body.Close()
-
-					if st.Code == http.StatusGone {
-						// event history is outdated.
-						// if nothing has changed, we can go back to watch again.
-						custRegRscList, err := k8sutil.GetCustomerRegionRscList(
-							c.kubeApi.CoreV1().RESTClient(),
-							c.namespace,
-						)
-						if err == nil && !c.isCustRegRscCacheStale(custRegRscList.Items) {
-							watchVersion = custRegRscList.ResourceVersion
-							break
-						}
-
-						// if anything has changed (or error on relist), we have to rebuild the state.
-						// go to recovery path
-						errCh <- ErrVersionOutdated
-						return
-					}
-
-					c.log.Fatalf(
-						"unexpected status response from API server: %v",
-						st.Message,
-					)
-				}
-
-				c.log.Debugf("etcd cluster event: %v %v",
-					ev.Type,
-					ev.Object.Spec,
-				)
-
-				watchVersion = ev.Object.ResourceVersion
-				eventCh <- ev
-			}
-
-			resp.Body.Close()
 		}
 	}()
 
@@ -293,13 +251,88 @@ func (c *Controller) watch(watchVersion string, httpClient *http.Client) (<-chan
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) isCustRegRscCacheStale(
-	currentCustRegRscs []spec.CustomerRegion,
+func (c *Controller) processWatchResponse(
+	initialWatchVersion string,
+	resp *http.Response,
+	eventCh chan <- *Event) (
+		nextWatchVersion string,
+		err error) {
+
+	nextWatchVersion = initialWatchVersion
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.New("invalid status code: " + resp.Status)
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	for {
+		ev, st, err := pollEvent(decoder)
+		if err != nil {
+			if err == io.EOF { // apiserver will close stream periodically
+				c.log.Info("apiserver closed watch stream, retrying after 5s...")
+				time.Sleep(5 * time.Second)
+				return nextWatchVersion, nil
+			}
+
+			c.log.Errorf("received invalid event from watch API: %v", err)
+			return "", err
+		}
+
+		if st != nil {
+			err = fmt.Errorf("unexpected watch error: %v", st)
+			return "", err
+
+			/*
+			if st.Code == http.StatusGone {
+				// event history is outdated.
+				// if nothing has changed, we can go back to watch again.
+				custRegList, err := k8sutil.GetCustomerRegionList(
+					c.kubeApi.CoreV1().RESTClient(),
+					c.namespace,
+				)
+				if err == nil && !c.isCustRegCacheStale(custRegList.Items) {
+					nextWatchVersion = custRegList.ResourceVersion
+					c.log.Warn("watch got a StatusGone, resetting" +
+						" nextWatchVersion to %d", nextWatchVersion)
+					break
+				}
+
+				// if anything has changed (or error on relist), we have to rebuild the state.
+				// go to recovery path
+				errCh <- ErrVersionOutdated
+				return
+			}
+			*/
+
+			/*
+			c.log.Fatalf(
+				"unexpected status response from API server: %v",
+				st.Message,
+			)
+			*/
+		}
+
+		c.log.Debugf("customer region event: %v %v",
+			ev.Type,
+			ev.Object,
+		)
+
+		nextWatchVersion = ev.Object.ResourceVersion
+		logrus.Infof("next watch version: %s", nextWatchVersion)
+		eventCh <- ev
+	}
+}
+
+// ----------------------------------------------------------------------------
+
+/*
+func (c *Controller) isCustRegCacheStale(
+	currentCustRegs []spec.CustomerRegion,
 ) bool {
-	if len(c.crInfo) != len(currentCustRegRscs) {
+	if len(c.crInfo) != len(currentCustRegs) {
 		return true
 	}
-	for _, cc := range currentCustRegRscs {
+	for _, cc := range currentCustRegs {
 		cri, ok := c.crInfo[cc.Name]
 		if !ok || *(cri.rscVersion) != cc.ResourceVersion {
 			return true
@@ -308,18 +341,20 @@ func (c *Controller) isCustRegRscCacheStale(
 	return false
 }
 
+*/
+
 // ----------------------------------------------------------------------------
 
-func (c *Controller) handleCustRegRscEvent(event *Event) error {
+func (c *Controller) handleCustRegEvent(event *Event) error {
 	crg := event.Object
 
 	if crg.Status.IsFailed() {
-		// custRegRscsFailed.Inc()
+		// custRegsFailed.Inc()
 		if event.Type == kwatch.Deleted {
 			delete(c.crInfo, crg.Name)
 			return nil
 		}
-		return fmt.Errorf("ignore failed custRegRsc (%s). Please delete its CR", crg.Name)
+		return fmt.Errorf("ignore failed custReg (%s). Please delete its CR", crg.Name)
 	}
 
 	// TODO: add validation to spec update.
@@ -328,7 +363,7 @@ func (c *Controller) handleCustRegRscEvent(event *Event) error {
 	switch event.Type {
 	case kwatch.Added:
 		if _, ok := c.crInfo[crg.Name]; ok {
-			return fmt.Errorf("unsafe state. custRegRsc (%s) was created before but we received event (%s)", crg.Name, event.Type)
+			return fmt.Errorf("unsafe state. custReg (%s) was created before but we received event (%s)", crg.Name, event.Type)
 		}
 
 		stopC := make(chan struct{})
@@ -342,32 +377,32 @@ func (c *Controller) handleCustRegRscEvent(event *Event) error {
 		c.log.Printf("customer region (%s) added. There are now (%d)",
 			crg.Name, len(c.crInfo))
 		/*
-		analytics.CustRegRscCreated()
-		custRegRscsCreated.Inc()
-		custRegRscustotal.Inc()
+		analytics.CustRegCreated()
+		custRegsCreated.Inc()
+		custRegustotal.Inc()
 		*/
 
 	case kwatch.Modified:
 		if _, ok := c.crInfo[crg.Name]; !ok {
-			return fmt.Errorf("unsafe state. custRegRsc (%s) was never created but we received event (%s)", crg.Name, event.Type)
+			return fmt.Errorf("unsafe state. custReg (%s) was never created but we received event (%s)", crg.Name, event.Type)
 		}
 		c.crInfo[crg.Name].custRegion.Update(*crg)
 		*(c.crInfo[crg.Name].rscVersion) = crg.ResourceVersion
 		c.log.Printf("customer region (%s) modified. There are now (%d)",
 			crg.Name, len(c.crInfo))
-		//custRegRscsModified.Inc()
+		//custRegsModified.Inc()
 
 	case kwatch.Deleted:
 		if _, ok := c.crInfo[crg.Name]; !ok {
-			return fmt.Errorf("unsafe state. custRegRsc (%s) was never created but we received event (%s)", crg.Name, event.Type)
+			return fmt.Errorf("unsafe state. custReg (%s) was never created but we received event (%s)", crg.Name, event.Type)
 		}
 		delete(c.crInfo, crg.Name)
 		c.log.Printf("customer region (%s) deleted. There are now (%d)",
 			crg.Name, len(c.crInfo))
 		/*
-		analytics.CustRegRscDeleted()
-		custRegRscsDeleted.Inc()
-		custRegRscustotal.Dec()
+		analytics.CustRegDeleted()
+		custRegsDeleted.Inc()
+		custRegustotal.Dec()
 		*/
 	}
 	return nil

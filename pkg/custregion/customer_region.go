@@ -55,6 +55,7 @@ func New(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		c.log.Infof("customer region runtime '%s' started ", crg.Name)
 
 		/*
 			if err := c.setup(); err != nil {
@@ -70,7 +71,8 @@ func New(
 			}
 			c.run(stopC)
 		*/
-		}()
+		c.log.Infof("customer region runtime '%s' ended ", crg.Name)
+	}()
 
 	return c
 }
