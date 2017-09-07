@@ -40,6 +40,7 @@ func New(
 	stopC <-chan struct{},
 	wg *sync.WaitGroup,
 ) *CustomerRegionRuntime {
+
 	lg := logrus.WithField("pkg","custregion",
 		).WithField("custregion-name", crg.Name)
 

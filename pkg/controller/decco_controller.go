@@ -39,7 +39,8 @@ import (
 
 var (
 	initRetryWaitTime = 30 * time.Second
-	ErrVersionOutdated = errors.New("requested version is outdated in apiserver")
+	ErrVersionOutdated = errors.New("(not a true error) watch needs to be " +
+		"restarted to refresh resource version after a DELETED event")
 )
 
 
@@ -111,7 +112,8 @@ func (ctl *Controller) findAllCustomerRegions() (string, error) {
 			crg,
 			ctl.kubeApi,
 			stopC,
-			&ctl.waitCustomerRegion)
+			&ctl.waitCustomerRegion,
+		)
 		ctl.crInfo[crg.Name] = CustRegionInfo{
 			stopCh: stopC,
 			custRegion: newCr,
@@ -175,19 +177,20 @@ func (c *Controller) Run() error {
 		// todo: add max retry?
 	}
 
-	c.log.Infof("starts running from watch version: %s", watchVersion)
+	c.log.Infof("controller initial watch version: %s", watchVersion)
 
 	defer func() {
+		c.log.Infof("waiting for cust region workers to exit")
 		for _, crInfo := range c.crInfo {
 			close(crInfo.stopCh)
 		}
 		c.waitCustomerRegion.Wait()
+		c.log.Infof("all cust region workers have exited")
 	}()
 
 	probe.SetReady()
-
-	eventCh, errCh := c.watch(watchVersion, restClnt.Client)
-
+	err = c.watch(watchVersion, restClnt.Client)
+	/*
 	go func() {
 		//pt := newPanicTimer(time.Minute, "unexpected long blocking (> 1 Minute) when handling cluster event")
 
@@ -199,7 +202,8 @@ func (c *Controller) Run() error {
 			//pt.stop()
 		}
 	}()
-	return <-errCh
+	*/
+	return err
 }
 
 // ----------------------------------------------------------------------------
@@ -208,53 +212,33 @@ func (c *Controller) Run() error {
 // the given watch version. It emits events on the resources through the returned
 // event chan. Errors will be reported through the returned error chan. The go routine
 // exits on any error.
-func (c *Controller) watch(
-	watchVersion string, httpClient *http.Client) (
-		<-chan *Event,
-		<-chan error) {
+func (c *Controller) watch(watchVersion string, httpClient *http.Client) error {
 
-	eventCh := make(chan *Event)
-	// On unexpected error case, controller should exit
-	errCh := make(chan error, 1)
+	for {
+		resp, err := k8sutil.WatchCustomerRegions(
+			c.apiHost,
+			c.namespace,
+			httpClient,
+			watchVersion,
+		)
+		c.log.Infof("start watching at %v", watchVersion)
 
-	go func() {
-		defer close(eventCh)
-
-		for {
-			resp, err := k8sutil.WatchCustomerRegions(
-				c.apiHost,
-				c.namespace,
-				httpClient,
-				watchVersion,
-			)
-			c.log.Infof("start watching at %v", watchVersion)
-
-			if err != nil {
-				errCh <- err
-				return
-			}
-
-			watchVersion, err = c.processWatchResponse(
-				watchVersion,
-				resp,
-				eventCh,
-			)
-			if err != nil {
-				errCh <- err
-				return
-			}
+		if err != nil {
+			return err
 		}
-	}()
 
-	return eventCh, errCh
+		watchVersion, err = c.processWatchResponse(watchVersion, resp)
+		if err != nil {
+			return err
+		}
+	}
 }
 
 // ----------------------------------------------------------------------------
 
 func (c *Controller) processWatchResponse(
 	initialWatchVersion string,
-	resp *http.Response,
-	eventCh chan <- *Event) (
+	resp *http.Response) (
 		nextWatchVersion string,
 		err error) {
 
@@ -273,7 +257,6 @@ func (c *Controller) processWatchResponse(
 				time.Sleep(5 * time.Second)
 				return nextWatchVersion, nil
 			}
-
 			c.log.Errorf("received invalid event from watch API: %v", err)
 			return "", err
 		}
@@ -281,35 +264,6 @@ func (c *Controller) processWatchResponse(
 		if st != nil {
 			err = fmt.Errorf("unexpected watch error: %v", st)
 			return "", err
-
-			/*
-			if st.Code == http.StatusGone {
-				// event history is outdated.
-				// if nothing has changed, we can go back to watch again.
-				custRegList, err := k8sutil.GetCustomerRegionList(
-					c.kubeApi.CoreV1().RESTClient(),
-					c.namespace,
-				)
-				if err == nil && !c.isCustRegCacheStale(custRegList.Items) {
-					nextWatchVersion = custRegList.ResourceVersion
-					c.log.Warn("watch got a StatusGone, resetting" +
-						" nextWatchVersion to %d", nextWatchVersion)
-					break
-				}
-
-				// if anything has changed (or error on relist), we have to rebuild the state.
-				// go to recovery path
-				errCh <- ErrVersionOutdated
-				return
-			}
-			*/
-
-			/*
-			c.log.Fatalf(
-				"unexpected status response from API server: %v",
-				st.Message,
-			)
-			*/
 		}
 
 		c.log.Debugf("customer region event: %v %v",
@@ -319,29 +273,12 @@ func (c *Controller) processWatchResponse(
 
 		nextWatchVersion = ev.Object.ResourceVersion
 		logrus.Infof("next watch version: %s", nextWatchVersion)
-		eventCh <- ev
-	}
-}
-
-// ----------------------------------------------------------------------------
-
-/*
-func (c *Controller) isCustRegCacheStale(
-	currentCustRegs []spec.CustomerRegion,
-) bool {
-	if len(c.crInfo) != len(currentCustRegs) {
-		return true
-	}
-	for _, cc := range currentCustRegs {
-		cri, ok := c.crInfo[cc.Name]
-		if !ok || *(cri.rscVersion) != cc.ResourceVersion {
-			return true
+		if err := c.handleCustRegEvent(ev); err != nil {
+			c.log.Warningf("event handler returned possible error: %v", err)
+			return "", err
 		}
 	}
-	return false
 }
-
-*/
 
 // ----------------------------------------------------------------------------
 
@@ -399,6 +336,7 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 		delete(c.crInfo, crg.Name)
 		c.log.Printf("customer region (%s) deleted. There are now (%d)",
 			crg.Name, len(c.crInfo))
+		return ErrVersionOutdated
 		/*
 		analytics.CustRegDeleted()
 		custRegsDeleted.Inc()

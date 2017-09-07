@@ -39,6 +39,7 @@ func main() {
 		err := c.Run()
 		switch err {
 		case controller.ErrVersionOutdated:
+			log.Infof("restarting controller due to ErrVersionOutdated")
 		default:
 			log.Fatalf("controller Run() ended with failure: %v", err)
 		}
