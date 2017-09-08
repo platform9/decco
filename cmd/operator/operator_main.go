@@ -18,8 +18,6 @@ limitations under the License.
 package main
 
 import (
-	//"k8s.io/client-go/rest"
-	// Only required to authenticate against GKE clusters
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	log "github.com/sirupsen/logrus"
 	"github.com/platform9/decco/pkg/controller"
@@ -28,14 +26,8 @@ import (
 func main() {
 	log.Println("decco operator started!")
 
-	/*
-	config := k8sutil.GetClusterConfigOrDie()
-	clientset := kubernetes.NewForConfigOrDie(config)
-	ctrl := controller.New()
-	*/
-
 	for {
-		c := controller.New("default")
+		c := controller.New()
 		err := c.Run()
 		switch err {
 		case controller.ErrVersionOutdated:
@@ -44,28 +36,5 @@ func main() {
 			log.Fatalf("controller Run() ended with failure: %v", err)
 		}
 	}
-	/*
-	for {
-		pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{})
-		if err != nil {
-			panic(err.Error())
-		}
-		fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
-		// Examples for error handling:
-		// - Use helper functions like e.g. errors.IsNotFound()
-		// - And/or cast to StatusError and use its properties like e.g. ErrStatus.Message
-		_, err = clientset.CoreV1().Pods("default").Get("example-xxxxx", metav1.GetOptions{})
-		if errors.IsNotFound(err) {
-			fmt.Printf("Pod not found\n")
-		} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
-			fmt.Printf("Error getting pod %v\n", statusError.ErrStatus.Message)
-		} else if err != nil {
-			panic(err.Error())
-		} else {
-			fmt.Printf("Found pod\n")
-		}
-		time.Sleep(10 * time.Second)
-	}
-	*/
 }
 

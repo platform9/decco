@@ -57,7 +57,6 @@ type Controller struct {
 	apiHost string
 	extensionsApi apiextensionsclient.Interface
 	kubeApi kubernetes.Interface
-	namespace string
 	crInfo map[string] CustRegionInfo
 }
 
@@ -68,7 +67,7 @@ type CustRegionInfo struct {
 
 // ----------------------------------------------------------------------------
 
-func New(ns string) *Controller {
+func New() *Controller {
 	clustConfig := k8sutil.GetClusterConfigOrDie()
 	logger := logrus.WithField("pkg", "controller")
 	logger.Logger.SetLevel(logrus.DebugLevel)
@@ -77,7 +76,6 @@ func New(ns string) *Controller {
 		apiHost: clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
 		kubeApi: kubernetes.NewForConfigOrDie(clustConfig),
-		namespace: ns,
 		crInfo: make(map[string] CustRegionInfo),
 	}
 }
@@ -87,8 +85,7 @@ func New(ns string) *Controller {
 func (ctl *Controller) findAllCustomerRegions() (string, error) {
 	ctl.log.Info("finding existing customerRegions...")
 	crgList, err := k8sutil.GetCustomerRegionList(
-		ctl.kubeApi.CoreV1().RESTClient(),
-		ctl.namespace)
+		ctl.kubeApi.CoreV1().RESTClient())
 	if err != nil {
 		return "", err
 	}
@@ -97,7 +94,7 @@ func (ctl *Controller) findAllCustomerRegions() (string, error) {
 		crg := crgList.Items[i]
 
 		if crg.Status.IsFailed() {
-			ctl.log.Infof("ignore failed customerRegion (%s)." +
+			ctl.log.Infof("ignore failed custreg %s." +
 				" Please delete its custom resource", crg.Name)
 			continue
 		}
@@ -167,7 +164,8 @@ func (c *Controller) Run() error {
 		// todo: add max retry?
 	}
 
-	c.log.Infof("controller initial watch version: %s", watchVersion)
+	c.log.Infof("controller started with %d custregion runtimes and" +
+		" initial watch version: %s", len(c.crInfo), watchVersion)
 	probe.SetReady()
 	err = c.watch(watchVersion, restClnt.Client)
 	return err
@@ -184,7 +182,6 @@ func (c *Controller) watch(watchVersion string, httpClient *http.Client) error {
 	for {
 		resp, err := k8sutil.WatchCustomerRegions(
 			c.apiHost,
-			c.namespace,
 			httpClient,
 			watchVersion,
 		)
@@ -258,7 +255,7 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 			delete(c.crInfo, crg.Name)
 			return ErrVersionOutdated
 		}
-		c.log.Errorf("ignore failed custreg (%s). Please delete its CR",
+		c.log.Errorf("ignore failed custreg %s. Please delete its CR",
 			crg.Name)
 		return nil
 	}
@@ -279,7 +276,7 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 			custRegion: newCustReg,
 			rscVersion: &initialRV,
 		}
-		c.log.Printf("customer region (%s) added. There are now (%d)",
+		c.log.Printf("customer region (%s) added. There are now %d",
 			crg.Name, len(c.crInfo))
 		/*
 		analytics.CustRegCreated()
@@ -294,7 +291,7 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 		}
 		c.crInfo[crg.Name].custRegion.Update(*crg)
 		*(c.crInfo[crg.Name].rscVersion) = crg.ResourceVersion
-		c.log.Printf("customer region (%s) modified. There are now (%d)",
+		c.log.Printf("customer region (%s) modified. There are now %d",
 			crg.Name, len(c.crInfo))
 		//custRegsModified.Inc()
 
@@ -304,7 +301,7 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 				"created but we received event (%s)", crg.Name, event.Type)
 		}
 		delete(c.crInfo, crg.Name)
-		c.log.Printf("customer region (%s) deleted. There are now (%d)",
+		c.log.Printf("customer region (%s) deleted. There are now %d",
 			crg.Name, len(c.crInfo))
 		return ErrVersionOutdated
 		/*

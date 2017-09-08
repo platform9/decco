@@ -110,9 +110,7 @@ func (c *CustomerRegionRuntime) updateCRStatus() error {
 	newCrg.Status = c.status
 	newCrg, err := k8sutil.UpdateCustomerRegionCustRsc(
 		c.kubeApi.CoreV1().RESTClient(), 
-		"default",
-		newCrg,
-	)
+		newCrg)
 	if err != nil {
 		return fmt.Errorf("failed to update crg status: %v", err)
 	}

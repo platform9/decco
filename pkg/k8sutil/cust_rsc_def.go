@@ -29,13 +29,13 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-func WatchCustomerRegions(host, ns string, httpClient *http.Client, resourceVersion string) (*http.Response, error) {
-	return httpClient.Get(fmt.Sprintf("%s/apis/%s/namespaces/%s/%s?watch=true&resourceVersion=%s",
-		host, spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, resourceVersion))
+func WatchCustomerRegions(host string, httpClient *http.Client, resourceVersion string) (*http.Response, error) {
+	return httpClient.Get(fmt.Sprintf("%s/apis/%s/%s?watch=true&resourceVersion=%s",
+		host, spec.SchemeGroupVersion.String(), spec.CRDResourcePlural, resourceVersion))
 }
 
-func GetCustomerRegionList(restcli rest.Interface, ns string) (*spec.CustomerRegionList, error) {
-	b, err := restcli.Get().RequestURI(listCustomerRegionsURI(ns)).DoRaw()
+func GetCustomerRegionList(restcli rest.Interface) (*spec.CustomerRegionList, error) {
+	b, err := restcli.Get().RequestURI(listCustomerRegionsURI()).DoRaw()
 	if err != nil {
 		return nil, err
 	}
@@ -47,8 +47,10 @@ func GetCustomerRegionList(restcli rest.Interface, ns string) (*spec.CustomerReg
 	return customerRegions, nil
 }
 
-func listCustomerRegionsURI(ns string) string {
-	return fmt.Sprintf("/apis/%s/namespaces/%s/%s", spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural)
+func listCustomerRegionsURI() string {
+	return fmt.Sprintf("/apis/%s/%s",
+		spec.SchemeGroupVersion.String(),
+		spec.CRDResourcePlural)
 }
 
 /*
@@ -65,13 +67,12 @@ func GetCustomerRegionTPRObject(restcli rest.Interface, ns, name string) (*spec.
 
 func UpdateCustomerRegionCustRsc(
 	restcli rest.Interface,
-	ns string,
 	c spec.CustomerRegion,
 ) (spec.CustomerRegion, error) {
 
-	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s",
+	uri := fmt.Sprintf("/apis/%s/%s/%s",
 		spec.SchemeGroupVersion.String(),
-		ns, spec.CRDResourcePlural,
+		spec.CRDResourcePlural,
 		c.Name)
 	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw()
 	if err != nil {
@@ -97,7 +98,7 @@ func CreateCRD(clientset apiextensionsclient.Interface) error {
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
 			Group:   spec.SchemeGroupVersion.Group,
 			Version: spec.SchemeGroupVersion.Version,
-			Scope:   apiextensionsv1beta1.NamespaceScoped,
+			Scope:   apiextensionsv1beta1.ClusterScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
 				Plural:     spec.CRDResourcePlural,
 				Kind:       spec.CRDResourceKind,
