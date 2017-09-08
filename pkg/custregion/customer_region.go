@@ -6,11 +6,13 @@ import (
 	"github.com/platform9/decco/pkg/k8sutil"
 	"reflect"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/api/core/v1"
 	"fmt"
 	"errors"
 	"strings"
 	"encoding/json"
 	"time"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type custRegRscEventType string
@@ -148,17 +150,33 @@ func (c *CustomerRegionRuntime) setup() error {
 
 // -----------------------------------------------------------------------------
 
+func (c *CustomerRegionRuntime) phaseUpdateError(op string, err error) error {
+	return fmt.Errorf(
+		"%s : failed to update crg phase (%v): %v",
+		op,
+		c.status.Phase,
+		err,
+	)
+}
+
+// -----------------------------------------------------------------------------
+
 func (c *CustomerRegionRuntime) create() error {
 	c.status.SetPhase(spec.CustomerRegionPhaseCreating)
 	if err := c.updateCRStatus(); err != nil {
-		return fmt.Errorf(
-			"crg create: failed to update crg phase (%v): %v",
-			spec.CustomerRegionPhaseCreating,
-			err,
-		)
+		return c.phaseUpdateError("crg create", err)
 	}
 	c.logCreation()
-	time.Sleep(2 * time.Second)
+	err := c.createNamespace()
+	if err != nil {
+		c.log.Warn("failed to create namespace for custreg %s: %s",
+			c.crg.Name, err.Error())
+		c.status.SetPhase(spec.CustomerRegionPhaseFailed)
+		if err2 := c.updateCRStatus(); err != nil {
+			return c.phaseUpdateError("crg create", err2)
+		}
+		return err
+	}
 
 	c.status.SetPhase(spec.CustomerRegionPhaseActive)
 	if err := c.updateCRStatus(); err != nil {
@@ -185,4 +203,20 @@ func (c *CustomerRegionRuntime) logCreation() {
 	for _, m := range strings.Split(string(specBytes), "\n") {
 		c.log.Info(m)
 	}
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) createNamespace() error {
+	nsApi := c.kubeApi.CoreV1().Namespaces()
+	ns := v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: c.crg.Name,
+			Labels: map[string]string {
+				"app": "decco",
+			},
+		},
+	}
+	_, err := nsApi.Create(&ns)
+	return err
 }
