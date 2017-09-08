@@ -3,11 +3,21 @@ package custregion
 import (
 	"github.com/sirupsen/logrus"
 	"github.com/platform9/decco/pkg/spec"
-	"sync"
+	"github.com/platform9/decco/pkg/k8sutil"
+	"reflect"
 	"k8s.io/client-go/kubernetes"
+	"fmt"
+	"errors"
+	"strings"
+	"encoding/json"
+	"time"
 )
 
 type custRegRscEventType string
+
+var (
+	errInCreatingPhase = errors.New("custregion already in Creating phase")
+)
 
 const (
 	eventDeleteCustomerRegion custRegRscEventType = "Delete"
@@ -34,11 +44,11 @@ type CustomerRegionRuntime struct {
 	stopCh  chan struct{}
 }
 
+// -----------------------------------------------------------------------------
+
 func New(
 	crg spec.CustomerRegion,
 	kubeApi kubernetes.Interface,
-	stopC <-chan struct{},
-	wg *sync.WaitGroup,
 ) *CustomerRegionRuntime {
 
 	lg := logrus.WithField("pkg","custregion",
@@ -53,30 +63,21 @@ func New(
 		status:      crg.Status.Copy(),
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		c.log.Infof("customer region runtime '%s' started ", crg.Name)
-
-		/*
-			if err := c.setup(); err != nil {
-				c.logger.Errorf("cluster failed to setup: %v", err)
-				if c.status.Phase != spec.ClusterPhaseFailed {
-					c.status.SetReason(err.Error())
-					c.status.SetPhase(spec.ClusterPhaseFailed)
-					if err := c.updateCRStatus(); err != nil {
-						c.logger.Errorf("failed to update cluster phase (%v): %v", spec.ClusterPhaseFailed, err)
-					}
-				}
-				return
+	if err := c.setup(); err != nil {
+		c.log.Errorf("cluster failed to setup: %v", err)
+		if c.status.Phase != spec.CustomerRegionPhaseFailed {
+			c.status.SetReason(err.Error())
+			c.status.SetPhase(spec.CustomerRegionPhaseFailed)
+			if err := c.updateCRStatus(); err != nil {
+				c.log.Errorf("failed to update custregion phase (%v): %v",
+					spec.CustomerRegionPhaseFailed, err)
 			}
-			c.run(stopC)
-		*/
-		c.log.Infof("customer region runtime '%s' ended ", crg.Name)
-	}()
-
+		}
+	}
 	return c
 }
+
+// -----------------------------------------------------------------------------
 
 func (c *CustomerRegionRuntime) Update(crg spec.CustomerRegion) {
 	c.send(custRegRscEvent{
@@ -84,6 +85,8 @@ func (c *CustomerRegionRuntime) Update(crg spec.CustomerRegion) {
 		custRegRsc: crg,
 	})
 }
+
+// -----------------------------------------------------------------------------
 
 func (c *CustomerRegionRuntime) send(ev custRegRscEvent) {
 	select {
@@ -93,5 +96,95 @@ func (c *CustomerRegionRuntime) send(ev custRegRscEvent) {
 			c.log.Warningf("eventCh buffer is almost full [%d/%d]", l, ecap)
 		}
 	case <-c.stopCh:
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) updateCRStatus() error {
+	if reflect.DeepEqual(c.crg.Status, c.status) {
+		return nil
+	}
+
+	newCrg := c.crg
+	newCrg.Status = c.status
+	newCrg, err := k8sutil.UpdateCustomerRegionCustRsc(
+		c.kubeApi.CoreV1().RESTClient(), 
+		"default",
+		newCrg,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update crg status: %v", err)
+	}
+
+	c.crg = newCrg
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) setup() error {
+	err := c.crg.Spec.Validate()
+	if err != nil {
+		return err
+	}
+
+	var shouldCreateResources bool
+	switch c.status.Phase {
+	case spec.CustomerRegionPhaseNone:
+		shouldCreateResources = true
+	case spec.CustomerRegionPhaseCreating:
+		return errInCreatingPhase
+	case spec.CustomerRegionPhaseActive:
+		shouldCreateResources = false
+
+	default:
+		return fmt.Errorf("unexpected crg phase: %s", c.status.Phase)
+	}
+
+	if shouldCreateResources {
+		return c.create()
+	}
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) create() error {
+	c.status.SetPhase(spec.CustomerRegionPhaseCreating)
+	if err := c.updateCRStatus(); err != nil {
+		return fmt.Errorf(
+			"crg create: failed to update crg phase (%v): %v",
+			spec.CustomerRegionPhaseCreating,
+			err,
+		)
+	}
+	c.logCreation()
+	time.Sleep(2 * time.Second)
+
+	c.status.SetPhase(spec.CustomerRegionPhaseActive)
+	if err := c.updateCRStatus(); err != nil {
+		return fmt.Errorf(
+			"crg create: failed to update crg phase (%v): %v",
+			spec.CustomerRegionPhaseActive,
+			err,
+		)
+	}
+	c.log.Infof("customer region is now active")
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) logCreation() {
+	specBytes, err := json.MarshalIndent(c.crg.Spec, "", "    ")
+	if err != nil {
+		c.log.Errorf("failed to marshal cluster spec: %v", err)
+		return
+	}
+
+	c.log.Info("creating customer region with Spec:")
+	for _, m := range strings.Split(string(specBytes), "\n") {
+		c.log.Info(m)
 	}
 }

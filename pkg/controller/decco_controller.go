@@ -31,7 +31,6 @@ import (
 	"github.com/platform9/decco/pkg/custregion"
 	"time"
 	"github.com/coreos/etcd-operator/pkg/util/probe"
-	"sync"
 	"net/http"
 	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/client"
@@ -60,13 +59,11 @@ type Controller struct {
 	kubeApi kubernetes.Interface
 	namespace string
 	crInfo map[string] CustRegionInfo
-	waitCustomerRegion sync.WaitGroup
 }
 
 type CustRegionInfo struct {
 	custRegion *custregion.CustomerRegionRuntime
 	rscVersion *string
-	stopCh chan struct{}
 }
 
 // ----------------------------------------------------------------------------
@@ -100,22 +97,15 @@ func (ctl *Controller) findAllCustomerRegions() (string, error) {
 		crg := crgList.Items[i]
 
 		if crg.Status.IsFailed() {
-			ctl.log.Infof("ignore failed customerRegion (%s). Please delete its custom resource", crg.Name)
+			ctl.log.Infof("ignore failed customerRegion (%s)." +
+				" Please delete its custom resource", crg.Name)
 			continue
 		}
 
 		crg.Spec.Cleanup()
-
-		stopC := make(chan struct{})
 		initialRV := crg.ResourceVersion
-		newCr := custregion.New(
-			crg,
-			ctl.kubeApi,
-			stopC,
-			&ctl.waitCustomerRegion,
-		)
+		newCr := custregion.New(crg, ctl.kubeApi)
 		ctl.crInfo[crg.Name] = CustRegionInfo{
-			stopCh: stopC,
 			custRegion: newCr,
 			rscVersion: &initialRV,
 		}
@@ -178,31 +168,8 @@ func (c *Controller) Run() error {
 	}
 
 	c.log.Infof("controller initial watch version: %s", watchVersion)
-
-	defer func() {
-		c.log.Infof("waiting for cust region workers to exit")
-		for _, crInfo := range c.crInfo {
-			close(crInfo.stopCh)
-		}
-		c.waitCustomerRegion.Wait()
-		c.log.Infof("all cust region workers have exited")
-	}()
-
 	probe.SetReady()
 	err = c.watch(watchVersion, restClnt.Client)
-	/*
-	go func() {
-		//pt := newPanicTimer(time.Minute, "unexpected long blocking (> 1 Minute) when handling cluster event")
-
-		for ev := range eventCh {
-			//pt.start()
-			if err := c.handleCustRegEvent(ev); err != nil {
-				c.log.Warningf("fail to handle event: %v", err)
-			}
-			//pt.stop()
-		}
-	}()
-	*/
 	return err
 }
 
@@ -289,9 +256,11 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 		// custRegsFailed.Inc()
 		if event.Type == kwatch.Deleted {
 			delete(c.crInfo, crg.Name)
-			return nil
+			return ErrVersionOutdated
 		}
-		return fmt.Errorf("ignore failed custReg (%s). Please delete its CR", crg.Name)
+		c.log.Errorf("ignore failed custreg (%s). Please delete its CR",
+			crg.Name)
+		return nil
 	}
 
 	// TODO: add validation to spec update.
@@ -300,14 +269,13 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 	switch event.Type {
 	case kwatch.Added:
 		if _, ok := c.crInfo[crg.Name]; ok {
-			return fmt.Errorf("unsafe state. custReg (%s) was created before but we received event (%s)", crg.Name, event.Type)
+			return fmt.Errorf("unsafe state. custReg (%s) was created" +
+				" before but we received event (%s)", crg.Name, event.Type)
 		}
 
-		stopC := make(chan struct{})
-		newCustReg := custregion.New(*crg, c.kubeApi, stopC, &c.waitCustomerRegion)
+		newCustReg := custregion.New(*crg, c.kubeApi)
 		initialRV := crg.ResourceVersion
 		c.crInfo[crg.Name] = CustRegionInfo{
-			stopCh: stopC,
 			custRegion: newCustReg,
 			rscVersion: &initialRV,
 		}
@@ -321,7 +289,8 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 
 	case kwatch.Modified:
 		if _, ok := c.crInfo[crg.Name]; !ok {
-			return fmt.Errorf("unsafe state. custReg (%s) was never created but we received event (%s)", crg.Name, event.Type)
+			return fmt.Errorf("unsafe state. custReg (%s) was never" +
+				" created but we received event (%s)", crg.Name, event.Type)
 		}
 		c.crInfo[crg.Name].custRegion.Update(*crg)
 		*(c.crInfo[crg.Name].rscVersion) = crg.ResourceVersion
@@ -331,7 +300,8 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 
 	case kwatch.Deleted:
 		if _, ok := c.crInfo[crg.Name]; !ok {
-			return fmt.Errorf("unsafe state. custReg (%s) was never created but we received event (%s)", crg.Name, event.Type)
+			return fmt.Errorf("unsafe state. custReg (%s) was never " +
+				"created but we received event (%s)", crg.Name, event.Type)
 		}
 		delete(c.crInfo, crg.Name)
 		c.log.Printf("customer region (%s) deleted. There are now (%d)",

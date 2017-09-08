@@ -61,22 +61,32 @@ func GetCustomerRegionTPRObject(restcli rest.Interface, ns, name string) (*spec.
 	return readCustomerRegionCR(b)
 }
 
-func UpdateCustomerRegionTPRObject(restcli rest.Interface, ns string, c *spec.CustomerRegion) (*spec.CustomerRegion, error) {
-	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s", spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, c.Name)
-	b, err := restcli.Put().RequestURI(uri).Body(c).DoRaw()
+*/
+
+func UpdateCustomerRegionCustRsc(
+	restcli rest.Interface,
+	ns string,
+	c spec.CustomerRegion,
+) (spec.CustomerRegion, error) {
+
+	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s",
+		spec.SchemeGroupVersion.String(),
+		ns, spec.CRDResourcePlural,
+		c.Name)
+	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw()
 	if err != nil {
-		return nil, err
+		return spec.CustomerRegion{}, err
 	}
 	return readCustomerRegionCR(b)
 }
-*/
 
-func readCustomerRegionCR(b []byte) (*spec.CustomerRegion, error) {
+func readCustomerRegionCR(b []byte) (spec.CustomerRegion, error) {
 	customerRegion := &spec.CustomerRegion{}
 	if err := json.Unmarshal(b, customerRegion); err != nil {
-		return nil, fmt.Errorf("read customerRegion CR from json data failed: %v", err)
+		return spec.CustomerRegion{},
+			fmt.Errorf("read customerRegion CR from json data failed: %v", err)
 	}
-	return customerRegion, nil
+	return *customerRegion, nil
 }
 
 func CreateCRD(clientset apiextensionsclient.Interface) error {

@@ -104,9 +104,9 @@ type CustomerRegionPhase string
 
 const (
 	CustomerRegionPhaseNone     CustomerRegionPhase = ""
-	CustomerRegionPhaseCreating              = "Creating"
-	CustomerRegionPhaseRunning               = "Running"
-	CustomerRegionPhaseFailed                = "Failed"
+	CustomerRegionPhaseCreating                     = "Creating"
+	CustomerRegionPhaseActive                       = "Active"
+	CustomerRegionPhaseFailed                       = "Failed"
 )
 
 type CustomerRegionCondition struct {
@@ -150,3 +150,4 @@ func (cs *CustomerRegionStatus) SetPhase(p CustomerRegionPhase) {
 func (cs *CustomerRegionStatus) SetReason(r string) {
 	cs.Reason = r
 }
+

@@ -1,0 +1,11 @@
+apiVersion: "decco.platform9.com/v1beta2"
+kind: "CustomerRegion"
+metadata:
+  name: "example-customer-region-2"
+spec:
+  size: 2
+  version: "3.1.5"
+  domainName: foo.bar.com
+  certAuthoritySecretName: dummy
+  certSecretName: dummy
+
