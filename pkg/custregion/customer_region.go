@@ -7,12 +7,13 @@ import (
 	"reflect"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/api/core/v1"
+	"k8s.io/api/extensions/v1beta1"
 	"fmt"
 	"errors"
 	"strings"
 	"encoding/json"
-	"time"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 type custRegRscEventType string
@@ -172,7 +173,17 @@ func (c *CustomerRegionRuntime) create() error {
 		c.log.Warn("failed to create namespace for custreg %s: %s",
 			c.crg.Name, err.Error())
 		c.status.SetPhase(spec.CustomerRegionPhaseFailed)
-		if err2 := c.updateCRStatus(); err != nil {
+		if err2 := c.updateCRStatus(); err2 != nil {
+			return c.phaseUpdateError("crg create", err2)
+		}
+		return err
+	}
+	err = c.createHttpIngress()
+	if err != nil {
+		c.log.Warn("failed to create http ingress for custreg %s: %s",
+			c.crg.Name, err.Error())
+		c.status.SetPhase(spec.CustomerRegionPhaseFailed)
+		if err2 := c.updateCRStatus(); err2 != nil {
 			return c.phaseUpdateError("crg create", err2)
 		}
 		return err
@@ -220,3 +231,54 @@ func (c *CustomerRegionRuntime) createNamespace() error {
 	_, err := nsApi.Create(&ns)
 	return err
 }
+
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) createHttpIngress() error {
+	hostName := c.crg.Name + "." + c.crg.Spec.DomainName
+	ingApi := c.kubeApi.ExtensionsV1beta1().Ingresses(c.crg.Name)
+	ing := v1beta1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "http-ingress",
+			Labels: map[string]string {
+				"app": "decco",
+			},
+		},
+		Spec: v1beta1.IngressSpec{
+			Rules: []v1beta1.IngressRule{
+				{
+					Host: hostName,
+					IngressRuleValue: v1beta1.IngressRuleValue {
+						HTTP: &v1beta1.HTTPIngressRuleValue{
+							Paths: []v1beta1.HTTPIngressPath {
+								{
+									Path: "/",
+									Backend: v1beta1.IngressBackend{
+										ServiceName: "dummy",
+										ServicePort: intstr.IntOrString {
+											Type: intstr.Int,
+											IntVal: 80,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			TLS: []v1beta1.IngressTLS {
+				{
+					Hosts: []string {
+						hostName,
+					},
+					SecretName: c.crg.Spec.CertSecretName,
+				},
+			},
+		},
+	}
+	_, err := ingApi.Create(&ing)
+	return err
+}
+
+
+
