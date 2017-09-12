@@ -21,13 +21,19 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	log "github.com/sirupsen/logrus"
 	"github.com/platform9/decco/pkg/controller"
+	"os"
 )
 
 func main() {
+	var namespace string
+	namespace = os.Getenv("MY_POD_NAMESPACE")
+	if len(namespace) == 0 {
+		log.Fatalf("must set env MY_POD_NAMESPACE")
+	}
 	log.Println("decco operator started!")
 
 	for {
-		c := controller.New()
+		c := controller.New(namespace)
 		err := c.Run()
 		switch err {
 		case controller.ErrVersionOutdated:

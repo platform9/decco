@@ -1,6 +1,7 @@
 apiVersion: "decco.platform9.com/v1beta2"
 kind: "CustomerRegion"
 metadata:
+  namespace: "decco"
   name: "example-customer-region-2"
 spec:
   size: 2

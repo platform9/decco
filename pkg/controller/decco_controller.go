@@ -58,6 +58,7 @@ type Controller struct {
 	extensionsApi apiextensionsclient.Interface
 	kubeApi kubernetes.Interface
 	crInfo map[string] CustRegionInfo
+	namespace string
 }
 
 type CustRegionInfo struct {
@@ -67,7 +68,7 @@ type CustRegionInfo struct {
 
 // ----------------------------------------------------------------------------
 
-func New() *Controller {
+func New(namespace string) *Controller {
 	clustConfig := k8sutil.GetClusterConfigOrDie()
 	logger := logrus.WithField("pkg", "controller")
 	logger.Logger.SetLevel(logrus.DebugLevel)
@@ -77,6 +78,7 @@ func New() *Controller {
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
 		kubeApi: kubernetes.NewForConfigOrDie(clustConfig),
 		crInfo: make(map[string] CustRegionInfo),
+		namespace: namespace,
 	}
 }
 
@@ -85,7 +87,7 @@ func New() *Controller {
 func (ctl *Controller) findAllCustomerRegions() (string, error) {
 	ctl.log.Info("finding existing customerRegions...")
 	crgList, err := k8sutil.GetCustomerRegionList(
-		ctl.kubeApi.CoreV1().RESTClient())
+		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
 	if err != nil {
 		return "", err
 	}
@@ -101,7 +103,7 @@ func (ctl *Controller) findAllCustomerRegions() (string, error) {
 
 		crg.Spec.Cleanup()
 		initialRV := crg.ResourceVersion
-		newCr := custregion.New(crg, ctl.kubeApi)
+		newCr := custregion.New(crg, ctl.kubeApi, ctl.namespace)
 		ctl.crInfo[crg.Name] = CustRegionInfo{
 			custRegion: newCr,
 			rscVersion: &initialRV,
@@ -164,8 +166,9 @@ func (c *Controller) Run() error {
 		// todo: add max retry?
 	}
 
-	c.log.Infof("controller started with %d custregion runtimes and" +
-		" initial watch version: %s", len(c.crInfo), watchVersion)
+	c.log.Infof("controller started in namespace %s " +
+		"with %d custregion runtimes and initial watch version: %s",
+		c.namespace, len(c.crInfo), watchVersion)
 	probe.SetReady()
 	err = c.watch(watchVersion, restClnt.Client)
 	return err
@@ -182,6 +185,7 @@ func (c *Controller) watch(watchVersion string, httpClient *http.Client) error {
 	for {
 		resp, err := k8sutil.WatchCustomerRegions(
 			c.apiHost,
+			c.namespace,
 			httpClient,
 			watchVersion,
 		)
@@ -270,7 +274,7 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 				" before but we received event (%s)", crg.Name, event.Type)
 		}
 
-		newCustReg := custregion.New(*crg, c.kubeApi)
+		newCustReg := custregion.New(*crg, c.kubeApi, c.namespace)
 		initialRV := crg.ResourceVersion
 		c.crInfo[crg.Name] = CustRegionInfo{
 			custRegion: newCustReg,

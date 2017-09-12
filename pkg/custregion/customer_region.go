@@ -34,6 +34,7 @@ type custRegRscEvent struct {
 
 type CustomerRegionRuntime struct {
 	kubeApi kubernetes.Interface
+	namespace string
 	log *logrus.Entry
 
 	//config Config
@@ -52,6 +53,7 @@ type CustomerRegionRuntime struct {
 func New(
 	crg spec.CustomerRegion,
 	kubeApi kubernetes.Interface,
+	namespace string,
 ) *CustomerRegionRuntime {
 
 	lg := logrus.WithField("pkg","custregion",
@@ -64,6 +66,7 @@ func New(
 		eventCh:     make(chan custRegRscEvent, 100),
 		stopCh:      make(chan struct{}),
 		status:      crg.Status.Copy(),
+		namespace: namespace,
 	}
 
 	if err := c.setup(); err != nil {
@@ -112,7 +115,8 @@ func (c *CustomerRegionRuntime) updateCRStatus() error {
 	newCrg := c.crg
 	newCrg.Status = c.status
 	newCrg, err := k8sutil.UpdateCustomerRegionCustRsc(
-		c.kubeApi.CoreV1().RESTClient(), 
+		c.kubeApi.CoreV1().RESTClient(),
+		c.namespace,
 		newCrg)
 	if err != nil {
 		return fmt.Errorf("failed to update crg status: %v", err)
