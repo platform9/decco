@@ -170,8 +170,17 @@ func (c *Controller) Run() error {
 		"with %d custregion runtimes and initial watch version: %s",
 		c.namespace, len(c.crInfo), watchVersion)
 	probe.SetReady()
-	err = c.watch(watchVersion, restClnt.Client)
+	err = c.watch(watchVersion, restClnt.Client, c.collectGarbage)
 	return err
+}
+
+// ----------------------------------------------------------------------------
+
+func (c *Controller) collectGarbage() {
+	custregion.Collect(c.kubeApi, c.log, func(name string) bool {
+		_, ok := c.crInfo[name]
+		return ok
+	})
 }
 
 // ----------------------------------------------------------------------------
@@ -180,9 +189,14 @@ func (c *Controller) Run() error {
 // the given watch version. It emits events on the resources through the returned
 // event chan. Errors will be reported through the returned error chan. The go routine
 // exits on any error.
-func (c *Controller) watch(watchVersion string, httpClient *http.Client) error {
+func (c *Controller) watch(
+	watchVersion string,
+	httpClient *http.Client,
+	periodicCallback func(),
+) error {
 
 	for {
+		periodicCallback()
 		resp, err := k8sutil.WatchCustomerRegions(
 			c.apiHost,
 			c.namespace,
@@ -221,8 +235,8 @@ func (c *Controller) processWatchResponse(
 		ev, st, err := pollEvent(decoder)
 		if err != nil {
 			if err == io.EOF { // apiserver will close stream periodically
-				c.log.Info("apiserver closed watch stream, retrying after 5s...")
-				time.Sleep(5 * time.Second)
+				c.log.Info("apiserver closed watch stream, retrying after 2s...")
+				time.Sleep(2 * time.Second)
 				return nextWatchVersion, nil
 			}
 			c.log.Errorf("received invalid event from watch API: %v", err)
