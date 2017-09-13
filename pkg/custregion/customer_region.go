@@ -44,8 +44,6 @@ type CustomerRegionRuntime struct {
 	// in memory state of the custRegRsc
 	// status is the source of truth after CustomerRegionRuntime struct is materialized.
 	status spec.CustomerRegionStatus
-	eventCh chan custRegRscEvent
-	stopCh  chan struct{}
 }
 
 // -----------------------------------------------------------------------------
@@ -63,8 +61,6 @@ func New(
 		kubeApi:  kubeApi,
 		log:      lg,
 		crg:      crg,
-		eventCh:     make(chan custRegRscEvent, 100),
-		stopCh:      make(chan struct{}),
 		status:      crg.Status.Copy(),
 		namespace: namespace,
 	}
@@ -86,22 +82,15 @@ func New(
 // -----------------------------------------------------------------------------
 
 func (c *CustomerRegionRuntime) Update(crg spec.CustomerRegion) {
-	c.send(custRegRscEvent{
-		typ:     eventModifyCustomerRegion,
-		custRegRsc: crg,
-	})
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) send(ev custRegRscEvent) {
-	select {
-	case c.eventCh <- ev:
-		l, ecap := len(c.eventCh), cap(c.eventCh)
-		if l > int(float64(ecap)*0.8) {
-			c.log.Warningf("eventCh buffer is almost full [%d/%d]", l, ecap)
-		}
-	case <-c.stopCh:
+func (c *CustomerRegionRuntime) Delete() {
+	nsApi := c.kubeApi.CoreV1().Namespaces()
+	err := nsApi.Delete(c.crg.Name, nil)
+	if err != nil {
+		c.log.Warn("failed to delete namespace %s: ", err.Error())
 	}
 }
 

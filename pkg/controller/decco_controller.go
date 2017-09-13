@@ -304,6 +304,7 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 			return fmt.Errorf("unsafe state. custReg (%s) was never " +
 				"created but we received event (%s)", crg.Name, event.Type)
 		}
+		c.crInfo[crg.Name].custRegion.Delete()
 		delete(c.crInfo, crg.Name)
 		c.log.Printf("customer region (%s) deleted. There are now %d",
 			crg.Name, len(c.crInfo))
