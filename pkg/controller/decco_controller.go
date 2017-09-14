@@ -185,10 +185,6 @@ func (c *Controller) collectGarbage() {
 
 // ----------------------------------------------------------------------------
 
-// watch creates a go routine, and watches the customer region resources from
-// the given watch version. It emits events on the resources through the returned
-// event chan. Errors will be reported through the returned error chan. The go routine
-// exits on any error.
 func (c *Controller) watch(
 	watchVersion string,
 	httpClient *http.Client,
