@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 type custRegRscEventType string
@@ -181,7 +182,26 @@ func (c *CustomerRegionRuntime) create() error {
 		}
 		return err
 	}
-
+	err = c.createDefaultHttpDeploy()
+	if err != nil {
+		c.log.Warn("failed to create default http deployment for custreg %s: %s",
+			c.crg.Name, err.Error())
+		c.status.SetPhase(spec.CustomerRegionPhaseFailed)
+		if err2 := c.updateCRStatus(); err2 != nil {
+			return c.phaseUpdateError("crg create", err2)
+		}
+		return err
+	}
+	err = c.createDefaultHttpSvc()
+	if err != nil {
+		c.log.Warn("failed to create default http svc for custreg %s: %s",
+			c.crg.Name, err.Error())
+		c.status.SetPhase(spec.CustomerRegionPhaseFailed)
+		if err2 := c.updateCRStatus(); err2 != nil {
+			return c.phaseUpdateError("crg create", err2)
+		}
+		return err
+	}
 	c.status.SetPhase(spec.CustomerRegionPhaseActive)
 	if err := c.updateCRStatus(); err != nil {
 		return fmt.Errorf(
@@ -247,7 +267,7 @@ func (c *CustomerRegionRuntime) createHttpIngress() error {
 								{
 									Path: "/",
 									Backend: v1beta1.IngressBackend{
-										ServiceName: "dummy",
+										ServiceName: "default-http",
 										ServicePort: intstr.IntOrString {
 											Type: intstr.Int,
 											IntVal: 80,
@@ -273,5 +293,112 @@ func (c *CustomerRegionRuntime) createHttpIngress() error {
 	return err
 }
 
+// -----------------------------------------------------------------------------
 
+func (c *CustomerRegionRuntime) createDefaultHttpDeploy() error {
+	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.crg.Name)
+	_, err := depApi.Create(&v1beta1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "default-http",
+			Labels: map[string]string {
+				"app": "decco",
+			},
+		},
+		Spec: v1beta1.DeploymentSpec{
+			Replicas: nil,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string {
+					"app": "default-http",
+				},
+			},
+			Template: v1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta {
+					Name: "default-http",
+					Labels: map[string]string {
+						"app": "default-http",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container {
+						{
+							Name: "default-http",
+							Image: "platform9systems/decco-default-http",
+							Env: []v1.EnvVar{
+								{
+									Name: "MY_POD_NAMESPACE",
+									ValueFrom: &v1.EnvVarSource{
+										FieldRef: &v1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+							},
+							LivenessProbe: &v1.Probe{
+								Handler: v1.Handler {
+									HTTPGet: &v1.HTTPGetAction{
+										Path: "/healthz",
+										Port: intstr.IntOrString {
+											Type: intstr.Int,
+											IntVal: 8081,
+										},
+										Scheme: "HTTP",
+									},
+								},
+								InitialDelaySeconds: 30,
+								TimeoutSeconds: 5,
+							},
+							Ports: []v1.ContainerPort {
+								{ ContainerPort: 8081 },
+							},
+							Resources: v1.ResourceRequirements {
+								Limits: v1.ResourceList{
+									"cpu": resource.Quantity{
+										Format: "10m",
+									},
+									"memory": resource.Quantity{
+										Format: "20Mi",
+									},
+								},
+								Requests: v1.ResourceList{
+									"cpu": resource.Quantity{
+										Format: "10m",
+									},
+									"memory": resource.Quantity{
+										Format: "20Mi",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+	return err
+}
 
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) createDefaultHttpSvc() error {
+	svcApi := c.kubeApi.CoreV1().Services(c.crg.Name)
+	_, err := svcApi.Create(&v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "default-http",
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{
+				{
+					Port: 80,
+					TargetPort: intstr.IntOrString {
+						Type: intstr.Int,
+						IntVal: 8081,
+					},
+				},
+			},
+			Selector: map[string]string {
+				"app": "default-http",
+			},
+		},
+	})
+	return err
+}

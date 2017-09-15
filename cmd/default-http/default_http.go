@@ -8,10 +8,14 @@ import (
 	"strconv"
 )
 
-var namespace = os.Getenv("POD_NAMESPACE")
+var namespace = os.Getenv("MY_POD_NAMESPACE")
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(404)
+	status := 404
+	if r.URL.Path == "/healthz" {
+		status = 200
+	}
+	w.WriteHeader(status)
 	fmt.Fprintf(w, "Wrong URL path. This is the default handler for %s\n",
 		namespace)
 }
