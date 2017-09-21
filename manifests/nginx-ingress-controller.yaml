@@ -13,7 +13,7 @@ spec:
         prometheus.io/port: "10254"
         prometheus.io/scrape: "true"
       labels:
-        k8s-app: nginx-ingress-controller
+        k8s-app: nginx-ingress
     spec:
       serviceAccountName: nginx-ingress
       containers:

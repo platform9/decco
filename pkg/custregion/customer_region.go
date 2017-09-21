@@ -161,45 +161,7 @@ func (c *CustomerRegionRuntime) create() error {
 	if err := c.updateCRStatus(); err != nil {
 		return c.phaseUpdateError("crg create", err)
 	}
-	c.logCreation()
-	err := c.createNamespace()
-	if err != nil {
-		c.log.Warn("failed to create namespace for custreg %s: %s",
-			c.crg.Name, err.Error())
-		c.status.SetPhase(spec.CustomerRegionPhaseFailed)
-		if err2 := c.updateCRStatus(); err2 != nil {
-			return c.phaseUpdateError("crg create", err2)
-		}
-		return err
-	}
-	err = c.createHttpIngress()
-	if err != nil {
-		c.log.Warn("failed to create http ingress for custreg %s: %s",
-			c.crg.Name, err.Error())
-		c.status.SetPhase(spec.CustomerRegionPhaseFailed)
-		if err2 := c.updateCRStatus(); err2 != nil {
-			return c.phaseUpdateError("crg create", err2)
-		}
-		return err
-	}
-	err = c.createDefaultHttpDeploy()
-	if err != nil {
-		c.log.Warn("failed to create default http deployment for custreg %s: %s",
-			c.crg.Name, err.Error())
-		c.status.SetPhase(spec.CustomerRegionPhaseFailed)
-		if err2 := c.updateCRStatus(); err2 != nil {
-			return c.phaseUpdateError("crg create", err2)
-		}
-		return err
-	}
-	err = c.createDefaultHttpSvc()
-	if err != nil {
-		c.log.Warn("failed to create default http svc for custreg %s: %s",
-			c.crg.Name, err.Error())
-		c.status.SetPhase(spec.CustomerRegionPhaseFailed)
-		if err2 := c.updateCRStatus(); err2 != nil {
-			return c.phaseUpdateError("crg create", err2)
-		}
+	if err := c.internalCreate(); err != nil {
 		return err
 	}
 	c.status.SetPhase(spec.CustomerRegionPhaseActive)
@@ -211,6 +173,38 @@ func (c *CustomerRegionRuntime) create() error {
 		)
 	}
 	c.log.Infof("customer region is now active")
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) internalCreate() error {
+	certSecret, err := c.getHttpCert()
+	if err != nil {
+		return fmt.Errorf("failed to read http cert: %s", err)
+	}
+	if err = c.createNamespace(); err != nil {
+		return fmt.Errorf("failed to create namespace: %s", err)
+	}
+	newCertSecret := v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: certSecret.Name,
+		},
+		Data: certSecret.Data,
+		StringData: certSecret.StringData,
+	}
+	if err = c.saveHttpCert(&newCertSecret); err != nil {
+		return fmt.Errorf("failed to save http cert: %s", err)
+	}
+	if err = c.createHttpIngress(); err != nil {
+		return fmt.Errorf("failed to create http ingress: %s", err)
+	}
+	if err = c.createDefaultHttpDeploy(); err != nil {
+		return fmt.Errorf("failed to create default http dep: %s", err)
+	}
+	if err = c.createDefaultHttpSvc(); err != nil {
+		return fmt.Errorf("failed to create default http svc: %s", err)
+	}
 	return nil
 }
 
@@ -400,5 +394,20 @@ func (c *CustomerRegionRuntime) createDefaultHttpSvc() error {
 			},
 		},
 	})
+	return err
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) getHttpCert() (*v1.Secret, error) {
+	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
+	return secrApi.Get(c.crg.Spec.CertSecretName, metav1.GetOptions{})
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) saveHttpCert(s *v1.Secret) error {
+	secrApi := c.kubeApi.CoreV1().Secrets(c.crg.Name)
+	_, err := secrApi.Create(s)
 	return err
 }

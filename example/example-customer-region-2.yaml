@@ -6,7 +6,7 @@ metadata:
 spec:
   size: 2
   version: "3.1.5"
-  domainName: foo.bar.com
+  domainName: platform9.horse
   certAuthoritySecretName: dummy
-  certSecretName: dummy
+  certSecretName: pf9-horse-secret
 
