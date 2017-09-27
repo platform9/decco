@@ -99,7 +99,7 @@ func (ctl *Controller) findAllCustomerRegions() (string, error) {
 		crg := crgList.Items[i]
 
 		if crg.Status.IsFailed() {
-			ctl.log.Infof("ignore failed custreg %s." +
+			ctl.log.Warnf("ignore failed custreg %s." +
 				" Please delete its custom resource", crg.Name)
 			continue
 		}
@@ -273,18 +273,24 @@ func (c *Controller) processWatchResponse(
 
 // ----------------------------------------------------------------------------
 
+func (c *Controller) deleteRuntime(name string) {
+	if crInfo, ok := c.crInfo[name]; ok {
+		close(crInfo.stopAppCh)
+		delete(c.crInfo, name)
+	}
+}
+
+// ----------------------------------------------------------------------------
+
 func (c *Controller) handleCustRegEvent(event *Event) error {
 	crg := event.Object
 
 	if crg.Status.IsFailed() {
+		c.deleteRuntime(crg.Name)
 		if event.Type == kwatch.Deleted {
-			if crInfo, ok := c.crInfo[crg.Name]; ok {
-				close(crInfo.stopAppCh)
-				delete(c.crInfo, crg.Name)
-			}
 			return ErrVersionOutdated
 		}
-		c.log.Errorf("ignore failed custreg %s. Please delete its CR",
+		c.log.Warnf("ignore failed custreg %s. Please delete its CR",
 			crg.Name)
 		return nil
 	}
@@ -329,8 +335,7 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 				"created but we received event (%s)", crg.Name, event.Type)
 		}
 		c.crInfo[crg.Name].custRegion.Delete()
-		close(c.crInfo[crg.Name].stopAppCh)
-		delete(c.crInfo, crg.Name)
+		c.deleteRuntime(crg.Name)
 		c.log.Printf("customer region (%s) deleted. There are now %d",
 			crg.Name, len(c.crInfo))
 		return ErrVersionOutdated

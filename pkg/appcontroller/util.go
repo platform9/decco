@@ -20,17 +20,38 @@ import (
 	"fmt"
 	"io"
 	"time"
-
 	spec "github.com/platform9/decco/pkg/appspec"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kwatch "k8s.io/apimachinery/pkg/watch"
 )
+
+// ----------------------------------------------------------------------------
+
+type eventChunk struct {
+	ev *Event
+	st *metav1.Status
+	err error
+}
+
+// ----------------------------------------------------------------------------
+
+func decodeOneChunk(decoder *json.Decoder) <- chan eventChunk {
+	evChan := make(chan eventChunk, 1)
+	go func() {
+		ev, st, err := pollEvent(decoder)
+		evChan <- eventChunk{ev, st, err}
+	} ()
+	return evChan
+}
+
+// ----------------------------------------------------------------------------
 
 type rawEvent struct {
 	Type   kwatch.EventType
 	Object json.RawMessage
 }
+
+// ----------------------------------------------------------------------------
 
 func pollEvent(decoder *json.Decoder) (*Event, *metav1.Status, error) {
 	re := &rawEvent{}

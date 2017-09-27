@@ -1,0 +1,6 @@
+REVIEWBOARD_URL = 'https://rbcommons.com/s/platform9/'
+REPOSITORY = 'decco'
+GUESS_DESCRIPTION = True
+GUESS_SUMMARY = True
+TARGET_GROUPS = 'platform9'
+TRACKING_BRANCH = 'origin/master'

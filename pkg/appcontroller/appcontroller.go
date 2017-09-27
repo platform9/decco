@@ -230,11 +230,6 @@ func (c *Controller) watch(
 ) error {
 
 	for {
-		select {
-		case <- c.stopCh:
-			return ErrTerminated
-		default:
-		}
 		periodicCallback()
 		resp, err := k8sutil.WatchApps(
 			c.apiHost,
@@ -271,7 +266,13 @@ func (c *Controller) processWatchResponse(
 
 	decoder := json.NewDecoder(resp.Body)
 	for {
-		ev, st, err := pollEvent(decoder)
+		var chunk eventChunk
+		select {
+		case <- c.stopCh:
+			return "", ErrTerminated
+		case chunk = <- decodeOneChunk(decoder):
+		}
+		ev, st, err := chunk.ev, chunk.st, chunk.err
 		if err != nil {
 			if err == io.EOF { // apiserver will close stream periodically
 				c.log.Info("apiserver closed watch stream, retrying after 2s...")
