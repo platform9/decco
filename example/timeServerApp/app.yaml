@@ -1,0 +1,11 @@
+apiVersion: "decco.platform9.com/v1beta2"
+kind: "App"
+metadata:
+  name: "timeserver"
+spec:
+  httpUrlPath: "/timeserver"
+  container:
+    name: nginx
+    image: nginx
+    ports:
+    - containerPort: 80

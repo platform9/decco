@@ -16,7 +16,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package controller
+package appcontroller
 
 import (
 	"io"
@@ -28,12 +28,11 @@ import (
 	kwatch "k8s.io/apimachinery/pkg/watch"
 	"fmt"
 	"k8s.io/client-go/kubernetes"
-	"github.com/platform9/decco/pkg/custregion"
+	"github.com/platform9/decco/pkg/app"
 	"time"
 	"net/http"
-	"github.com/platform9/decco/pkg/spec"
+	"github.com/platform9/decco/pkg/appspec"
 	"github.com/platform9/decco/pkg/client"
-	"github.com/platform9/decco/pkg/appcontroller"
 	"sync"
 )
 
@@ -41,93 +40,126 @@ var (
 	initRetryWaitTime = 30 * time.Second
 	ErrVersionOutdated = errors.New("(not a true error) watch needs to be " +
 		"restarted to refresh resource version after a DELETED event")
+	ErrTerminated = errors.New("gracefully terminated")
 )
 
 
 func init() {
-	logrus.Println("controller package initialized")
+	logrus.Println("appcontroller package initialized")
 }
 
 type Event struct {
 	Type   kwatch.EventType
-	Object *spec.CustomerRegion
+	Object *appspec.App
 }
 
 type Controller struct {
-	log *logrus.Entry
-	apiHost string
+	log           *logrus.Entry
+	apiHost       string
 	extensionsApi apiextensionsclient.Interface
-	kubeApi kubernetes.Interface
-	crInfo map[string] CustRegionInfo
-	namespace string
-	waitApps sync.WaitGroup
+	kubeApi       kubernetes.Interface
+	appInfo       map[string] AppInfo
+	namespace     string
+	stopCh chan interface{}
 }
 
-type CustRegionInfo struct {
-	custRegion *custregion.CustomerRegionRuntime
+type AppInfo struct {
+	app *app.AppRuntime
 	rscVersion *string
-	stopAppCh chan interface{}
 }
 
 // ----------------------------------------------------------------------------
 
-func New(namespace string) *Controller {
+func StartAppControllerLoop(
+	log *logrus.Entry,
+	namespace string,
+	stopCh chan interface{},
+	wg *sync.WaitGroup,
+) {
+	wg.Add(1)
+	go func () {
+		defer wg.Done()
+		for {
+			c := New(namespace, stopCh)
+			err := c.Run()
+			switch err {
+			case ErrTerminated:
+				log.Infof("app controller for %s gracefully terminated",
+					namespace)
+				return
+			case ErrVersionOutdated:
+				log.Infof("restarting app controller for %s " + 
+					"due to ErrVersionOutdated", namespace)
+			default:
+				log.Fatalf("app controller for %s failed: %v",
+					namespace, err)
+			}
+		}
+	}()
+}
+
+// ----------------------------------------------------------------------------
+
+func New(
+	namespace string,
+	stopCh chan interface{},
+) *Controller {
 	clustConfig := k8sutil.GetClusterConfigOrDie()
-	logger := logrus.WithField("pkg", "controller")
+	logger := logrus.WithFields(logrus.Fields{
+		"pkg": "appcontroller",
+		"namespace": namespace,
+	})
 	logger.Logger.SetLevel(logrus.DebugLevel)
 	return &Controller{
-		log: logger,
-		apiHost: clustConfig.Host,
+		log:           logger,
+		apiHost:       clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
-		kubeApi: kubernetes.NewForConfigOrDie(clustConfig),
-		crInfo: make(map[string] CustRegionInfo),
-		namespace: namespace,
+		kubeApi:       kubernetes.NewForConfigOrDie(clustConfig),
+		appInfo:       make(map[string] AppInfo),
+		namespace:     namespace,
+		stopCh:        stopCh,
 	}
 }
 
 // ----------------------------------------------------------------------------
 
-func (ctl *Controller) findAllCustomerRegions() (string, error) {
-	ctl.log.Info("finding existing customerRegions...")
-	crgList, err := k8sutil.GetCustomerRegionList(
+func (ctl *Controller) findAllApps() (string, error) {
+	ctl.log.Info("finding existing apps ...")
+	appList, err := k8sutil.GetAppList(
 		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
 	if err != nil {
 		return "", err
 	}
 
-	for i := range crgList.Items {
-		crg := crgList.Items[i]
+	for i := range appList.Items {
+		a := appList.Items[i]
 
-		if crg.Status.IsFailed() {
-			ctl.log.Infof("ignore failed custreg %s." +
-				" Please delete its custom resource", crg.Name)
+		if a.Status.IsFailed() {
+			ctl.log.Infof("ignore failed app %s." +
+				" Please delete its custom resource", a.Name)
 			continue
 		}
 
-		crg.Spec.Cleanup()
-		initialRV := crg.ResourceVersion
-		newCr := custregion.New(crg, ctl.kubeApi, ctl.namespace)
-		stopAppCh := make(chan interface{})
-		ctl.crInfo[crg.Name] = CustRegionInfo{
-			custRegion: newCr,
+		a.Spec.Cleanup()
+		initialRV := a.ResourceVersion
+		newCr := app.New(a, ctl.kubeApi, ctl.namespace)
+		ctl.appInfo[a.Name] = AppInfo{
+			app: newCr,
 			rscVersion: &initialRV,
-			stopAppCh: stopAppCh,
 		}
-		appcontroller.StartAppControllerLoop(ctl.log, crg.Name,
-			stopAppCh, &ctl.waitApps)
 	}
 
-	return crgList.ResourceVersion, nil
+	return appList.ResourceVersion, nil
 }
 
 // ----------------------------------------------------------------------------
 
 func (c *Controller) initCRD() error {
-	err := k8sutil.CreateCRD(c.extensionsApi)
+	err := k8sutil.CreateAppCRD(c.extensionsApi)
 	if err != nil {
 		return err
 	}
-	return k8sutil.WaitCRDReady(c.extensionsApi)
+	return k8sutil.WaitAppCRDReady(c.extensionsApi)
 }
 
 // ----------------------------------------------------------------------------
@@ -137,8 +169,8 @@ func (c *Controller) initResource() (string, error) {
 	err := c.initCRD()
 	if err != nil {
 		if k8sutil.IsKubernetesResourceAlreadyExistError(err) {
-			// CRD has been initialized before. We need to recover existing customer regions.
-			watchVersion, err = c.findAllCustomerRegions()
+			// CRD has been initialized before. We need to recover existing apps.
+			watchVersion, err = c.findAllApps()
 			if err != nil {
 				return "", err
 			}
@@ -173,16 +205,9 @@ func (c *Controller) Run() error {
 		// todo: add max retry?
 	}
 
-	defer func() {
-		for _, crInfo := range c.crInfo {
-			close(crInfo.stopAppCh)
-		}
-		c.waitApps.Wait()
-	}()
-
-	c.log.Infof("controller started in namespace %s " +
-		"with %d custregion runtimes and initial watch version: %s",
-		c.namespace, len(c.crInfo), watchVersion)
+	c.log.Infof("app controller started in namespace %s " +
+		"with %d app runtimes and initial watch version: %s",
+		c.namespace, len(c.appInfo), watchVersion)
 	err = c.watch(watchVersion, restClnt.Client, c.collectGarbage)
 	return err
 }
@@ -190,8 +215,8 @@ func (c *Controller) Run() error {
 // ----------------------------------------------------------------------------
 
 func (c *Controller) collectGarbage() {
-	custregion.Collect(c.kubeApi, c.log, func(name string) bool {
-		_, ok := c.crInfo[name]
+	app.Collect(c.kubeApi, c.log, c.namespace, func(name string) bool {
+		_, ok := c.appInfo[name]
 		return ok
 	})
 }
@@ -205,8 +230,13 @@ func (c *Controller) watch(
 ) error {
 
 	for {
+		select {
+		case <- c.stopCh:
+			return ErrTerminated
+		default:
+		}
 		periodicCallback()
-		resp, err := k8sutil.WatchCustomerRegions(
+		resp, err := k8sutil.WatchApps(
 			c.apiHost,
 			c.namespace,
 			httpClient,
@@ -257,14 +287,14 @@ func (c *Controller) processWatchResponse(
 			return "", err
 		}
 
-		c.log.Debugf("customer region event: %v %v",
+		c.log.Debugf("app event: %v %v",
 			ev.Type,
 			ev.Object,
 		)
 
 		nextWatchVersion = ev.Object.ResourceVersion
 		logrus.Infof("next watch version: %s", nextWatchVersion)
-		if err := c.handleCustRegEvent(ev); err != nil {
+		if err := c.handleAppEvent(ev); err != nil {
 			c.log.Warningf("event handler returned possible error: %v", err)
 			return "", err
 		}
@@ -273,66 +303,58 @@ func (c *Controller) processWatchResponse(
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) handleCustRegEvent(event *Event) error {
-	crg := event.Object
+func (c *Controller) handleAppEvent(event *Event) error {
+	a := event.Object
 
-	if crg.Status.IsFailed() {
+	if a.Status.IsFailed() {
+		// appsFailed.Inc()
 		if event.Type == kwatch.Deleted {
-			if crInfo, ok := c.crInfo[crg.Name]; ok {
-				close(crInfo.stopAppCh)
-				delete(c.crInfo, crg.Name)
-			}
+			delete(c.appInfo, a.Name)
 			return ErrVersionOutdated
 		}
-		c.log.Errorf("ignore failed custreg %s. Please delete its CR",
-			crg.Name)
+		c.log.Errorf("ignore failed a %s. Please delete its CR",
+			a.Name)
 		return nil
 	}
 
-	// TODO: add validation to spec update.
-	crg.Spec.Cleanup()
+	// TODO: add validation to appspec update.
+	a.Spec.Cleanup()
 
 	switch event.Type {
 	case kwatch.Added:
-		if _, ok := c.crInfo[crg.Name]; ok {
-			return fmt.Errorf("unsafe state. custReg (%s) was created" +
-				" before but we received event (%s)", crg.Name, event.Type)
+		if _, ok := c.appInfo[a.Name]; ok {
+			return fmt.Errorf("unsafe state. a (%s) was created" +
+				" before but we received event (%s)", a.Name, event.Type)
 		}
 
-		newCustReg := custregion.New(*crg, c.kubeApi, c.namespace)
-		initialRV := crg.ResourceVersion
-		stopAppCh := make(chan interface{})
-		c.crInfo[crg.Name] = CustRegionInfo{
-			custRegion: newCustReg,
+		newApp := app.New(*a, c.kubeApi, c.namespace)
+		initialRV := a.ResourceVersion
+		c.appInfo[a.Name] = AppInfo{
+			app: newApp,
 			rscVersion: &initialRV,
-			stopAppCh: stopAppCh,
 		}
-		appcontroller.StartAppControllerLoop(c.log, crg.Name,
-			stopAppCh, &c.waitApps)
-
-		c.log.Printf("customer region (%s) added. There are now %d",
-			crg.Name, len(c.crInfo))
+		c.log.Printf("app (%s) added. There are now %d",
+			a.Name, len(c.appInfo))
 
 	case kwatch.Modified:
-		if _, ok := c.crInfo[crg.Name]; !ok {
-			return fmt.Errorf("unsafe state. custReg (%s) was never" +
-				" created but we received event (%s)", crg.Name, event.Type)
+		if _, ok := c.appInfo[a.Name]; !ok {
+			return fmt.Errorf("unsafe state. a (%s) was never" +
+				" created but we received event (%s)", a.Name, event.Type)
 		}
-		c.crInfo[crg.Name].custRegion.Update(*crg)
-		*(c.crInfo[crg.Name].rscVersion) = crg.ResourceVersion
-		c.log.Printf("customer region (%s) modified. There are now %d",
-			crg.Name, len(c.crInfo))
+		c.appInfo[a.Name].app.Update(*a)
+		*(c.appInfo[a.Name].rscVersion) = a.ResourceVersion
+		c.log.Printf("app (%s) modified. There are now %d",
+			a.Name, len(c.appInfo))
 
 	case kwatch.Deleted:
-		if _, ok := c.crInfo[crg.Name]; !ok {
-			return fmt.Errorf("unsafe state. custReg (%s) was never " +
-				"created but we received event (%s)", crg.Name, event.Type)
+		if _, ok := c.appInfo[a.Name]; !ok {
+			return fmt.Errorf("unsafe state. a (%s) was never " +
+				"created but we received event (%s)", a.Name, event.Type)
 		}
-		c.crInfo[crg.Name].custRegion.Delete()
-		close(c.crInfo[crg.Name].stopAppCh)
-		delete(c.crInfo, crg.Name)
-		c.log.Printf("customer region (%s) deleted. There are now %d",
-			crg.Name, len(c.crInfo))
+		c.appInfo[a.Name].app.Delete()
+		delete(c.appInfo, a.Name)
+		c.log.Printf("app (%s) deleted. There are now %d",
+			a.Name, len(c.appInfo))
 		return ErrVersionOutdated
 	}
 	return nil
