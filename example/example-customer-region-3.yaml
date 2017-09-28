@@ -8,5 +8,5 @@ spec:
   version: "3.1.5"
   domainName: foo.bar.com
   certAuthoritySecretName: dummy
-  certSecretName: dummy
+  certSecretName: pf9-horse-secret
 
