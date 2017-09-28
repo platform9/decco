@@ -91,8 +91,9 @@ func StartAppControllerLoop(
 				log.Infof("restarting app controller for %s " + 
 					"due to ErrVersionOutdated", namespace)
 			default:
-				log.Fatalf("app controller for %s failed: %v",
+				log.Warnf("restarting app controller for %s due to: %v",
 					namespace, err)
+				time.Sleep(2 * time.Second)
 			}
 		}
 	}()
@@ -334,7 +335,7 @@ func (c *Controller) handleAppEvent(event *Event) error {
 			app: newApp,
 			rscVersion: &initialRV,
 		}
-		c.log.Printf("app (%s) added. There are now %d",
+		c.log.Printf("app (%s) added. There are now %d apps",
 			a.Name, len(c.appInfo))
 
 	case kwatch.Modified:
@@ -344,7 +345,7 @@ func (c *Controller) handleAppEvent(event *Event) error {
 		}
 		c.appInfo[a.Name].app.Update(*a)
 		*(c.appInfo[a.Name].rscVersion) = a.ResourceVersion
-		c.log.Printf("app (%s) modified. There are now %d",
+		c.log.Printf("app (%s) modified. There are now %d apps",
 			a.Name, len(c.appInfo))
 
 	case kwatch.Deleted:
@@ -354,7 +355,7 @@ func (c *Controller) handleAppEvent(event *Event) error {
 		}
 		c.appInfo[a.Name].app.Delete()
 		delete(c.appInfo, a.Name)
-		c.log.Printf("app (%s) deleted. There are now %d",
+		c.log.Printf("app (%s) deleted. There are now %d apps",
 			a.Name, len(c.appInfo))
 		return ErrVersionOutdated
 	}

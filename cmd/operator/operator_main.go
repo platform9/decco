@@ -22,6 +22,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/platform9/decco/pkg/controller"
 	"os"
+	"time"
 )
 
 func main() {
@@ -39,7 +40,8 @@ func main() {
 		case controller.ErrVersionOutdated:
 			log.Infof("restarting controller due to ErrVersionOutdated")
 		default:
-			log.Fatalf("controller Run() ended with failure: %v", err)
+			log.Warnf("restarting controller due to: %v", err)
+			time.Sleep(2 * time.Second)
 		}
 	}
 }

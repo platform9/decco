@@ -316,8 +316,8 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 		appcontroller.StartAppControllerLoop(c.log, crg.Name,
 			stopAppCh, &c.waitApps)
 
-		c.log.Printf("customer region (%s) added. There are now %d",
-			crg.Name, len(c.crInfo))
+		c.log.Printf("customer region (%s) added. " +
+			"There now %d customer regions", crg.Name, len(c.crInfo))
 
 	case kwatch.Modified:
 		if _, ok := c.crInfo[crg.Name]; !ok {
@@ -326,8 +326,8 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 		}
 		c.crInfo[crg.Name].custRegion.Update(*crg)
 		*(c.crInfo[crg.Name].rscVersion) = crg.ResourceVersion
-		c.log.Printf("customer region (%s) modified. There are now %d",
-			crg.Name, len(c.crInfo))
+		c.log.Printf("customer region (%s) modified. " +
+			"There now %d customer regions", crg.Name, len(c.crInfo))
 
 	case kwatch.Deleted:
 		if _, ok := c.crInfo[crg.Name]; !ok {
@@ -336,8 +336,8 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 		}
 		c.crInfo[crg.Name].custRegion.Delete()
 		c.deleteRuntime(crg.Name)
-		c.log.Printf("customer region (%s) deleted. There are now %d",
-			crg.Name, len(c.crInfo))
+		c.log.Printf("customer region (%s) deleted. " +
+			"There now %d customer regions", crg.Name, len(c.crInfo))
 		return ErrVersionOutdated
 	}
 	return nil

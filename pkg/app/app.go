@@ -176,7 +176,7 @@ func (c *AppRuntime) create() error {
 			err,
 		)
 	}
-	c.log.Infof("customer region is now active")
+	c.log.Infof("app is now active")
 	return nil
 }
 
