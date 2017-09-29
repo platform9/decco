@@ -28,6 +28,7 @@ const (
 var (
 	ErrContainerMissing = errors.New("spec: missing container")
 	ErrContainerInvalidPorts = errors.New("spec: container must declare exactly one port")
+	ErrInvalidUrlPath = errors.New("spec: invalid url path")
 )
 
 // AppList is a list of apps.
@@ -76,6 +77,9 @@ func (c *AppSpec) Validate() error {
 	}
 	if len(c.ContainerSpec.Ports) != 1 {
 		return ErrContainerInvalidPorts
+	}
+	if c.HttpUrlPath == "/" {
+		return ErrInvalidUrlPath
 	}
 	return nil
 }

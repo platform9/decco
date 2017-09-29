@@ -216,9 +216,19 @@ func (c *Controller) Run() error {
 // ----------------------------------------------------------------------------
 
 func (c *Controller) collectGarbage() {
+	knownUrlPaths := map[string] bool {}
+	for _, info := range c.appInfo {
+		urlPath := info.app.GetApp().Spec.HttpUrlPath
+		if len(urlPath) > 0 {
+			knownUrlPaths[urlPath] = true
+		}
+	}
+
 	app.Collect(c.kubeApi, c.log, c.namespace, func(name string) bool {
 		_, ok := c.appInfo[name]
 		return ok
+	}, func(urlPath string) bool {
+		return knownUrlPaths[urlPath]
 	})
 }
 

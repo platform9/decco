@@ -86,6 +86,12 @@ func (ar *AppRuntime) Update(app spec.App) {
 
 // -----------------------------------------------------------------------------
 
+func (ar *AppRuntime) GetApp() spec.App {
+	return ar.app
+}
+
+// -----------------------------------------------------------------------------
+
 func (ar *AppRuntime) Delete() {
 	err := ar.removePathFromHttpIngress()
 	if err != nil {
