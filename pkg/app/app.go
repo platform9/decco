@@ -57,7 +57,7 @@ func New(
 	lg := logrus.WithField("pkg","app",
 		).WithField("app", app.Name)
 
-	c := &AppRuntime{
+	ar := &AppRuntime{
 		kubeApi:  kubeApi,
 		log:      lg,
 		app:      app,
@@ -65,71 +65,75 @@ func New(
 		namespace: namespace,
 	}
 
-	if err := c.setup(); err != nil {
-		c.log.Errorf("app failed to setup: %v", err)
-		if c.status.Phase != spec.AppPhaseFailed {
-			c.status.SetReason(err.Error())
-			c.status.SetPhase(spec.AppPhaseFailed)
-			if err := c.updateCRStatus(); err != nil {
-				c.log.Errorf("failed to update app phase (%v): %v",
+	if err := ar.setup(); err != nil {
+		ar.log.Errorf("app failed to setup: %v", err)
+		if ar.status.Phase != spec.AppPhaseFailed {
+			ar.status.SetReason(err.Error())
+			ar.status.SetPhase(spec.AppPhaseFailed)
+			if err := ar.updateCRStatus(); err != nil {
+				ar.log.Errorf("failed to update app phase (%v): %v",
 					spec.AppPhaseFailed, err)
 			}
 		}
 	}
-	return c
+	return ar
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *AppRuntime) Update(app spec.App) {
+func (ar *AppRuntime) Update(app spec.App) {
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *AppRuntime) Delete() {
-	deployApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.namespace)
-	err := deployApi.Delete(c.app.Name, nil)
+func (ar *AppRuntime) Delete() {
+	err := ar.removePathFromHttpIngress()
 	if err != nil {
-		c.log.Warn("failed to delete deployment %s: ", err.Error())
+		ar.log.Warn("failed to remove path from ingress: %s", err)
 	}
-	svcApi := c.kubeApi.CoreV1().Services(c.namespace)
-	err = svcApi.Delete(c.app.Name, nil)
+	deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
+	err = deployApi.Delete(ar.app.Name, nil)
 	if err != nil {
-		c.log.Warn("failed to delete service %s: ", err.Error())
+		ar.log.Warn("failed to delete deployment: %s", err)
+	}
+	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
+	err = svcApi.Delete(ar.app.Name, nil)
+	if err != nil {
+		ar.log.Warn("failed to delete service: %s", err)
 	}
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *AppRuntime) updateCRStatus() error {
-	if reflect.DeepEqual(c.app.Status, c.status) {
+func (ar *AppRuntime) updateCRStatus() error {
+	if reflect.DeepEqual(ar.app.Status, ar.status) {
 		return nil
 	}
 
-	newApp := c.app
-	newApp.Status = c.status
+	newApp := ar.app
+	newApp.Status = ar.status
 	newApp, err := k8sutil.UpdateAppCustRsc(
-		c.kubeApi.CoreV1().RESTClient(),
-		c.namespace,
+		ar.kubeApi.CoreV1().RESTClient(),
+		ar.namespace,
 		newApp)
 	if err != nil {
 		return fmt.Errorf("failed to update app status: %v", err)
 	}
 
-	c.app = newApp
+	ar.app = newApp
 	return nil
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *AppRuntime) setup() error {
-	err := c.app.Spec.Validate()
+func (ar *AppRuntime) setup() error {
+	err := ar.app.Spec.Validate()
 	if err != nil {
 		return err
 	}
 
 	var shouldCreateResources bool
-	switch c.status.Phase {
+	switch ar.status.Phase {
 	case spec.AppPhaseNone:
 		shouldCreateResources = true
 	case spec.AppPhaseCreating:
@@ -138,83 +142,86 @@ func (c *AppRuntime) setup() error {
 		shouldCreateResources = false
 
 	default:
-		return fmt.Errorf("unexpected app phase: %s", c.status.Phase)
+		return fmt.Errorf("unexpected app phase: %s", ar.status.Phase)
 	}
 
 	if shouldCreateResources {
-		return c.create()
+		return ar.create()
 	}
 	return nil
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *AppRuntime) phaseUpdateError(op string, err error) error {
+func (ar *AppRuntime) phaseUpdateError(op string, err error) error {
 	return fmt.Errorf(
 		"%s : failed to update app phase (%v): %v",
 		op,
-		c.status.Phase,
+		ar.status.Phase,
 		err,
 	)
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *AppRuntime) create() error {
-	c.status.SetPhase(spec.AppPhaseCreating)
-	if err := c.updateCRStatus(); err != nil {
-		return c.phaseUpdateError("app create", err)
+func (ar *AppRuntime) create() error {
+	ar.status.SetPhase(spec.AppPhaseCreating)
+	if err := ar.updateCRStatus(); err != nil {
+		return ar.phaseUpdateError("app create", err)
 	}
-	if err := c.internalCreate(); err != nil {
+	if err := ar.internalCreate(); err != nil {
 		return err
 	}
-	c.status.SetPhase(spec.AppPhaseActive)
-	if err := c.updateCRStatus(); err != nil {
+	ar.status.SetPhase(spec.AppPhaseActive)
+	if err := ar.updateCRStatus(); err != nil {
 		return fmt.Errorf(
 			"app create: failed to update app phase (%v): %v",
 			spec.AppPhaseActive,
 			err,
 		)
 	}
-	c.log.Infof("app is now active")
+	ar.log.Infof("app is now active")
 	return nil
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *AppRuntime) internalCreate() error {
-	if err := c.createSvc(); err != nil {
+func (ar *AppRuntime) internalCreate() error {
+	if err := ar.createSvc(); err != nil {
 		return fmt.Errorf("failed to create service: %s", err)
 	}
-	if err := c.createDeployment(); err != nil {
+	if err := ar.createDeployment(); err != nil {
 		return fmt.Errorf("failed to create deployment: %s", err)
+	}
+	if err := ar.addPathToHttpIngress(); err != nil {
+		return fmt.Errorf("failed to add path to http ingress: %s", err)
 	}
 	return nil
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *AppRuntime) logCreation() {
-	specBytes, err := json.MarshalIndent(c.app.Spec, "", "    ")
+func (ar *AppRuntime) logCreation() {
+	specBytes, err := json.MarshalIndent(ar.app.Spec, "", "    ")
 	if err != nil {
-		c.log.Errorf("failed to app spec: %v", err)
+		ar.log.Errorf("failed to app spec: %v", err)
 		return
 	}
 
-	c.log.Info("creating app with Spec:")
+	ar.log.Info("creating app with Spec:")
 	for _, m := range strings.Split(string(specBytes), "\n") {
-		c.log.Info(m)
+		ar.log.Info(m)
 	}
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *AppRuntime) createDeployment() error {
-	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.namespace)
+func (ar *AppRuntime) createDeployment() error {
+	depApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
 	var initialReplicas int32 = 0
 	_, err := depApi.Create(&v1beta1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: c.app.Name,
+			Name: ar.app.Name,
 			Labels: map[string]string {
 				"decco-derived-from": "app",
 			},
@@ -223,20 +230,20 @@ func (c *AppRuntime) createDeployment() error {
 			Replicas: &initialReplicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string {
-					"decco-app": c.app.Name,
+					"decco-app": ar.app.Name,
 				},
 			},
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta {
-					Name: c.app.Name,
+					Name: ar.app.Name,
 					Labels: map[string]string {
 						"app": "decco",
-						"decco-app": c.app.Name,
+						"decco-app": ar.app.Name,
 					},
 				},
 				Spec: v1.PodSpec{
 					Containers: []v1.Container {
-						c.app.Spec.ContainerSpec,
+						ar.app.Spec.ContainerSpec,
 					},
 				},
 			},
@@ -247,12 +254,12 @@ func (c *AppRuntime) createDeployment() error {
 
 // -----------------------------------------------------------------------------
 
-func (c *AppRuntime) createSvc() error {
-	port := c.app.Spec.ContainerSpec.Ports[0].ContainerPort
-	svcApi := c.kubeApi.CoreV1().Services(c.namespace)
+func (ar *AppRuntime) createSvc() error {
+	port := ar.app.Spec.ContainerSpec.Ports[0].ContainerPort
+	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
 	_, err := svcApi.Create(&v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: c.app.Name,
+			Name: ar.app.Name,
 			Labels: map[string]string {
 				"decco-derived-from": "app",
 			},
@@ -268,10 +275,84 @@ func (c *AppRuntime) createSvc() error {
 				},
 			},
 			Selector: map[string]string {
-				"decco-app": c.app.Name,
+				"decco-app": ar.app.Name,
 			},
 		},
 	})
 	return err
 }
 
+// -----------------------------------------------------------------------------
+
+func (ar *AppRuntime) addPathToHttpIngress() error {
+	path := ar.app.Spec.HttpUrlPath
+	if path == "" {
+		ar.log.Debug("app does not have http path")
+		return nil
+	}
+	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
+	ing, err := ingApi.Get("http-ingress", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get http ingress: %s", err)
+	}
+	rules := ing.Spec.Rules
+	if len(rules) != 1 {
+		return fmt.Errorf("http-ingress has invalid number of rules: %d",
+			len(rules))
+	}
+	paths := rules[0].IngressRuleValue.HTTP.Paths
+	if len(paths) < 1 {
+		return fmt.Errorf("http-ingress has no paths")
+	}
+	port := ar.app.Spec.ContainerSpec.Ports[0].ContainerPort
+	paths = append(paths, v1beta1.HTTPIngressPath{
+		Path: ar.app.Spec.HttpUrlPath,
+		Backend: v1beta1.IngressBackend{
+			ServiceName: ar.app.Name,
+			ServicePort: intstr.IntOrString {
+				Type: intstr.Int,
+				IntVal: port,
+			},
+		},
+	})	
+	
+	ing.Spec.Rules[0].IngressRuleValue.HTTP.Paths = paths
+	ing, err = ingApi.Update(ing)
+	if err != nil {
+		return fmt.Errorf("failed to update http ingress: %s", err)
+	}
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (ar *AppRuntime) removePathFromHttpIngress() error {
+	urlPath := ar.app.Spec.HttpUrlPath
+	if urlPath == "" {
+		ar.log.Debug("app does not have http path")
+		return nil
+	}
+	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
+	ing, err := ingApi.Get("http-ingress", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get http ingress: %s", err)
+	}
+	rules := ing.Spec.Rules
+	if len(rules) != 1 {
+		return fmt.Errorf("http-ingress has invalid number of rules: %d",
+			len(rules))
+	}
+	paths := rules[0].IngressRuleValue.HTTP.Paths
+	if len(paths) < 1 {
+		return fmt.Errorf("http-ingress has no paths")
+	}
+	for i, path := range paths {
+		if path.Path == urlPath {
+			paths = append(paths[:i], paths[i+1:]...)
+			rules[0].IngressRuleValue.HTTP.Paths = paths
+			_, err = ingApi.Update(ing)
+			return err
+		}
+	}
+	return fmt.Errorf("path %s not found in http ingress", urlPath)
+}
