@@ -250,6 +250,9 @@ func (c *CustomerRegionRuntime) createHttpIngress() error {
 			Labels: map[string]string {
 				"app": "decco",
 			},
+			Annotations: map[string]string {
+				"ingress.kubernetes.io/rewrite-target": "/",
+			},
 		},
 		Spec: v1beta1.IngressSpec{
 			Rules: []v1beta1.IngressRule{

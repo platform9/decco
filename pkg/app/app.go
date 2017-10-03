@@ -224,7 +224,7 @@ func (ar *AppRuntime) logCreation() {
 
 func (ar *AppRuntime) createDeployment() error {
 	depApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-	var initialReplicas int32 = 0
+	var initialReplicas int32 = 1
 	_, err := depApi.Create(&v1beta1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ar.app.Name,
