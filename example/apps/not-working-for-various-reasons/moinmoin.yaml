@@ -1,11 +1,11 @@
 apiVersion: "decco.platform9.com/v1beta2"
 kind: "App"
 metadata:
-  name: "timeserver"
+  name: "moinmoin"
 spec:
-  httpUrlPath: "/timeserver"
+  httpUrlPath: "/moinmoin"
   container:
-    name: nginx
-    image: nginx
+    name: moinmoin
+    image: olavgg/moinmoin-wiki
     ports:
     - containerPort: 80

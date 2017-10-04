@@ -98,7 +98,9 @@ func (ar *AppRuntime) Delete() {
 		ar.log.Warn("failed to remove path from ingress: %s", err)
 	}
 	deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-	err = deployApi.Delete(ar.app.Name, nil)
+	propPolicy := metav1.DeletePropagationBackground
+	delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
+	err = deployApi.Delete(ar.app.Name, &delOpts)
 	if err != nil {
 		ar.log.Warn("failed to delete deployment: %s", err)
 	}

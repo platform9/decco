@@ -23,7 +23,7 @@ func collectDeployments(kubeApi kubernetes.Interface,
 	namespace string,
 	isKnownApp func(name string) bool) {
 
-	log = log.WithField("func", "collect")
+	log = log.WithField("func", "collectDeployments")
 	deplApi := kubeApi.ExtensionsV1beta1().Deployments(namespace)
 	nses, err := deplApi.List(
 		metav1.ListOptions{
@@ -38,7 +38,9 @@ func collectDeployments(kubeApi kubernetes.Interface,
 	for _, ns := range nses.Items {
 		if !isKnownApp(ns.Name) {
 			log.Infof("deleting orphaned deployment %s", ns.Name)
-			err = deplApi.Delete(ns.Name, nil)
+			propPolicy := metav1.DeletePropagationBackground
+			delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
+			err = deplApi.Delete(ns.Name, &delOpts)
 			if err != nil {
 				log.Warnf("failed to delete deployment %s: %s",
 					ns.Name, err.Error())
@@ -52,9 +54,9 @@ func collectServices(kubeApi kubernetes.Interface,
 	namespace string,
 	isKnownApp func(name string) bool) {
 
-	log = log.WithField("func", "collect")
+	log = log.WithField("func", "collectServices")
 	svcApi := kubeApi.CoreV1().Services(namespace)
-	nses, err := svcApi.List(
+	svcs, err := svcApi.List(
 		metav1.ListOptions{
 			LabelSelector: "decco-derived-from=app",
 		},
@@ -63,14 +65,14 @@ func collectServices(kubeApi kubernetes.Interface,
 		log.Warnf("list services failed: %s", err.Error())
 		return
 	}
-	log.Infof("there are %d services", len(nses.Items))
-	for _, ns := range nses.Items {
-		if !isKnownApp(ns.Name) {
-			log.Infof("deleting orphaned service %s", ns.Name)
-			err = svcApi.Delete(ns.Name, nil)
+	log.Infof("there are %d services", len(svcs.Items))
+	for _, svc := range svcs.Items {
+		if !isKnownApp(svc.Name) {
+			log.Infof("deleting orphaned service %s", svc.Name)
+			err = svcApi.Delete(svc.Name, nil)
 			if err != nil {
 				log.Warnf("failed to delete service %s: %s",
-					ns.Name, err.Error())
+					svc.Name, err.Error())
 			}
 		}
 	}
@@ -81,7 +83,7 @@ func collectUrlPaths(kubeApi kubernetes.Interface,
 	namespace string,
 	isKnownUrlPath func(name string) bool) {
 
-	log = log.WithField("func", "collect")
+	log = log.WithField("func", "collectUrlPaths")
 	ingApi := kubeApi.ExtensionsV1beta1().Ingresses(namespace)
 	ing, err := ingApi.Get("http-ingress", metav1.GetOptions{})
 	if err != nil {
