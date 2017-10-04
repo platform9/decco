@@ -1,0 +1,11 @@
+apiVersion: "decco.platform9.com/v1beta2"
+kind: "App"
+metadata:
+  name: "couchdb"
+spec:
+  httpUrlPath: "/couchdb"
+  container:
+    name: couchdb
+    image: couchdb
+    ports:
+    - containerPort: 5984

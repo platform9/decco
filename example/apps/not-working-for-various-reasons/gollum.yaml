@@ -1,0 +1,11 @@
+apiVersion: "decco.platform9.com/v1beta2"
+kind: "App"
+metadata:
+  name: "gollum"
+spec:
+  httpUrlPath: "/gollum"
+  container:
+    name: gollum
+    image: suttang/gollum
+    ports:
+    - containerPort: 4567

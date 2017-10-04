@@ -1,0 +1,11 @@
+apiVersion: "decco.platform9.com/v1beta2"
+kind: "App"
+metadata:
+  name: "keystone"
+spec:
+  httpUrlPath: "/keystone"
+  container:
+    name: keystone
+    image: monasca/keystone
+    ports:
+    - containerPort: 5000

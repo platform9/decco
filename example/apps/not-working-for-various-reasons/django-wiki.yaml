@@ -1,0 +1,11 @@
+apiVersion: "decco.platform9.com/v1beta2"
+kind: "App"
+metadata:
+  name: "django-wiki"
+spec:
+  httpUrlPath: "/django-wiki"
+  container:
+    name: django-wiki
+    image: camandel/django-wiki
+    ports:
+    - containerPort: 8000
