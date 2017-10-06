@@ -4,6 +4,7 @@ metadata:
   name: "couchdb"
 spec:
   httpUrlPath: "/couchdb"
+  initialReplicas: 1
   container:
     name: couchdb
     image: couchdb

@@ -114,6 +114,7 @@ func (ctl *Controller) findAllCustomerRegions() (string, error) {
 			stopAppCh: stopAppCh,
 		}
 		appcontroller.StartAppControllerLoop(ctl.log, crg.Name,
+			crg.Spec.DomainName, crg.Spec.TcpCertAndCaSecretName,
 			stopAppCh, &ctl.waitApps)
 	}
 
@@ -314,6 +315,7 @@ func (c *Controller) handleCustRegEvent(event *Event) error {
 			stopAppCh: stopAppCh,
 		}
 		appcontroller.StartAppControllerLoop(c.log, crg.Name,
+			crg.Spec.DomainName, crg.Spec.TcpCertAndCaSecretName,
 			stopAppCh, &c.waitApps)
 
 		c.log.Printf("customer region (%s) added. " +

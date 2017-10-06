@@ -29,6 +29,8 @@ var (
 	ErrContainerMissing = errors.New("spec: missing container")
 	ErrContainerInvalidPorts = errors.New("spec: container must declare exactly one port")
 	ErrInvalidUrlPath = errors.New("spec: invalid url path")
+	ErrBothUrlPathAndVerifyTcp = errors.New("spec: url path and verify tcp cannot both be set")
+	ErrNoTcpCert = errors.New("spec: customer region does not support TCP apps because cert info missing")
 )
 
 // AppList is a list of apps.
@@ -68,10 +70,12 @@ func (c App) DeepCopyObject() runtime.Object {
 
 type AppSpec struct {
 	HttpUrlPath string `json:"httpUrlPath"`
+	VerifyTcpClientCert bool `json:"verifyTcpClientCert"`
 	ContainerSpec v1.Container `json:"container"`
+	InitialReplicas int32 `json:"initialReplicas"`
 }
 
-func (c *AppSpec) Validate() error {
+func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
 	if c.ContainerSpec.Name == "" {
 		return ErrContainerMissing
 	}
@@ -80,6 +84,12 @@ func (c *AppSpec) Validate() error {
 	}
 	if c.HttpUrlPath == "/" {
 		return ErrInvalidUrlPath
+	}
+	if c.HttpUrlPath == "" && tcpCertAndCaSecretName == "" {
+		return ErrNoTcpCert
+	}
+	if c.HttpUrlPath != "" && c.VerifyTcpClientCert {
+		return ErrBothUrlPathAndVerifyTcp
 	}
 	return nil
 }

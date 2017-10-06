@@ -1,10 +1,10 @@
 apiVersion: "decco.platform9.com/v1beta2"
 kind: "App"
 metadata:
-  name: "timeserver"
+  name: "timeserver-tcp"
 spec:
-  httpUrlPath: "/timeserver"
   initialReplicas: 1
+  verifyTcpClientCert: true
   container:
     name: timeserver
     image: platform9systems/current-time-standalone

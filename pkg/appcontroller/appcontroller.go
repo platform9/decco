@@ -60,6 +60,8 @@ type Controller struct {
 	kubeApi       kubernetes.Interface
 	appInfo       map[string] AppInfo
 	namespace     string
+	domainName    string
+	tcpCertAndCaSecretName string
 	stopCh chan interface{}
 }
 
@@ -73,6 +75,8 @@ type AppInfo struct {
 func StartAppControllerLoop(
 	log *logrus.Entry,
 	namespace string,
+	domainName string,
+	tcpCertAndCaSecretName string,
 	stopCh chan interface{},
 	wg *sync.WaitGroup,
 ) {
@@ -80,7 +84,7 @@ func StartAppControllerLoop(
 	go func () {
 		defer wg.Done()
 		for {
-			c := New(namespace, stopCh)
+			c := New(namespace, domainName, tcpCertAndCaSecretName, stopCh)
 			err := c.Run()
 			switch err {
 			case ErrTerminated:
@@ -103,6 +107,8 @@ func StartAppControllerLoop(
 
 func New(
 	namespace string,
+	domainName string,
+	tcpCertAndCaSecretName string,
 	stopCh chan interface{},
 ) *Controller {
 	clustConfig := k8sutil.GetClusterConfigOrDie()
@@ -118,6 +124,8 @@ func New(
 		kubeApi:       kubernetes.NewForConfigOrDie(clustConfig),
 		appInfo:       make(map[string] AppInfo),
 		namespace:     namespace,
+		domainName:    domainName,
+		tcpCertAndCaSecretName: tcpCertAndCaSecretName,
 		stopCh:        stopCh,
 	}
 }
@@ -143,9 +151,14 @@ func (ctl *Controller) findAllApps() (string, error) {
 
 		a.Spec.Cleanup()
 		initialRV := a.ResourceVersion
-		newCr := app.New(a, ctl.kubeApi, ctl.namespace)
+		newApp, err := app.New(a, ctl.kubeApi, ctl.namespace, ctl.domainName,
+			ctl.tcpCertAndCaSecretName)
+		if err != nil {
+			ctl.log.Warnf("app runtime creation failed: %s", err)
+			continue
+		}
 		ctl.appInfo[a.Name] = AppInfo{
-			app: newCr,
+			app: newApp,
 			rscVersion: &initialRV,
 		}
 	}
@@ -339,7 +352,12 @@ func (c *Controller) handleAppEvent(event *Event) error {
 				" before but we received event (%s)", a.Name, event.Type)
 		}
 
-		newApp := app.New(*a, c.kubeApi, c.namespace)
+		newApp, err := app.New(*a, c.kubeApi, c.namespace, c.domainName,
+			c.tcpCertAndCaSecretName)
+		if err != nil {
+			c.log.Warnf("app runtime creation failed: %s", err)
+			break
+		}
 		initialRV := a.ResourceVersion
 		c.appInfo[a.Name] = AppInfo{
 			app: newApp,

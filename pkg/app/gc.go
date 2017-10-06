@@ -16,6 +16,7 @@ func Collect(kubeApi kubernetes.Interface,
 	collectDeployments(kubeApi, log, namespace, isKnownApp)
 	collectServices(kubeApi, log, namespace, isKnownApp)
 	collectUrlPaths(kubeApi, log, namespace, isKnownUrlPath)
+	collectBinaryIngresses(kubeApi, log, namespace, isKnownApp)
 }
 
 func collectDeployments(kubeApi kubernetes.Interface,
@@ -120,6 +121,36 @@ func collectUrlPaths(kubeApi kubernetes.Interface,
 		_, err = ingApi.Update(ing)
 		if err != nil {
 			log.Errorf("failed to update http ingress: %s", err)
+		}
+	}
+}
+
+func collectBinaryIngresses(kubeApi kubernetes.Interface,
+	log *logrus.Entry,
+	namespace string,
+	isKnownApp func(name string) bool) {
+
+	log = log.WithField("func", "collectBinaryIngresses")
+	ingApi := kubeApi.ExtensionsV1beta1().Ingresses(namespace)
+	ingList, err := ingApi.List(
+		metav1.ListOptions{
+			LabelSelector: "decco-derived-from=app",
+		},
+	)
+	if err != nil {
+		log.Errorf("failed to list ingresses: %s", err)
+		return
+	}
+	for _, ing := range ingList.Items {
+		if !isKnownApp(ing.Name) {
+			log.Infof("deleting orphaned ingress %s", ing.Name)
+			propPolicy := metav1.DeletePropagationBackground
+			delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
+			err = ingApi.Delete(ing.Name, &delOpts)
+			if err != nil {
+				log.Warnf("failed to delete ingress %s: %s",
+					ing.Name, err.Error())
+			}
 		}
 	}
 }

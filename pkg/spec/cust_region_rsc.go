@@ -26,8 +26,7 @@ const (
 
 var (
 	ErrDomainNameMissing = errors.New("spec: missing domain name")
-	ErrCertSecretNameMissing = errors.New("spec: missing certificate secret name")
-	ErrCaSecretNameMissing = errors.New("spec: missing CA secret name")
+	ErrHttpCertSecretNameMissing = errors.New("spec: missing certificate secret name")
 )
 
 // CustomerRegionList is a list of customerregions.
@@ -66,20 +65,17 @@ func (c CustomerRegion) DeepCopyObject() runtime.Object {
 }
 
 type CustomerRegionSpec struct {
-	DomainName string `json:"domainName"`
-	CertSecretName string `json:"certSecretName"`
-	CertAuthoritySecretName string `json:"certAuthoritySecretName"`
+	DomainName             string `json:"domainName"`
+	HttpCertSecretName     string `json:"httpCertSecretName"`
+	TcpCertAndCaSecretName string `json:"tcpCertAndCaSecretName"`
 }
 
 func (c *CustomerRegionSpec) Validate() error {
 	if c.DomainName == "" {
 		return ErrDomainNameMissing
 	}
-	if c.CertSecretName == "" {
-		return ErrCertSecretNameMissing
-	}
-	if c.CertAuthoritySecretName == "" {
-		return ErrCaSecretNameMissing
+	if c.HttpCertSecretName == "" {
+		return ErrHttpCertSecretNameMissing
 	}
 	return nil
 }

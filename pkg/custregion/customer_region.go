@@ -179,23 +179,25 @@ func (c *CustomerRegionRuntime) create() error {
 // -----------------------------------------------------------------------------
 
 func (c *CustomerRegionRuntime) internalCreate() error {
-	certSecret, err := c.getHttpCert()
+	httpCert, err := c.getHttpCert()
 	if err != nil {
 		return fmt.Errorf("failed to read http cert: %s", err)
+	}
+	tcpCertAndCa, err := c.getTcpCertAndCa()
+	if err != nil {
+		return fmt.Errorf("failed to read TCP cert and CA: %s", err)
 	}
 	if err = c.createNamespace(); err != nil {
 		return fmt.Errorf("failed to create namespace: %s", err)
 	}
-	newCertSecret := v1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: certSecret.Name,
-		},
-		Data: certSecret.Data,
-		StringData: certSecret.StringData,
+	if err = c.copySecret(httpCert); err != nil {
+		return fmt.Errorf("failed to copy http cert: %s", err)
 	}
-	if err = c.saveHttpCert(&newCertSecret); err != nil {
-		return fmt.Errorf("failed to save http cert: %s", err)
-	}
+	if tcpCertAndCa != nil {
+		if err = c.copySecret(tcpCertAndCa); err != nil {
+			return fmt.Errorf("failed to copy tcp cert and CA: %s", err)
+		}
+	} 
 	if err = c.createHttpIngress(); err != nil {
 		return fmt.Errorf("failed to create http ingress: %s", err)
 	}
@@ -281,7 +283,7 @@ func (c *CustomerRegionRuntime) createHttpIngress() error {
 					Hosts: []string {
 						hostName,
 					},
-					SecretName: c.crg.Spec.CertSecretName,
+					SecretName: c.crg.Spec.HttpCertSecretName,
 				},
 			},
 		},
@@ -404,13 +406,30 @@ func (c *CustomerRegionRuntime) createDefaultHttpSvc() error {
 
 func (c *CustomerRegionRuntime) getHttpCert() (*v1.Secret, error) {
 	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
-	return secrApi.Get(c.crg.Spec.CertSecretName, metav1.GetOptions{})
+	return secrApi.Get(c.crg.Spec.HttpCertSecretName, metav1.GetOptions{})
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) saveHttpCert(s *v1.Secret) error {
+func (c *CustomerRegionRuntime) getTcpCertAndCa() (*v1.Secret, error) {
+	if c.crg.Spec.TcpCertAndCaSecretName == "" {
+		return nil, nil
+	}
+	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
+	return secrApi.Get(c.crg.Spec.TcpCertAndCaSecretName, metav1.GetOptions{})
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *CustomerRegionRuntime) copySecret(s *v1.Secret) error {
+	newCertSecret := v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: s.Name,
+		},
+		Data: s.Data,
+		StringData: s.StringData,
+	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.crg.Name)
-	_, err := secrApi.Create(s)
+	_, err := secrApi.Create(&newCertSecret)
 	return err
 }
