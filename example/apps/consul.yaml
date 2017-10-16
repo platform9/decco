@@ -1,0 +1,11 @@
+apiVersion: "decco.platform9.com/v1beta2"
+kind: "App"
+metadata:
+  name: "consul"
+spec:
+  initialReplicas: 1
+  container:
+    name: consul
+    image: consul
+    ports:
+    - containerPort: 8500

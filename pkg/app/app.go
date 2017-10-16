@@ -245,6 +245,7 @@ func (ar *AppRuntime) createDeployment() error {
 	}
 	volumes := []v1.Volume{}
 	if ar.app.Spec.HttpUrlPath == "" {
+		// This is a TCP service. Needs an stunnel container
 		if ar.tcpCertAndCaSecretName == "" {
 			return fmt.Errorf("customer region does not have cert for TCP service")
 		}
@@ -252,7 +253,6 @@ func (ar *AppRuntime) createDeployment() error {
 		if ar.app.Spec.VerifyTcpClientCert {
 			verifyChain = "yes"
 		}
-		// This is a TCP service. Needs an stunnel container
 		volumes = append(volumes, v1.Volume{
 			Name: "certs",
 			VolumeSource: v1.VolumeSource{

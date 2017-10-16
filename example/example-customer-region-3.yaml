@@ -4,9 +4,7 @@ metadata:
   namespace: "decco"
   name: "example-customer-region-3"
 spec:
-  size: 2
-  version: "3.1.5"
-  domainName: foo.bar.com
-  certAuthoritySecretName: dummy
-  certSecretName: pf9-horse-secret
+  domainName: platform9.horse
+  httpCertSecretName: pf9-horse-secret
+  tcpCertAndCaSecretName: example-customer-region-2-secret
 
