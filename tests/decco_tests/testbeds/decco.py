@@ -6,6 +6,8 @@
 import logging
 import base64
 from kubernetes import client, config
+from kubernetes.client.models.v1_secret import V1Secret
+from kubernetes.client.models.v1_delete_options import V1DeleteOptions
 from decco_tests.utils.decco_api import DeccoApi
 
 LOG = logging.getLogger(__name__)
@@ -27,6 +29,7 @@ import re
 import os
 from os.path import dirname, join as pjoin
 from subprocess import check_call, Popen, PIPE
+from setupd.config import Configuration
 import requests
 import tempfile
 import json
@@ -40,6 +43,7 @@ import yaml
 CSPI_MISC_DIR = ''
 AWS_REGION = os.getenv('AWS_REGION', 'us-west-1')
 CONTAINER_IMAGES_FILE = os.getenv('CONTAINER_IMAGES_FILE')
+config.load_kube_config()
 
 
 @retry(log=LOG, max_wait=60)
@@ -282,6 +286,7 @@ def wildcard_keypair(domain):
     check_call(['shred', '-u', cert.name, key.name])
     LOG.info('Shredded web cert and key: %s, %s', cert.name, key.name)
 
+
 def put_wildcard_keypair(host, domain):
     """
     Upload the cert and key to /tmp on the host. Return the resulting
@@ -296,6 +301,22 @@ def put_wildcard_keypair(host, domain):
             put(kp[1], key)
             LOG.info('Uploaded %s to %s', kp[1], key)
     return cert, key
+
+
+def create_wildcard_cert_secret(secret_name, domain):
+    sm = SecretsManager()
+    cert_entry = sm.db.certs.find_one({'type': 'wildcard', 'domain': domain})
+    certdata = sm.get_secret(cert_entry['tags']['cert'])
+    certdata = base64.b64encode(certdata)
+    keydata = sm.get_secret(cert_entry['tags']['key'])
+    keydata = base64.b64encode(keydata)
+    v1 = client.CoreV1Api()
+    secret = V1Secret(metadata={'name': secret_name})
+    secret.data = {
+        'tls.crt': certdata,
+        'tls.key': keydata
+    }
+    v1.create_namespaced_secret('decco', secret)
 
 
 class DeccoTestbed(Testbed):
@@ -324,12 +345,6 @@ class DeccoTestbed(Testbed):
         with open(kubeConfigPath, "r") as file:
             data = file.read()
             kube_config_base64 = base64.b64encode(data)
-
-#        v1 = client.CoreV1Api()
-#        LOG.info("Listing pods with their IPs:")
-#        ret = v1.list_pod_for_all_namespaces(watch=False)
-#        for i in ret.items:
-#            LOG.info("%s\t%s\t%s" % (i.status.pod_ip, i.metadata.namespace, i.metadata.name))
 
         #aws_access_key = os.getenv('AWS_ACCESS_KEY')
         #aws_secret_key = os.getenv('AWS_SECRET_KEY')
@@ -368,14 +383,15 @@ class DeccoTestbed(Testbed):
         region_name = 'RegionOne'
         region_fqdn = '%s-%s.%s' % (customer_shortname, region_name, domain)
 
-        config.load_kube_config()
+        http_cert_secret_name = 'http-cert-%s' % customer_shortname
+        create_wildcard_cert_secret(http_cert_secret_name, domain)
         dapi = DeccoApi()
         #        ret = dapi.list_cust_regions(ns='decco')
         #        for i in ret['items']:
         #            LOG.info("%s" % i['metadata']['name'])
         global_region_spec = {
             'domainName': customer_fqdn,
-            'httpCertSecretName': 'dummyHttpCertSecret',
+            'httpCertSecretName': http_cert_secret_name,
             'tcpCertAndCaSecretName': 'dummyTcpCertSecret'
         }
         ret = dapi.create_cust_region(customer_fqdn, global_region_spec)
@@ -431,3 +447,6 @@ class DeccoTestbed(Testbed):
         dapi = DeccoApi()
         cust_region_name = self.global_region_spec['domainName']
         dapi.delete_cust_region(cust_region_name)
+        v1 = client.CoreV1Api()
+        http_cert_secret_name = self.global_region_spec['httpCertSecretName']
+        v1.delete_namespaced_secret(http_cert_secret_name, 'decco', V1DeleteOptions())
