@@ -1,0 +1,2 @@
+recursive-include decco_tests *.py
+graft decco_tests/suites

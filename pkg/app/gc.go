@@ -88,7 +88,7 @@ func collectUrlPaths(kubeApi kubernetes.Interface,
 	ingApi := kubeApi.ExtensionsV1beta1().Ingresses(namespace)
 	ing, err := ingApi.Get("http-ingress", metav1.GetOptions{})
 	if err != nil {
-		log.Errorf("failed to get http ingress: %s", err)
+		log.Warnf("failed to get http ingress: %s", err)
 		return
 	}
 	rules := ing.Spec.Rules

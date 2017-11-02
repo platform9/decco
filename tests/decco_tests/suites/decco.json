@@ -1,0 +1,18 @@
+{
+    "suite": "decco_centos7",
+    "testbed": {
+        "type": "decco_tests.testbeds.decco.deccoTestbed",
+        "params": {
+            "tag": "decco_c7",
+            "template_key": "centos7-latest",
+            "host_count": 3
+        },
+        "env": {
+            "DU_ENV": "neutron_dogfood",
+            "USE_PROXY": "http://pf9:dummy@squid-basic-auth.platform9.sys:3128"
+        }
+    },
+    "modules": [
+        "decco_tests.test_keystone"
+    ]
+}
