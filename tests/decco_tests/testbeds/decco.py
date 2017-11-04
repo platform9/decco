@@ -3,24 +3,31 @@
 # pylint: disable=dangerous-default-value,unused-variable,too-many-locals
 # pylint: disable=too-many-arguments
 
+import time
 import logging
 import base64
 from kubernetes import client, config
 from kubernetes.client.models.v1_secret import V1Secret
 from kubernetes.client.models.v1_delete_options import V1DeleteOptions
+from kubernetes.client.models.extensions_v1beta1_deployment import ExtensionsV1beta1Deployment
+from kubernetes.client.models.extensions_v1beta1_deployment_spec import ExtensionsV1beta1DeploymentSpec
+from kubernetes.client.models.v1_object_meta import V1ObjectMeta
+from kubernetes.client.models.v1_pod_template_spec import V1PodTemplateSpec
+from kubernetes.client.models.v1_container import V1Container
+from kubernetes.client.models.v1_env_var import V1EnvVar
+from kubernetes.client.models.v1_pod_spec import V1PodSpec
 from decco_tests.utils.decco_api import DeccoApi
+from setupd.config import Configuration, CertificateData
 
 LOG = logging.getLogger(__name__)
 
 import pf9lab.hosts.authorize as labrole
-from pf9lab.hosts.provider import get_host_provider
 from pf9lab.retry import retry
 from pf9lab.testbeds.common import generate_short_du_name
 from pf9lab.hosts.authorize import typical_fabric_settings
 from pf9lab.du.auth import login
 from pf9deploy.server.util.passwords import generate_random_password
 from pf9deploy.server.secrets import SecretsManager
-from pf9deploy.server.util.shell import ShreddedTempFile
 from pf9lab.testbeds import Testbed
 # from qbert_tests.testbeds import aws_utils as qbaws
 from fabric.api import sudo, put, get
@@ -29,15 +36,9 @@ import re
 import os
 from os.path import dirname, join as pjoin
 from subprocess import check_call, Popen, PIPE
-from setupd.config import Configuration
 import requests
-import tempfile
 import json
 
-from contextlib import contextmanager
-from time import sleep
-from glob import glob
-import yaml
 
 # CSPI_MISC_DIR = pjoin(dirname(decco_tests.__file__), 'misc')
 CSPI_MISC_DIR = ''
@@ -49,6 +50,23 @@ config.load_kube_config()
 @retry(log=LOG, max_wait=60)
 def retried_login(*largs, **kwargs):
     return login(*largs, **kwargs)
+
+#if not os.getenv('PF9_CONF_DIR'):
+#    raise Exception('PF9_CONF_DIR not defined')
+
+
+def new_configuration(admin_user, shortname, state_fqdn, region):
+    cfg = Configuration()
+    cfg.customer.fullname = 'decco test customer'
+    cfg.customer.admin_user = admin_user
+    cfg.customer.shortname = shortname
+    cfg.fqdn = state_fqdn
+    cfg.region = region
+    cfg.release_version = 'platform9-decco-1.0.0'
+    #cfg.save(db)
+    cfg.sync_certificates()
+    cfg.sync_passwords()
+    #cfg.save(db)
 
 
 def checked_local_call(cmd):
@@ -117,11 +135,6 @@ def checked_sudo(ip_addr, cmd, user='root', group='root'):
             LOG.error('stderr: %s', cmd_stderr)
             raise Exception('command failed: %s' % cmd)
         return cmd_stdout, cmd_stderr
-
-def install_and_start_mysql():
-    root_passwd = ""
-    return root_passwd
-
 
 def pull_container_image(host_info, image_id_or_name):
     dp_stdout, dp_stderr = checked_sudo(host_info['ip'], 'docker pull %s' % image_id_or_name)
@@ -267,43 +280,48 @@ def setup_decco_hosts(du_address, hosts, admin_user, admin_password, token):
     for host in hosts:
         labrole.wait_for_role(du_address, host['host_id'], 'pf9-kube', token)
 
-@contextmanager
-def wildcard_keypair(domain):
-    """
-    Fetch a wildcard cert/key pair from mongo. Context manager that shreds
-    on exit.
-    """
-    sm = SecretsManager()
-    cert_entry = sm.db.certs.find_one({'type': 'wildcard', 'domain': domain})
-    certdata = sm.get_secret(cert_entry['tags']['cert'])
-    with tempfile.NamedTemporaryFile(delete=False) as cert:
-        cert.file.write(certdata)
-    keydata = sm.get_secret(cert_entry['tags']['key'])
-    with tempfile.NamedTemporaryFile(delete=False) as key:
-        key.file.write(keydata)
-    LOG.info('Fetched web cert and key into %s and %s', cert.name, key.name)
-    yield cert.name, key.name
-    check_call(['shred', '-u', cert.name, key.name])
-    LOG.info('Shredded web cert and key: %s, %s', cert.name, key.name)
+
+def start_mysql(namespace):
+    root_passwd = generate_setupd_valid_password()
+    api = client.ExtensionsV1beta1Api()
+    depl = ExtensionsV1beta1Deployment(
+        metadata=V1ObjectMeta(
+            name='mysql'
+        ),
+        spec=ExtensionsV1beta1DeploymentSpec(
+            replicas=1,
+            template=V1PodTemplateSpec(
+                metadata=V1ObjectMeta(
+                    name='mysql',
+                    labels={'app': 'mysql'}
+                ),
+                spec=V1PodSpec(
+                    containers=[
+                        V1Container(
+                            name='mysql',
+                            image='mysql',
+                            env=[
+                                V1EnvVar(name='MYSQL_ROOT_PASSWORD',
+                                         value=root_passwd)
+                            ]
+                        )
+                    ]
+                )
+            )
+        )
+    )
+    for i in range(5):
+        try:
+            api.create_namespaced_deployment(namespace, depl)
+            LOG.info('successfully created mysql deployment')
+            return root_passwd
+        except:
+            LOG.info("failed to create mysql deployment, may retry...")
+            time.sleep(2)
+    raise Exception('failed to create mysql deployment')
 
 
-def put_wildcard_keypair(host, domain):
-    """
-    Upload the cert and key to /tmp on the host. Return the resulting
-    on-host path for both.
-    """
-    cert = '/tmp/%s.cert' % domain
-    key = '/tmp/%s.key' % domain
-    with typical_fabric_settings(host):
-        with wildcard_keypair(domain) as kp:
-            put(kp[0], cert)
-            LOG.info('Uploaded %s to %s', kp[0], cert)
-            put(kp[1], key)
-            LOG.info('Uploaded %s to %s', kp[1], key)
-    return cert, key
-
-
-def create_wildcard_cert_secret(secret_name, domain):
+def create_http_wildcard_cert_secret(secret_name, domain):
     sm = SecretsManager()
     cert_entry = sm.db.certs.find_one({'type': 'wildcard', 'domain': domain})
     certdata = sm.get_secret(cert_entry['tags']['cert'])
@@ -319,18 +337,40 @@ def create_wildcard_cert_secret(secret_name, domain):
     v1.create_namespaced_secret('decco', secret)
 
 
+def create_tcp_wildcard_cert_secret(secret_name, customer_fqdn,
+                                    customer_shortname):
+
+    ca = CertificateData.generate_ca(cn=customer_shortname,
+                                     du_id=0,
+                                     set_version=0)
+
+    tcp_wildcard_cn = '*.%s' % customer_fqdn
+    tcp_cert = CertificateData.generate_certificate(tcp_wildcard_cn, ca)
+    ca_cert_base64 = base64.b64encode(ca.cert_pem)
+    tcp_cert_base64 = base64.b64encode(tcp_cert.cert_pem)
+    tcp_key_base64 = base64.b64encode(tcp_cert.private_key_pem)
+    secret = V1Secret(metadata={'name': secret_name})
+    secret.data = {
+        'ca.pem': ca_cert_base64,
+        'key.pem': tcp_key_base64,
+        'cert.pem': tcp_cert_base64
+    }
+    v1 = client.CoreV1Api()
+    v1.create_namespaced_secret('decco', secret)
+
+
 class DeccoTestbed(Testbed):
     """
     testbed with no DU, rather 1 host that sort of acts like one.
     Has rabbitmq and consul (via container) installed.
     """
 
-    def __init__(self, tag, kube_config_base64, global_region_spec):
+    def __init__(self, tag, kube_config_base64, global_region_info):
         # self.hosts = []
         super(DeccoTestbed, self).__init__()
         self.kube_config_base64 = kube_config_base64
         self.tag = tag
-        self.global_region_spec = global_region_spec
+        self.global_region_info = global_region_info
 
 
     @classmethod
@@ -355,8 +395,6 @@ class DeccoTestbed(Testbed):
         registry_url = os.getenv('REGISTRY_URL')
         if not registry_url:
             raise Exception('Where are we pulling containers from?')
-
-        mysql_root_passwd = install_and_start_mysql()
 
         # install container image/tag list
         #if CONTAINER_IMAGES_FILE:
@@ -383,8 +421,15 @@ class DeccoTestbed(Testbed):
         region_name = 'RegionOne'
         region_fqdn = '%s-%s.%s' % (customer_shortname, region_name, domain)
 
+        #cfg = new_configuration(admin_user, customer_shortname,
+        #                        customer_fqdn, region_name)
+
+        tcp_cert_secret_name = 'tcp-cert-%s' % customer_shortname
+        create_tcp_wildcard_cert_secret(tcp_cert_secret_name,
+                                        customer_fqdn, customer_shortname)
+
         http_cert_secret_name = 'http-cert-%s' % customer_shortname
-        create_wildcard_cert_secret(http_cert_secret_name, domain)
+        create_http_wildcard_cert_secret(http_cert_secret_name, domain)
         dapi = DeccoApi()
         #        ret = dapi.list_cust_regions(ns='decco')
         #        for i in ret['items']:
@@ -392,9 +437,15 @@ class DeccoTestbed(Testbed):
         global_region_spec = {
             'domainName': customer_fqdn,
             'httpCertSecretName': http_cert_secret_name,
-            'tcpCertAndCaSecretName': 'dummyTcpCertSecret'
+            'tcpCertAndCaSecretName': tcp_cert_secret_name
         }
-        ret = dapi.create_cust_region(customer_fqdn, global_region_spec)
+        dapi.create_cust_region(customer_shortname, global_region_spec)
+        mysql_root_passwd = start_mysql(customer_shortname)
+        global_region_info = {
+            'name': customer_shortname,
+            'mysql_root_passwd': mysql_root_passwd,
+            'spec': global_region_spec
+        }
 
         # LOG.info('Adding %s to route53 for %s...',
         #          customer_fqdn, controller['ip'])
@@ -419,7 +470,7 @@ class DeccoTestbed(Testbed):
         #setup_decco_hosts(controller['ip'], kube_hosts, admin_user,
         #                 admin_password, token)
 
-        return cls(tag, kube_config_base64, global_region_spec)
+        return cls(tag, kube_config_base64, global_region_info)
 
     @staticmethod
     def from_dict(desc):
@@ -430,23 +481,30 @@ class DeccoTestbed(Testbed):
                              (type_name, desc['type']))
         return DeccoTestbed(desc['tag'],
                             desc['kube_config_base64'],
-                            desc['global_region_spec']
+                            desc['global_region_info']
                             )
 
     def to_dict(self):
         return {
             'type': '.'.join([__name__, DeccoTestbed.__name__]),
             'kube_config_base64': self.kube_config_base64,
-            'global_region_spec': self.global_region_spec,
+            'global_region_info': self.global_region_info,
             'tag': self.tag
         }
 
     def destroy(self):
         LOG.info('Destroying decco testbed')
-        config.load_kube_config()
         dapi = DeccoApi()
-        cust_region_name = self.global_region_spec['domainName']
-        dapi.delete_cust_region(cust_region_name)
+        try:
+            dapi.delete_cust_region(self.global_region_info['name'])
+        except:
+            LOG.exception("warning: failed to delete customer region")
+        global_region_spec = self.global_region_info['spec']
         v1 = client.CoreV1Api()
-        http_cert_secret_name = self.global_region_spec['httpCertSecretName']
-        v1.delete_namespaced_secret(http_cert_secret_name, 'decco', V1DeleteOptions())
+        for key in ['httpCertSecretName', 'tcpCertAndCaSecretName']:
+            try:
+                secret_name = global_region_spec[key]
+                v1.delete_namespaced_secret(secret_name, 'decco',
+                                            V1DeleteOptions())
+            except:
+                LOG.exception("warning: failed to delete secret")
