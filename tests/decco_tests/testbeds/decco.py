@@ -6,6 +6,7 @@
 import time
 import logging
 import base64
+import MySQLdb
 from kubernetes import client, config
 from kubernetes.client.models.v1_secret import V1Secret
 from kubernetes.client.models.v1_delete_options import V1DeleteOptions
@@ -16,8 +17,14 @@ from kubernetes.client.models.v1_pod_template_spec import V1PodTemplateSpec
 from kubernetes.client.models.v1_container import V1Container
 from kubernetes.client.models.v1_env_var import V1EnvVar
 from kubernetes.client.models.v1_pod_spec import V1PodSpec
+from tempfile import mkdtemp
+from os import path
 from decco_tests.utils.decco_api import DeccoApi
 from setupd.config import Configuration, CertificateData
+from setupd.fts import create_and_verify_db_connection, ensure_metadata_schema
+from string import Template
+from contextlib import contextmanager
+from subprocess import Popen
 
 LOG = logging.getLogger(__name__)
 
@@ -109,33 +116,6 @@ def generate_setupd_valid_password():
             return passwd
     raise RuntimeError('Failed to generate setupd acceptable password!')
 
-def checked_sudo(ip_addr, cmd, user='root', group='root'):
-    """
-    Run sudo, check retcode, return stderr/stdout
-
-    :type ip_addr: str
-    :param ip_addr: IPv4 address
-    :type cmd: str
-    :param cmd: command to run as sudoed user
-    """
-    with typical_fabric_settings(ip_addr):
-        LOG.info('Running on %s: %s', ip_addr, cmd)
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        ret = sudo(cmd, user=user, group=group,
-                   stderr=stderr_buffer,
-                   stdout=stdout_buffer)
-        stderr_buffer.seek(0)
-        stdout_buffer.seek(0)
-        cmd_stderr = stderr_buffer.read()
-        cmd_stdout = stdout_buffer.read()
-        if ret.failed:
-            LOG.error('command failed: %s', cmd)
-            LOG.error('stdout: %s', cmd_stdout)
-            LOG.error('stderr: %s', cmd_stderr)
-            raise Exception('command failed: %s' % cmd)
-        return cmd_stdout, cmd_stderr
-
 def pull_container_image(host_info, image_id_or_name):
     dp_stdout, dp_stderr = checked_sudo(host_info['ip'], 'docker pull %s' % image_id_or_name)
     # TODO: return image sha?
@@ -196,18 +176,6 @@ def install_and_run_consul_container(host_info):
                             port_mappings={8085: 8085})
 
 
-def activate_local_yum_mirror(host_info):
-    mirror_file = pjoin(CSPI_MISC_DIR, 'platform9.repo')
-    epel_gpg_key = pjoin(CSPI_MISC_DIR, 'RPM-GPG-KEY-EPEL-7')
-    with typical_fabric_settings(host_info['ip']):
-        put(mirror_file, '/etc/yum.repos.d/')
-        put(epel_gpg_key, '/etc/pki/rpm-gpg/')
-    checked_sudo(host_info['ip'], 'yum --disablerepo=* --enablerepo=platform9-base ' \
-                                  'install -y yum-utils')
-    checked_sudo(host_info['ip'], 'yum-config-manager --disable ' \
-                                  'base updates extras epel')
-
-
 def ecr_login(host_info):
     docker_login_cmd = checked_local_call(['aws', '--region', AWS_REGION,
                                            'ecr', 'get-login', '--no-include-email'])
@@ -216,7 +184,7 @@ def ecr_login(host_info):
     if not docker_login_cmd.startswith('docker login'):
         raise Exception('weird output from get-login: %s' % docker_login_cmd)
 
-    checked_sudo(host_info['ip'], docker_login_cmd)
+    # checked_sudo(host_info['ip'], docker_login_cmd)
 
 
 def consul_set_recursive(endpoint, kv_tree, position_stack=list()):
@@ -232,12 +200,6 @@ def consul_set_recursive(endpoint, kv_tree, position_stack=list()):
             resp = requests.put(endpoint + '/' + uri, data=kv_v)
             LOG.info('%s', str(resp))
 
-
-def install_local_rpms(new_host, rpm_list):
-    for rpm_file in rpm_list:
-        with typical_fabric_settings(new_host['ip']):
-            put(rpm_file, '/tmp/installme.rpm')
-        checked_sudo(new_host['ip'], 'yum localinstall -y /tmp/installme.rpm')
 
 def add_customize_env_vars(du, user, password, shortname):
     """
@@ -283,42 +245,36 @@ def setup_decco_hosts(du_address, hosts, admin_user, admin_password, token):
 
 def start_mysql(namespace):
     root_passwd = generate_setupd_valid_password()
-    api = client.ExtensionsV1beta1Api()
-    depl = ExtensionsV1beta1Deployment(
-        metadata=V1ObjectMeta(
-            name='mysql'
-        ),
-        spec=ExtensionsV1beta1DeploymentSpec(
-            replicas=1,
-            template=V1PodTemplateSpec(
-                metadata=V1ObjectMeta(
-                    name='mysql',
-                    labels={'app': 'mysql'}
-                ),
-                spec=V1PodSpec(
-                    containers=[
-                        V1Container(
-                            name='mysql',
-                            image='mysql',
-                            env=[
-                                V1EnvVar(name='MYSQL_ROOT_PASSWORD',
-                                         value=root_passwd)
-                            ]
-                        )
-                    ]
-                )
-            )
-        )
-    )
+    spec = {
+        'initialReplicas': 1,
+        'verifyTcpClientCert': True,
+        'container': {
+            'name': 'mysql',
+            'image': 'mysql',
+            'env': [
+                {
+                    'name': 'MYSQL_ROOT_PASSWORD',
+                    'value': root_passwd
+                }
+            ],
+            'ports': [
+                {
+                    'containerPort': 3306,
+                }
+            ]
+        }
+    }
+
+    dapi = DeccoApi()
     for i in range(5):
         try:
-            api.create_namespaced_deployment(namespace, depl)
-            LOG.info('successfully created mysql deployment')
+            time.sleep(2)
+            dapi.create_app('mysql', spec, namespace)
+            LOG.info('successfully created mysql app')
             return root_passwd
         except:
-            LOG.info("failed to create mysql deployment, may retry...")
-            time.sleep(2)
-    raise Exception('failed to create mysql deployment')
+            LOG.info("failed to create mysql app, may retry...")
+    raise Exception('failed to create mysql app')
 
 
 def create_http_wildcard_cert_secret(secret_name, domain):
@@ -337,15 +293,16 @@ def create_http_wildcard_cert_secret(secret_name, domain):
     v1.create_namespaced_secret('decco', secret)
 
 
-def create_tcp_wildcard_cert_secret(secret_name, customer_fqdn,
-                                    customer_shortname):
-
+def create_tcp_wildcard_ca_and_cert(customer_shortname, customer_fqdn):
     ca = CertificateData.generate_ca(cn=customer_shortname,
                                      du_id=0,
                                      set_version=0)
-
     tcp_wildcard_cn = '*.%s' % customer_fqdn
     tcp_cert = CertificateData.generate_certificate(tcp_wildcard_cn, ca)
+    return ca, tcp_cert
+
+
+def create_tcp_wildcard_cert_secret(secret_name, ca, tcp_cert):
     ca_cert_base64 = base64.b64encode(ca.cert_pem)
     tcp_cert_base64 = base64.b64encode(tcp_cert.cert_pem)
     tcp_key_base64 = base64.b64encode(tcp_cert.private_key_pem)
@@ -358,6 +315,72 @@ def create_tcp_wildcard_cert_secret(secret_name, customer_fqdn,
     v1 = client.CoreV1Api()
     v1.create_namespaced_secret('decco', secret)
 
+
+def generate_stunnel_config(fqdn, svc_name, svc_port, ca, cert):
+    tmp_dir = mkdtemp(fqdn)
+    with open(path.join(tmp_dir, 'ca.pem'), 'w') as f:
+        f.write(ca.cert_pem)
+    with open(path.join(tmp_dir, 'cert.pem'), 'w') as f:
+        f.write(cert.cert_pem)
+    with open(path.join(tmp_dir, 'key.pem'), 'w') as f:
+        f.write(cert.private_key_pem)
+    template = """
+socket=l:TCP_NODELAY=1
+socket=r:TCP_NODELAY=1
+
+debug=7
+# output=/dev/stdout
+foreground=yes
+
+[app]
+client=yes
+accept=${svc_port}
+connect=${fqdn}:443
+sni=${svc_name}.${fqdn}
+# checkHost = ${svc_name}.${fqdn}
+cert=${tmp_dir}/cert.pem
+key=${tmp_dir}/key.pem
+verifyChain=yes
+CAfile=${tmp_dir}/ca.pem
+"""
+    tmpl = Template(template=template)
+    conf = tmpl.substitute({}, fqdn=fqdn, svc_name=svc_name,
+                           svc_port=svc_port, tmp_dir=tmp_dir)
+    stunnel_conf_path = path.join(tmp_dir, 'stunnel.conf')
+    with open(stunnel_conf_path, 'w') as f:
+        f.write(conf)
+    return tmp_dir, stunnel_conf_path
+
+@contextmanager
+def stunnel(stunnel_conf_path, output_dir):
+    stunnel_path = os.getenv('STUNNEL_PATH')
+    if not stunnel_path:
+        raise Exception('STUNNEL_PATH not defined')
+    output_path = path.join(output_dir, 'stunnel.log')
+    with open(output_path, 'w') as f:
+        popen = Popen([stunnel_path, stunnel_conf_path], stdout=f, stderr=f)
+        LOG.info('popen process pid: %s and log: %s', popen.pid, output_path)
+        try:
+            yield popen
+        finally:
+            popen.terminate()
+
+
+def _get_db_connection(mysql_root_passwd):
+    for attempt in range(5):
+        try:
+            time.sleep(10)
+            db = create_and_verify_db_connection('127.0.0.1', 3306,
+                                                 'root',
+                                                 mysql_root_passwd)
+            return db
+        except Exception as ex:
+            # LOG.exception('failed to connect to db')
+            LOG.info('failed to connect to db, may retry in a bit (%s)', ex)
+            #LOG.exception(ex)
+            #LOG.info('DB credentials non-existent, invalid, or '
+            #         'do not have the right permissions.')
+    raise Exception('failed to connect to db')
 
 class DeccoTestbed(Testbed):
     """
@@ -409,7 +432,9 @@ class DeccoTestbed(Testbed):
 
         LOG.info('image tag: %s', image_tag)
 
-        customer_shortname = generate_short_du_name(tag)
+        customer_shortname = os.getenv('CUSTOMER_SHORTNAME')
+        if not customer_shortname:
+            customer_shortname = generate_short_du_name(tag)
 
         admin_user = 'whoever@example.com'
         admin_password = generate_setupd_valid_password()
@@ -424,9 +449,10 @@ class DeccoTestbed(Testbed):
         #cfg = new_configuration(admin_user, customer_shortname,
         #                        customer_fqdn, region_name)
 
+        ca, tcp_cert = create_tcp_wildcard_ca_and_cert(customer_shortname,
+                                                       customer_fqdn)
         tcp_cert_secret_name = 'tcp-cert-%s' % customer_shortname
-        create_tcp_wildcard_cert_secret(tcp_cert_secret_name,
-                                        customer_fqdn, customer_shortname)
+        create_tcp_wildcard_cert_secret(tcp_cert_secret_name, ca, tcp_cert)
 
         http_cert_secret_name = 'http-cert-%s' % customer_shortname
         create_http_wildcard_cert_secret(http_cert_secret_name, domain)
@@ -435,12 +461,30 @@ class DeccoTestbed(Testbed):
         #        for i in ret['items']:
         #            LOG.info("%s" % i['metadata']['name'])
         global_region_spec = {
-            'domainName': customer_fqdn,
+            'domainName': domain,
             'httpCertSecretName': http_cert_secret_name,
             'tcpCertAndCaSecretName': tcp_cert_secret_name
         }
         dapi.create_cust_region(customer_shortname, global_region_spec)
         mysql_root_passwd = start_mysql(customer_shortname)
+
+        tmp_dir, stunnel_conf_path = generate_stunnel_config(customer_fqdn,
+                                                             'mysql',
+                                                             3306,
+                                                             ca,
+                                                             tcp_cert)
+        LOG.info('stunnel conf path: %s' % stunnel_conf_path)
+        with stunnel(stunnel_conf_path, tmp_dir):
+            LOG.info('stunnel started')
+            db = _get_db_connection(mysql_root_passwd)
+            with db.cursor() as cursor:
+                cursor.execute(
+                    'CREATE DATABASE IF NOT EXISTS `pf9_metadata`')
+            db.commit()
+            db.select_db('pf9_metadata')
+            ensure_metadata_schema(db)
+            LOG.info('db setup complete')
+
         global_region_info = {
             'name': customer_shortname,
             'mysql_root_passwd': mysql_root_passwd,
@@ -452,6 +496,7 @@ class DeccoTestbed(Testbed):
         # qbaws.create_dns_record([controller['ip']], customer_fqdn)
 
         # webcert, webkey = put_wildcard_keypair(controller['ip'], domain)
+
 
         LOG.info('waiting for keystone to become open')
         #sleep(5)

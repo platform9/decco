@@ -67,8 +67,15 @@ class DeccoApi():
         return data
 
     def create_cust_region(self, name, spec, ns='decco'):
+        return self._create_resource('CustomerRegion', 
+                                     'customerregions', name, spec, ns)
+
+    def create_app(self, name, spec, ns):
+        return self._create_resource('App', 'apps', name, spec, ns)
+
+    def _create_resource(self, kind, plural_kind, name, spec, ns):
         prefix = '/apis/decco.platform9.com/v1beta2/namespaces'
-        resource_path = '%s/%s/customerregions' % (prefix, ns)
+        resource_path = '%s/%s/%s' % (prefix, ns, plural_kind)
         collection_formats = {}
         path_params = {}
         query_params = {}
@@ -80,7 +87,7 @@ class DeccoApi():
                 'name': name
             },
             'apiVersion': 'decco.platform9.com/v1beta2',
-            'kind': 'CustomerRegion',
+            'kind': kind,
             'spec': spec
         }
         # HTTP header `Accept`
@@ -92,8 +99,6 @@ class DeccoApi():
 
         # Authentication setting
         auth_settings = ['BearerToken']
-
-
         data = self.api_client.call_api(resource_path, 'POST',
                                         path_params,
                                         query_params,
