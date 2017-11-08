@@ -6,25 +6,25 @@
 import time
 import logging
 import base64
-import MySQLdb
 from kubernetes import client, config
 from kubernetes.client.models.v1_secret import V1Secret
 from kubernetes.client.models.v1_delete_options import V1DeleteOptions
-from kubernetes.client.models.extensions_v1beta1_deployment import ExtensionsV1beta1Deployment
-from kubernetes.client.models.extensions_v1beta1_deployment_spec import ExtensionsV1beta1DeploymentSpec
-from kubernetes.client.models.v1_object_meta import V1ObjectMeta
-from kubernetes.client.models.v1_pod_template_spec import V1PodTemplateSpec
-from kubernetes.client.models.v1_container import V1Container
-from kubernetes.client.models.v1_env_var import V1EnvVar
-from kubernetes.client.models.v1_pod_spec import V1PodSpec
+# from kubernetes.client.models.extensions_v1beta1_deployment import ExtensionsV1beta1Deployment
+# from kubernetes.client.models.extensions_v1beta1_deployment_spec import ExtensionsV1beta1DeploymentSpec
+# from kubernetes.client.models.v1_object_meta import V1ObjectMeta
+# from kubernetes.client.models.v1_pod_template_spec import V1PodTemplateSpec
+# from kubernetes.client.models.v1_container import V1Container
+# from kubernetes.client.models.v1_env_var import V1EnvVar
+# from kubernetes.client.models.v1_pod_spec import V1PodSpec
 from tempfile import mkdtemp
 from os import path
 from decco_tests.utils.decco_api import DeccoApi
 from setupd.config import Configuration, CertificateData
-from setupd.fts import create_and_verify_db_connection, ensure_metadata_schema
+from setupd.fts import (create_and_verify_db_connection,
+                        ensure_metadata_schema,
+                        sync_to_consul)
 from string import Template
 from contextlib import contextmanager
-from subprocess import Popen
 
 LOG = logging.getLogger(__name__)
 
@@ -314,7 +314,7 @@ def create_tcp_wildcard_cert_secret(secret_name, ca, tcp_cert):
     v1.create_namespaced_secret('decco', secret)
 
 
-def read_global_tcp_certs():
+def read_consul_certs():
     v1 = client.CoreV1Api()
     s = v1.read_namespaced_secret('tcp-cert-global', 'global')
     client_key = base64.b64decode(s.data['key.pem'])
@@ -413,16 +413,8 @@ class DeccoTestbed(Testbed):
             data = file.read()
             kube_config_base64 = base64.b64encode(data)
 
-        if False:
-            global_tcp_ca_cert, global_tcp_client_cert, global_tcp_client_key = \
-                read_global_tcp_certs()
-
-            tmp_dir, stunnel_conf_path = generate_stunnel_config(
-                'global.platform9.horse', 'consul', 8500, global_tcp_ca_cert,
-                global_tcp_client_cert, global_tcp_client_key)
-
-            with stunnel(stunnel_conf_path, tmp_dir):
-                LOG.info('stunnel to consul running')
+        consul_ca_cert, consul_client_cert, consul_client_key = \
+            read_consul_certs()
 
         #aws_access_key = os.getenv('AWS_ACCESS_KEY')
         #aws_secret_key = os.getenv('AWS_SECRET_KEY')
@@ -479,6 +471,17 @@ class DeccoTestbed(Testbed):
             customer_fqdn, 'mysql', 3306,
             ca.cert_pem, tcp_cert.cert_pem, tcp_cert.private_key_pem)
         LOG.info('stunnel conf path: %s' % stunnel_conf_path)
+
+        state_data = {
+            'consul_url': 'http://localhost:8500',
+            # 'consul_url': 'http://consul.global.svc.cluster.local:8500',
+            'admin_user': admin_user,
+            'admin_password': admin_password,
+            'db_host': 'mysql',
+            'db_user': 'root',
+            'db_password': mysql_root_passwd
+        }
+
         with stunnel(stunnel_conf_path, tmp_dir):
             LOG.info('stunnel started')
             db = _get_db_connection(mysql_root_passwd)
@@ -489,7 +492,17 @@ class DeccoTestbed(Testbed):
             ensure_metadata_schema(db)
             cfg = new_configuration(db, admin_user, customer_shortname,
                                     customer_fqdn, region_name)
-            LOG.info('db setup complete')
+
+            LOG.info('db setup complete, preparing to sync to consul')
+
+            tmp_dir, stunnel_conf_path = generate_stunnel_config(
+                'global.platform9.horse', 'consul', 8500, consul_ca_cert,
+                consul_client_cert, consul_client_key)
+
+            with stunnel(stunnel_conf_path, tmp_dir):
+                LOG.info('stunnel to consul running')
+                sync_to_consul(cfg, state_data)
+                
 
         global_region_info = {
             'name': customer_shortname,
