@@ -58,11 +58,8 @@ config.load_kube_config()
 def retried_login(*largs, **kwargs):
     return login(*largs, **kwargs)
 
-#if not os.getenv('PF9_CONF_DIR'):
-#    raise Exception('PF9_CONF_DIR not defined')
 
-
-def new_configuration(admin_user, shortname, state_fqdn, region):
+def new_configuration(db, admin_user, shortname, state_fqdn, region):
     cfg = Configuration()
     cfg.customer.fullname = 'decco test customer'
     cfg.customer.admin_user = admin_user
@@ -70,10 +67,11 @@ def new_configuration(admin_user, shortname, state_fqdn, region):
     cfg.fqdn = state_fqdn
     cfg.region = region
     cfg.release_version = 'platform9-decco-1.0.0'
-    #cfg.save(db)
+    cfg.save(db)
     cfg.sync_certificates()
     cfg.sync_passwords()
-    #cfg.save(db)
+    cfg.save(db)
+    return cfg
 
 
 def checked_local_call(cmd):
@@ -316,14 +314,24 @@ def create_tcp_wildcard_cert_secret(secret_name, ca, tcp_cert):
     v1.create_namespaced_secret('decco', secret)
 
 
-def generate_stunnel_config(fqdn, svc_name, svc_port, ca, cert):
+def read_global_tcp_certs():
+    v1 = client.CoreV1Api()
+    s = v1.read_namespaced_secret('tcp-cert-global', 'global')
+    client_key = base64.b64decode(s.data['key.pem'])
+    client_cert = base64.b64decode(s.data['cert.pem'])
+    ca_cert = base64.b64decode(s.data['ca.pem'])
+    return ca_cert, client_cert, client_key
+
+
+def generate_stunnel_config(fqdn, svc_name, svc_port,
+                            ca_cert, client_cert, client_key):
     tmp_dir = mkdtemp(fqdn)
     with open(path.join(tmp_dir, 'ca.pem'), 'w') as f:
-        f.write(ca.cert_pem)
+        f.write(ca_cert)
     with open(path.join(tmp_dir, 'cert.pem'), 'w') as f:
-        f.write(cert.cert_pem)
+        f.write(client_cert)
     with open(path.join(tmp_dir, 'key.pem'), 'w') as f:
-        f.write(cert.private_key_pem)
+        f.write(client_key)
     template = """
 socket=l:TCP_NODELAY=1
 socket=r:TCP_NODELAY=1
@@ -375,11 +383,7 @@ def _get_db_connection(mysql_root_passwd):
                                                  mysql_root_passwd)
             return db
         except Exception as ex:
-            # LOG.exception('failed to connect to db')
             LOG.info('failed to connect to db, may retry in a bit (%s)', ex)
-            #LOG.exception(ex)
-            #LOG.info('DB credentials non-existent, invalid, or '
-            #         'do not have the right permissions.')
     raise Exception('failed to connect to db')
 
 class DeccoTestbed(Testbed):
@@ -408,6 +412,17 @@ class DeccoTestbed(Testbed):
         with open(kubeConfigPath, "r") as file:
             data = file.read()
             kube_config_base64 = base64.b64encode(data)
+
+        if False:
+            global_tcp_ca_cert, global_tcp_client_cert, global_tcp_client_key = \
+                read_global_tcp_certs()
+
+            tmp_dir, stunnel_conf_path = generate_stunnel_config(
+                'global.platform9.horse', 'consul', 8500, global_tcp_ca_cert,
+                global_tcp_client_cert, global_tcp_client_key)
+
+            with stunnel(stunnel_conf_path, tmp_dir):
+                LOG.info('stunnel to consul running')
 
         #aws_access_key = os.getenv('AWS_ACCESS_KEY')
         #aws_secret_key = os.getenv('AWS_SECRET_KEY')
@@ -438,16 +453,11 @@ class DeccoTestbed(Testbed):
 
         admin_user = 'whoever@example.com'
         admin_password = generate_setupd_valid_password()
-        #add_customize_env_vars(controller, admin_user, admin_password,
-        #                       customer_shortname)
 
         domain = 'platform9.horse'
         customer_fqdn = '%s.%s' % (customer_shortname, domain)
         region_name = 'RegionOne'
         region_fqdn = '%s-%s.%s' % (customer_shortname, region_name, domain)
-
-        #cfg = new_configuration(admin_user, customer_shortname,
-        #                        customer_fqdn, region_name)
 
         ca, tcp_cert = create_tcp_wildcard_ca_and_cert(customer_shortname,
                                                        customer_fqdn)
@@ -457,9 +467,6 @@ class DeccoTestbed(Testbed):
         http_cert_secret_name = 'http-cert-%s' % customer_shortname
         create_http_wildcard_cert_secret(http_cert_secret_name, domain)
         dapi = DeccoApi()
-        #        ret = dapi.list_cust_regions(ns='decco')
-        #        for i in ret['items']:
-        #            LOG.info("%s" % i['metadata']['name'])
         global_region_spec = {
             'domainName': domain,
             'httpCertSecretName': http_cert_secret_name,
@@ -468,21 +475,20 @@ class DeccoTestbed(Testbed):
         dapi.create_cust_region(customer_shortname, global_region_spec)
         mysql_root_passwd = start_mysql(customer_shortname)
 
-        tmp_dir, stunnel_conf_path = generate_stunnel_config(customer_fqdn,
-                                                             'mysql',
-                                                             3306,
-                                                             ca,
-                                                             tcp_cert)
+        tmp_dir, stunnel_conf_path = generate_stunnel_config(
+            customer_fqdn, 'mysql', 3306,
+            ca.cert_pem, tcp_cert.cert_pem, tcp_cert.private_key_pem)
         LOG.info('stunnel conf path: %s' % stunnel_conf_path)
         with stunnel(stunnel_conf_path, tmp_dir):
             LOG.info('stunnel started')
             db = _get_db_connection(mysql_root_passwd)
             with db.cursor() as cursor:
-                cursor.execute(
-                    'CREATE DATABASE IF NOT EXISTS `pf9_metadata`')
+                cursor.execute('CREATE DATABASE IF NOT EXISTS `pf9_metadata`')
             db.commit()
             db.select_db('pf9_metadata')
             ensure_metadata_schema(db)
+            cfg = new_configuration(db, admin_user, customer_shortname,
+                                    customer_fqdn, region_name)
             LOG.info('db setup complete')
 
         global_region_info = {
