@@ -16,6 +16,7 @@ from kubernetes.client.models.v1_delete_options import V1DeleteOptions
 # from kubernetes.client.models.v1_container import V1Container
 # from kubernetes.client.models.v1_env_var import V1EnvVar
 # from kubernetes.client.models.v1_pod_spec import V1PodSpec
+from firkinize.configstore.consul import Consul
 from tempfile import mkdtemp
 from os import path
 from decco_tests.utils.decco_api import DeccoApi
@@ -32,20 +33,14 @@ LOG = logging.getLogger(__name__)
 import pf9lab.hosts.authorize as labrole
 from pf9lab.retry import retry
 from pf9lab.testbeds.common import generate_short_du_name
-from pf9lab.hosts.authorize import typical_fabric_settings
 from pf9lab.du.auth import login
 from pf9deploy.server.util.passwords import generate_random_password
 from pf9deploy.server.secrets import SecretsManager
 from pf9lab.testbeds import Testbed
 # from qbert_tests.testbeds import aws_utils as qbaws
-from fabric.api import sudo, put, get
-from StringIO import StringIO
 import re
 import os
-from os.path import dirname, join as pjoin
-from subprocess import check_call, Popen, PIPE
-import requests
-import json
+from subprocess import Popen, PIPE
 
 
 # CSPI_MISC_DIR = pjoin(dirname(decco_tests.__file__), 'misc')
@@ -53,6 +48,10 @@ CSPI_MISC_DIR = ''
 AWS_REGION = os.getenv('AWS_REGION', 'us-west-1')
 CONTAINER_IMAGES_FILE = os.getenv('CONTAINER_IMAGES_FILE')
 config.load_kube_config()
+
+stunnel_path = os.getenv('STUNNEL_PATH')
+if not stunnel_path:
+    raise Exception('STUNNEL_PATH not defined')
 
 
 @retry(log=LOG, max_wait=60)
@@ -115,76 +114,6 @@ def generate_setupd_valid_password():
             return passwd
     raise RuntimeError('Failed to generate setupd acceptable password!')
 
-def pull_container_image(host_info, image_id_or_name):
-    dp_stdout, dp_stderr = checked_sudo(host_info['ip'], 'docker pull %s' % image_id_or_name)
-    # TODO: return image sha?
-
-
-def run_container_image(host_info, image_id_or_tag,
-                        network=None, detached=True,
-                        port_mappings=dict(),
-                        env_vars=dict(),
-                        volumes=dict(),
-                        cmd=None):
-    """
-    Runs the image in the container
-
-    :type host_info: dict
-    :param host_info: see `pf9lab.hosts.provider.provider_pf9.HostProvider.make_testbed`
-    :type image_id_or_tag: str
-    :param image_id_or_tag: the source image id or repository name:tag
-    :type network: str
-    :param network: if specified, the name of the docker network to run the container in
-    :type detached: bool
-    :param detached: if True, run the new container in the background
-    :type port_mappings: dict
-    :param port_mappings: map of ports to publish: {host port: container port}
-    :type env_vars: dict
-    :param env_vars: map of environment variable names to values to set in container
-                     runtime
-    :type volumes: dict
-    :param volumes: map of volumes to mount: {host path: container path}
-    :type cmd: str
-    :param cmd: alternative command to run rather than the image default
-
-    :return: the container id
-    """
-    cmd_parts = ['docker', 'run']
-    if network:
-        cmd_parts += ['--network', network]
-    if detached:
-        cmd_parts.append('-d')
-    for host_port, container_port in port_mappings.iteritems():
-        cmd_parts += ['-p', '%d:%d' % (host_port, container_port)]
-    for host_path, container_path in volumes.iteritems():
-        cmd_parts += ['-v', '%s:%s' % (host_path, container_path)]
-    for env_name, env_val in env_vars.iteritems():
-        cmd_parts += ['-e', '"%s=%s"' % (env_name, env_val)]
-    cmd_parts.append(image_id_or_tag)
-    if cmd:
-        cmd_parts.append(cmd)
-    dr_stdout, _ = checked_sudo(host_info['ip'], ' '.join(cmd_parts))
-    container_sha = dr_stdout.strip()
-    return container_sha
-
-
-def install_and_run_consul_container(host_info):
-    pull_container_image(host_info, 'consul')
-    run_container_image(host_info, 'consul',
-                            network='host',
-                            port_mappings={8085: 8085})
-
-
-def ecr_login(host_info):
-    docker_login_cmd = checked_local_call(['aws', '--region', AWS_REGION,
-                                           'ecr', 'get-login', '--no-include-email'])
-    if not docker_login_cmd:
-        raise Exception('get-login did not return docker login command')
-    if not docker_login_cmd.startswith('docker login'):
-        raise Exception('weird output from get-login: %s' % docker_login_cmd)
-
-    # checked_sudo(host_info['ip'], docker_login_cmd)
-
 
 def create_dockercfg_secret(namespace, secret_name, server, user, password):
     kubectl_path = os.getenv('KUBECTL_PATH')
@@ -203,33 +132,6 @@ def create_dockercfg_secret(namespace, secret_name, server, user, password):
         '--docker-password=%s' % password
     ])
 
-def consul_set_recursive(endpoint, kv_tree, position_stack=list()):
-    for kv_k, kv_v in kv_tree.iteritems():
-        if type(kv_v) == dict:
-            LOG.debug('recursing into %s', kv_k)
-            consul_set_recursive(endpoint, kv_v, position_stack + [kv_k])
-        else:
-            uri = '/'.join(position_stack + [kv_k])
-            LOG.info('PUT %s/%s', endpoint, uri)
-            if type(kv_v) not in (str, unicode):
-                kv_v = json.dumps(kv_v)
-            resp = requests.put(endpoint + '/' + uri, data=kv_v)
-            LOG.info('%s', str(resp))
-
-
-def add_customize_env_vars(du, user, password, shortname):
-    """
-    We don't use ansible customization, but the base RawKubTestbed expects the
-    DU dictionary to contain 'customer_env_vars' containing the DU username
-    password etc. Add it here...
-    """
-    env_vars = {
-        'ADMINUSER': user,
-        'ADMINPASS': password,
-        'CUSTOMER_SHORTNAME': shortname,
-        'CUSTOMER_FULLNAME': shortname
-    }
-    du['customize_env_vars'] = env_vars
 
 def setup_decco_hosts(du_address, hosts, admin_user, admin_password, token):
     """
@@ -379,9 +281,6 @@ CAfile=${tmp_dir}/ca.pem
 
 @contextmanager
 def stunnel(stunnel_conf_path, output_dir):
-    stunnel_path = os.getenv('STUNNEL_PATH')
-    if not stunnel_path:
-        raise Exception('STUNNEL_PATH not defined')
     output_path = path.join(output_dir, 'stunnel.log')
     with open(output_path, 'w') as f:
         popen = Popen([stunnel_path, stunnel_conf_path], stdout=f, stderr=f)
@@ -502,7 +401,7 @@ class DeccoTestbed(Testbed):
             # 'consul_url': 'http://consul.global.svc.cluster.local:8500',
             'admin_user': admin_user,
             'admin_password': admin_password,
-            'db_host': 'mysql',
+            'db_host': 'mysql-cleartext',
             'db_user': 'root',
             'db_password': mysql_root_passwd
         }
@@ -526,7 +425,7 @@ class DeccoTestbed(Testbed):
 
             with stunnel(stunnel_conf_path, tmp_dir):
                 LOG.info('stunnel to consul running')
-                sync_to_consul(cfg, state_data)
+                _, dbserver_id = sync_to_consul(cfg, state_data)
                 
         create_dockercfg_secret(customer_shortname, 'regsecret', registry_url,
                                 docker_user, docker_token)
@@ -534,6 +433,8 @@ class DeccoTestbed(Testbed):
         global_region_info = {
             'name': customer_shortname,
             'mysql_root_passwd': mysql_root_passwd,
+            'customer_uuid': cfg.customer.uuid,
+            'dbserver_id': dbserver_id,
             'spec': global_region_spec
         }
 
@@ -599,3 +500,21 @@ class DeccoTestbed(Testbed):
                                             V1DeleteOptions())
             except:
                 LOG.exception("warning: failed to delete secret")
+        try:
+            consul_ca_cert, consul_client_cert, consul_client_key = \
+                read_consul_certs()
+            tmp_dir, stunnel_conf_path = generate_stunnel_config(
+                'global.platform9.horse', 'consul', 8500, consul_ca_cert,
+                consul_client_cert, consul_client_key)
+
+            with stunnel(stunnel_conf_path, tmp_dir):
+                LOG.info('stunnel to consul running')
+                consul = Consul('http://localhost:8500')
+                prefix = 'dbservers/%s' % self.global_region_info['dbserver_id']
+                consul.kv_delete_prefix(prefix)
+                prefix = 'customers/%s' % self.global_region_info['customer_uuid']
+                consul.kv_delete_prefix(prefix)
+
+        except Exception as exc:
+            LOG.warn("warning: failed to delete consul keys: %s", exc)
+
