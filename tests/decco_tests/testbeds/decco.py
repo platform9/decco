@@ -23,6 +23,7 @@ from setupd.config import Configuration, CertificateData
 from setupd.fts import (create_and_verify_db_connection,
                         ensure_metadata_schema,
                         sync_to_consul)
+from setupd.ecr import get_ecr_login_info
 from string import Template
 from contextlib import contextmanager
 
@@ -184,6 +185,23 @@ def ecr_login(host_info):
 
     # checked_sudo(host_info['ip'], docker_login_cmd)
 
+
+def create_dockercfg_secret(namespace, secret_name, server, user, password):
+    kubectl_path = os.getenv('KUBECTL_PATH')
+    if not kubectl_path:
+        raise Exception('KUBECTL_PATH not defined')
+    checked_local_call([
+        kubectl_path,
+        'create',
+        '--namespace=%s' % namespace,
+        'secret',
+        'docker-registry',
+        secret_name,
+        '--docker-email=none',
+        '--docker-server=%s' % server,
+        '--docker-username=%s' % user,
+        '--docker-password=%s' % password
+    ])
 
 def consul_set_recursive(endpoint, kv_tree, position_stack=list()):
     for kv_k, kv_v in kv_tree.iteritems():
@@ -369,6 +387,7 @@ def stunnel(stunnel_conf_path, output_dir):
         popen = Popen([stunnel_path, stunnel_conf_path], stdout=f, stderr=f)
         LOG.info('popen process pid: %s and log: %s', popen.pid, output_path)
         try:
+            time.sleep(2) # for race condition connecting to the local port
             yield popen
         finally:
             popen.terminate()
@@ -413,18 +432,24 @@ class DeccoTestbed(Testbed):
             data = file.read()
             kube_config_base64 = base64.b64encode(data)
 
-        consul_ca_cert, consul_client_cert, consul_client_key = \
-            read_consul_certs()
-
-        #aws_access_key = os.getenv('AWS_ACCESS_KEY')
-        #aws_secret_key = os.getenv('AWS_SECRET_KEY')
-        #if not aws_access_key or not aws_secret_key:
-        #    raise Exception('AWS credentials are required to pull from ECR')
-
-        image_tag = os.getenv('IMAGE_TAG', 'latest')
         registry_url = os.getenv('REGISTRY_URL')
         if not registry_url:
             raise Exception('Where are we pulling containers from?')
+
+        image_tag = os.getenv('IMAGE_TAG', 'latest')
+
+        aws_access_key = os.getenv('AWS_ACCESS_KEY')
+        aws_secret_key = os.getenv('AWS_SECRET_KEY')
+        if not aws_access_key or not aws_secret_key:
+            raise Exception('AWS credentials are required to pull from ECR')
+
+        docker_user, docker_token = get_ecr_login_info(aws_access_key,
+                                                   aws_secret_key,
+                                                   registry_url)
+
+        consul_ca_cert, consul_client_cert, consul_client_key = \
+            read_consul_certs()
+
 
         # install container image/tag list
         #if CONTAINER_IMAGES_FILE:
@@ -503,6 +528,8 @@ class DeccoTestbed(Testbed):
                 LOG.info('stunnel to consul running')
                 sync_to_consul(cfg, state_data)
                 
+        create_dockercfg_secret(customer_shortname, 'regsecret', registry_url,
+                                docker_user, docker_token)
 
         global_region_info = {
             'name': customer_shortname,
