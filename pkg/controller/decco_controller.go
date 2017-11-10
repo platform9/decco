@@ -28,7 +28,7 @@ import (
 	kwatch "k8s.io/apimachinery/pkg/watch"
 	"fmt"
 	"k8s.io/client-go/kubernetes"
-	"github.com/platform9/decco/pkg/custregion"
+	"github.com/platform9/decco/pkg/space"
 	"time"
 	"net/http"
 	"github.com/platform9/decco/pkg/spec"
@@ -50,7 +50,7 @@ func init() {
 
 type Event struct {
 	Type   kwatch.EventType
-	Object *spec.CustomerRegion
+	Object *spec.Space
 }
 
 type Controller struct {
@@ -58,13 +58,13 @@ type Controller struct {
 	apiHost string
 	extensionsApi apiextensionsclient.Interface
 	kubeApi kubernetes.Interface
-	crInfo map[string] CustRegionInfo
+	spcInfo map[string] SpaceInfo
 	namespace string
 	waitApps sync.WaitGroup
 }
 
-type CustRegionInfo struct {
-	custRegion *custregion.CustomerRegionRuntime
+type SpaceInfo struct {
+	spc *space.SpaceRuntime
 	rscVersion *string
 	stopAppCh chan interface{}
 }
@@ -80,45 +80,45 @@ func New(namespace string) *Controller {
 		apiHost: clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
 		kubeApi: kubernetes.NewForConfigOrDie(clustConfig),
-		crInfo: make(map[string] CustRegionInfo),
+		spcInfo: make(map[string] SpaceInfo),
 		namespace: namespace,
 	}
 }
 
 // ----------------------------------------------------------------------------
 
-func (ctl *Controller) findAllCustomerRegions() (string, error) {
-	ctl.log.Info("finding existing customerRegions...")
-	crgList, err := k8sutil.GetCustomerRegionList(
+func (ctl *Controller) findAllSpaces() (string, error) {
+	ctl.log.Info("finding existing spaces...")
+	spcList, err := k8sutil.GetSpaceList(
 		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
 	if err != nil {
 		return "", err
 	}
 
-	for i := range crgList.Items {
-		crg := crgList.Items[i]
+	for i := range spcList.Items {
+		spc := spcList.Items[i]
 
-		if crg.Status.IsFailed() {
-			ctl.log.Warnf("ignore failed custreg %s." +
-				" Please delete its custom resource", crg.Name)
+		if spc.Status.IsFailed() {
+			ctl.log.Warnf("ignore failed space %s." +
+				" Please delete its custom resource", spc.Name)
 			continue
 		}
 
-		crg.Spec.Cleanup()
-		initialRV := crg.ResourceVersion
-		newCr := custregion.New(crg, ctl.kubeApi, ctl.namespace)
+		spc.Spec.Cleanup()
+		initialRV := spc.ResourceVersion
+		newCr := space.New(spc, ctl.kubeApi, ctl.namespace)
 		stopAppCh := make(chan interface{})
-		ctl.crInfo[crg.Name] = CustRegionInfo{
-			custRegion: newCr,
+		ctl.spcInfo[spc.Name] = SpaceInfo{
+			spc: newCr,
 			rscVersion: &initialRV,
 			stopAppCh: stopAppCh,
 		}
-		appcontroller.StartAppControllerLoop(ctl.log, crg.Name,
-			crg.Spec.DomainName, crg.Spec.TcpCertAndCaSecretName,
+		appcontroller.StartAppControllerLoop(ctl.log, spc.Name,
+			spc.Spec.DomainName, spc.Spec.TcpCertAndCaSecretName,
 			stopAppCh, &ctl.waitApps)
 	}
 
-	return crgList.ResourceVersion, nil
+	return spcList.ResourceVersion, nil
 }
 
 // ----------------------------------------------------------------------------
@@ -138,8 +138,8 @@ func (c *Controller) initResource() (string, error) {
 	err := c.initCRD()
 	if err != nil {
 		if k8sutil.IsKubernetesResourceAlreadyExistError(err) {
-			// CRD has been initialized before. We need to recover existing customer regions.
-			watchVersion, err = c.findAllCustomerRegions()
+			// CRD has been initialized before. We need to recover existing spaces.
+			watchVersion, err = c.findAllSpaces()
 			if err != nil {
 				return "", err
 			}
@@ -175,15 +175,15 @@ func (c *Controller) Run() error {
 	}
 
 	defer func() {
-		for _, crInfo := range c.crInfo {
-			close(crInfo.stopAppCh)
+		for _, spcInfo := range c.spcInfo {
+			close(spcInfo.stopAppCh)
 		}
 		c.waitApps.Wait()
 	}()
 
 	c.log.Infof("controller started in namespace %s " +
-		"with %d custregion runtimes and initial watch version: %s",
-		c.namespace, len(c.crInfo), watchVersion)
+		"with %d space runtimes and initial watch version: %s",
+		c.namespace, len(c.spcInfo), watchVersion)
 	err = c.watch(watchVersion, restClnt.Client, c.collectGarbage)
 	return err
 }
@@ -191,8 +191,8 @@ func (c *Controller) Run() error {
 // ----------------------------------------------------------------------------
 
 func (c *Controller) collectGarbage() {
-	custregion.Collect(c.kubeApi, c.log, func(name string) bool {
-		_, ok := c.crInfo[name]
+	space.Collect(c.kubeApi, c.log, func(name string) bool {
+		_, ok := c.spcInfo[name]
 		return ok
 	})
 }
@@ -207,7 +207,7 @@ func (c *Controller) watch(
 
 	for {
 		periodicCallback()
-		resp, err := k8sutil.WatchCustomerRegions(
+		resp, err := k8sutil.WatchSpaces(
 			c.apiHost,
 			c.namespace,
 			httpClient,
@@ -258,14 +258,14 @@ func (c *Controller) processWatchResponse(
 			return "", err
 		}
 
-		c.log.Debugf("customer region event: %v %v",
+		c.log.Debugf("space event: %v %v",
 			ev.Type,
 			ev.Object,
 		)
 
 		nextWatchVersion = ev.Object.ResourceVersion
 		logrus.Infof("next watch version: %s", nextWatchVersion)
-		if err := c.handleCustRegEvent(ev); err != nil {
+		if err := c.handleSpaceEvent(ev); err != nil {
 			c.log.Warningf("event handler returned possible error: %v", err)
 			return "", err
 		}
@@ -275,71 +275,71 @@ func (c *Controller) processWatchResponse(
 // ----------------------------------------------------------------------------
 
 func (c *Controller) deleteRuntime(name string) {
-	if crInfo, ok := c.crInfo[name]; ok {
-		close(crInfo.stopAppCh)
-		delete(c.crInfo, name)
+	if spcInfo, ok := c.spcInfo[name]; ok {
+		close(spcInfo.stopAppCh)
+		delete(c.spcInfo, name)
 	}
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) handleCustRegEvent(event *Event) error {
-	crg := event.Object
+func (c *Controller) handleSpaceEvent(event *Event) error {
+	spc := event.Object
 
-	if crg.Status.IsFailed() {
-		c.deleteRuntime(crg.Name)
+	if spc.Status.IsFailed() {
+		c.deleteRuntime(spc.Name)
 		if event.Type == kwatch.Deleted {
 			return ErrVersionOutdated
 		}
-		c.log.Warnf("ignore failed custreg %s. Please delete its CR",
-			crg.Name)
+		c.log.Warnf("ignore failed space %s. Please delete its CR",
+			spc.Name)
 		return nil
 	}
 
 	// TODO: add validation to spec update.
-	crg.Spec.Cleanup()
+	spc.Spec.Cleanup()
 
 	switch event.Type {
 	case kwatch.Added:
-		if _, ok := c.crInfo[crg.Name]; ok {
-			return fmt.Errorf("unsafe state. custReg (%s) was created" +
-				" before but we received event (%s)", crg.Name, event.Type)
+		if _, ok := c.spcInfo[spc.Name]; ok {
+			return fmt.Errorf("unsafe state. space (%s) was created" +
+				" before but we received event (%s)", spc.Name, event.Type)
 		}
 
-		newCustReg := custregion.New(*crg, c.kubeApi, c.namespace)
-		initialRV := crg.ResourceVersion
+		newSpace := space.New(*spc, c.kubeApi, c.namespace)
+		initialRV := spc.ResourceVersion
 		stopAppCh := make(chan interface{})
-		c.crInfo[crg.Name] = CustRegionInfo{
-			custRegion: newCustReg,
+		c.spcInfo[spc.Name] = SpaceInfo{
+			spc: newSpace,
 			rscVersion: &initialRV,
 			stopAppCh: stopAppCh,
 		}
-		appcontroller.StartAppControllerLoop(c.log, crg.Name,
-			crg.Spec.DomainName, crg.Spec.TcpCertAndCaSecretName,
+		appcontroller.StartAppControllerLoop(c.log, spc.Name,
+			spc.Spec.DomainName, spc.Spec.TcpCertAndCaSecretName,
 			stopAppCh, &c.waitApps)
 
-		c.log.Printf("customer region (%s) added. " +
-			"There now %d customer regions", crg.Name, len(c.crInfo))
+		c.log.Printf("space (%s) added. " +
+			"There now %d spaces", spc.Name, len(c.spcInfo))
 
 	case kwatch.Modified:
-		if _, ok := c.crInfo[crg.Name]; !ok {
-			return fmt.Errorf("unsafe state. custReg (%s) was never" +
-				" created but we received event (%s)", crg.Name, event.Type)
+		if _, ok := c.spcInfo[spc.Name]; !ok {
+			return fmt.Errorf("unsafe state. space (%s) was never" +
+				" created but we received event (%s)", spc.Name, event.Type)
 		}
-		c.crInfo[crg.Name].custRegion.Update(*crg)
-		*(c.crInfo[crg.Name].rscVersion) = crg.ResourceVersion
-		c.log.Printf("customer region (%s) modified. " +
-			"There now %d customer regions", crg.Name, len(c.crInfo))
+		c.spcInfo[spc.Name].spc.Update(*spc)
+		*(c.spcInfo[spc.Name].rscVersion) = spc.ResourceVersion
+		c.log.Printf("space (%s) modified. " +
+			"There now %d spaces", spc.Name, len(c.spcInfo))
 
 	case kwatch.Deleted:
-		if _, ok := c.crInfo[crg.Name]; !ok {
-			return fmt.Errorf("unsafe state. custReg (%s) was never " +
-				"created but we received event (%s)", crg.Name, event.Type)
+		if _, ok := c.spcInfo[spc.Name]; !ok {
+			return fmt.Errorf("unsafe state. space (%s) was never " +
+				"created but we received event (%s)", spc.Name, event.Type)
 		}
-		c.crInfo[crg.Name].custRegion.Delete()
-		c.deleteRuntime(crg.Name)
-		c.log.Printf("customer region (%s) deleted. " +
-			"There now %d customer regions", crg.Name, len(c.crInfo))
+		c.spcInfo[spc.Name].spc.Delete()
+		c.deleteRuntime(spc.Name)
+		c.log.Printf("space (%s) deleted. " +
+			"There now %d spaces", spc.Name, len(c.spcInfo))
 		return ErrVersionOutdated
 	}
 	return nil

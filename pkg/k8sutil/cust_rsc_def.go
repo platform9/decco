@@ -29,38 +29,38 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-func WatchCustomerRegions(host string, ns string, httpClient *http.Client, resourceVersion string) (*http.Response, error) {
+func WatchSpaces(host string, ns string, httpClient *http.Client, resourceVersion string) (*http.Response, error) {
 	return httpClient.Get(fmt.Sprintf("%s/apis/%s/namespaces/%s/%s?watch=true&resourceVersion=%s",
 		host, spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, resourceVersion))
 }
 
-func GetCustomerRegionList(restcli rest.Interface,
-	ns string) (*spec.CustomerRegionList, error) {
+func GetSpaceList(restcli rest.Interface,
+	ns string) (*spec.SpaceList, error) {
 
-	b, err := restcli.Get().RequestURI(listCustomerRegionsURI(ns)).DoRaw()
+	b, err := restcli.Get().RequestURI(listSpacesURI(ns)).DoRaw()
 	if err != nil {
 		return nil, err
 	}
 
-	customerRegions := &spec.CustomerRegionList{}
-	if err := json.Unmarshal(b, customerRegions); err != nil {
+	spaces := &spec.SpaceList{}
+	if err := json.Unmarshal(b, spaces); err != nil {
 		return nil, err
 	}
-	return customerRegions, nil
+	return spaces, nil
 }
 
-func listCustomerRegionsURI(ns string) string {
+func listSpacesURI(ns string) string {
 	return fmt.Sprintf("/apis/%s/namespaces/%s/%s",
 		spec.SchemeGroupVersion.String(),
 		ns,
 		spec.CRDResourcePlural)
 }
 
-func UpdateCustomerRegionCustRsc(
+func UpdateSpaceCustRsc(
 	restcli rest.Interface,
 	ns string,
-	c spec.CustomerRegion,
-) (spec.CustomerRegion, error) {
+	c spec.Space,
+) (spec.Space, error) {
 
 	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s",
 		spec.SchemeGroupVersion.String(),
@@ -69,18 +69,18 @@ func UpdateCustomerRegionCustRsc(
 		c.Name)
 	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw()
 	if err != nil {
-		return spec.CustomerRegion{}, err
+		return spec.Space{}, err
 	}
-	return readCustomerRegionCR(b)
+	return readSpaceCR(b)
 }
 
-func readCustomerRegionCR(b []byte) (spec.CustomerRegion, error) {
-	customerRegion := &spec.CustomerRegion{}
-	if err := json.Unmarshal(b, customerRegion); err != nil {
-		return spec.CustomerRegion{},
-			fmt.Errorf("read customerRegion CR from json data failed: %v", err)
+func readSpaceCR(b []byte) (spec.Space, error) {
+	space := &spec.Space{}
+	if err := json.Unmarshal(b, space); err != nil {
+		return spec.Space{},
+			fmt.Errorf("read space CR from json data failed: %v", err)
 	}
-	return *customerRegion, nil
+	return *space, nil
 }
 
 func CreateCRD(clientset apiextensionsclient.Interface) error {

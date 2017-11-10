@@ -19,7 +19,7 @@ import (
 type appEventType string
 
 var (
-	errInCreatingPhase = errors.New("custregion already in Creating phase")
+	errInCreatingPhase = errors.New("space already in Creating phase")
 )
 
 const (
@@ -247,7 +247,7 @@ func (ar *AppRuntime) createDeployment() error {
 	if ar.app.Spec.HttpUrlPath == "" {
 		// This is a TCP service. Needs an stunnel container
 		if ar.tcpCertAndCaSecretName == "" {
-			return fmt.Errorf("customer region does not have cert for TCP service")
+			return fmt.Errorf("space does not have cert for TCP service")
 		}
 		verifyChain := "no"
 		if ar.app.Spec.VerifyTcpClientCert {

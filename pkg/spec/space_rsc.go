@@ -29,27 +29,27 @@ var (
 	ErrHttpCertSecretNameMissing = errors.New("spec: missing certificate secret name")
 )
 
-// CustomerRegionList is a list of customerregions.
-type CustomerRegionList struct {
+// SpaceList is a list of spaces.
+type SpaceList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata
 	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata
 	metav1.ListMeta                  `json:"metadata,omitempty"`
-	Items           []CustomerRegion `json:"items"`
+	Items           []Space `json:"items"`
 }
 
-func (crl CustomerRegionList) DeepCopyObject() runtime.Object {
+func (crl SpaceList) DeepCopyObject() runtime.Object {
 	return &crl
 }
 
-type CustomerRegion struct {
+type Space struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              CustomerRegionSpec   `json:"spec"`
-	Status            CustomerRegionStatus `json:"status"`
+	Spec              SpaceSpec   `json:"spec"`
+	Status            SpaceStatus `json:"status"`
 }
 
-func (c *CustomerRegion) AsOwner() metav1.OwnerReference {
+func (c *Space) AsOwner() metav1.OwnerReference {
 	trueVar := true
 	return metav1.OwnerReference{
 		APIVersion: c.APIVersion,
@@ -60,17 +60,17 @@ func (c *CustomerRegion) AsOwner() metav1.OwnerReference {
 	}
 }
 
-func (c CustomerRegion) DeepCopyObject() runtime.Object {
+func (c Space) DeepCopyObject() runtime.Object {
 	return &c
 }
 
-type CustomerRegionSpec struct {
+type SpaceSpec struct {
 	DomainName             string `json:"domainName"`
 	HttpCertSecretName     string `json:"httpCertSecretName"`
 	TcpCertAndCaSecretName string `json:"tcpCertAndCaSecretName"`
 }
 
-func (c *CustomerRegionSpec) Validate() error {
+func (c *SpaceSpec) Validate() error {
 	if c.DomainName == "" {
 		return ErrDomainNameMissing
 	}
@@ -82,7 +82,7 @@ func (c *CustomerRegionSpec) Validate() error {
 
 // Cleanup cleans up user passed spec, e.g. defaulting, transforming fields.
 // TODO: move this to admission controller
-func (c *CustomerRegionSpec) Cleanup() {
+func (c *SpaceSpec) Cleanup() {
 	/*
 		if len(c.BaseImage) == 0 {
 			c.BaseImage = defaultBaseImage
@@ -96,31 +96,31 @@ func (c *CustomerRegionSpec) Cleanup() {
 	*/
 }
 
-type CustomerRegionPhase string
+type SpacePhase string
 
 const (
-	CustomerRegionPhaseNone     CustomerRegionPhase = ""
-	CustomerRegionPhaseCreating                     = "Creating"
-	CustomerRegionPhaseActive                       = "Active"
-	CustomerRegionPhaseFailed                       = "Failed"
+	SpacePhaseNone     SpacePhase = ""
+	SpacePhaseCreating                     = "Creating"
+	SpacePhaseActive                       = "Active"
+	SpacePhaseFailed                       = "Failed"
 )
 
-type CustomerRegionCondition struct {
-	Type CustomerRegionConditionType `json:"type"`
+type SpaceCondition struct {
+	Type SpaceConditionType `json:"type"`
 	Reason string `json:"reason"`
 	TransitionTime string `json:"transitionTime"`
 }
 
-type CustomerRegionConditionType string
+type SpaceConditionType string
 
-type CustomerRegionStatus struct {
-	// Phase is the CustomerRegion running phase
-	Phase  CustomerRegionPhase `json:"phase"`
+type SpaceStatus struct {
+	// Phase is the Space running phase
+	Phase  SpacePhase `json:"phase"`
 	Reason string       `json:"reason"`
 }
 
-func (cs CustomerRegionStatus) Copy() CustomerRegionStatus {
-	newCRS := CustomerRegionStatus{}
+func (cs SpaceStatus) Copy() SpaceStatus {
+	newCRS := SpaceStatus{}
 	b, err := json.Marshal(cs)
 	if err != nil {
 		panic(err)
@@ -132,18 +132,18 @@ func (cs CustomerRegionStatus) Copy() CustomerRegionStatus {
 	return newCRS
 }
 
-func (cs *CustomerRegionStatus) IsFailed() bool {
+func (cs *SpaceStatus) IsFailed() bool {
 	if cs == nil {
 		return false
 	}
-	return cs.Phase == CustomerRegionPhaseFailed
+	return cs.Phase == SpacePhaseFailed
 }
 
-func (cs *CustomerRegionStatus) SetPhase(p CustomerRegionPhase) {
+func (cs *SpaceStatus) SetPhase(p SpacePhase) {
 	cs.Phase = p
 }
 
-func (cs *CustomerRegionStatus) SetReason(r string) {
+func (cs *SpaceStatus) SetReason(r string) {
 	cs.Reason = r
 }
 

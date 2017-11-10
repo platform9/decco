@@ -30,7 +30,7 @@ var (
 	ErrContainerInvalidPorts = errors.New("spec: container must declare exactly one port")
 	ErrInvalidUrlPath = errors.New("spec: invalid url path")
 	ErrBothUrlPathAndVerifyTcp = errors.New("spec: url path and verify tcp cannot both be set")
-	ErrNoTcpCert = errors.New("spec: customer region does not support TCP apps because cert info missing")
+	ErrNoTcpCert = errors.New("spec: space does not support TCP apps because cert info missing")
 )
 
 // AppList is a list of apps.

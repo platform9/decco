@@ -1,4 +1,4 @@
-package custregion
+package space
 
 import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -9,7 +9,7 @@ import (
 
 func Collect(kubeApi kubernetes.Interface,
 	log *logrus.Entry,
-	isKnownCustRegion func(name string) bool) {
+	isKnownSpace func(name string) bool) {
 
 	log = log.WithField("func", "collect")
 	nsApi := kubeApi.CoreV1().Namespaces()
@@ -24,7 +24,7 @@ func Collect(kubeApi kubernetes.Interface,
 	}
 	log.Infof("there are %d namespaces", len(nses.Items))
 	for _, ns := range nses.Items {
-		if !isKnownCustRegion(ns.Name) {
+		if !isKnownSpace(ns.Name) {
 			if ns.Status.Phase == v1.NamespaceTerminating {
 				log.Debugf("skipping deletion of terminating namespace %s",
 					ns.Name)

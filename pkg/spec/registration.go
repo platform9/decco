@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	CRDResourceKind   = "CustomerRegion"
-	CRDResourcePlural = "customerregions"
-	CRDShortName      = "custreg"
+	CRDResourceKind   = "Space"
+	CRDResourcePlural = "spaces"
+	CRDShortName      = "space"
 	groupName         = "decco.platform9.com"
 )
 
@@ -37,8 +37,8 @@ var (
 
 // addKnownTypes adds the set of types defined in this package to the supplied scheme.
 func addKnownTypes(s *runtime.Scheme) error {
-	cr := CustomerRegion{}
-	crl := CustomerRegionList{}
+	cr := Space{}
+	crl := SpaceList{}
 	s.AddKnownTypes(SchemeGroupVersion,
 		&cr,
 		&crl,

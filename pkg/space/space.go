@@ -1,4 +1,4 @@
-package custregion
+package space
 
 import (
 	"github.com/sirupsen/logrus"
@@ -17,63 +17,63 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-type custRegRscEventType string
+type spaceRscEventType string
 
 var (
-	errInCreatingPhase = errors.New("custregion already in Creating phase")
+	errInCreatingPhase = errors.New("space already in Creating phase")
 )
 
 const (
-	eventDeleteCustomerRegion custRegRscEventType = "Delete"
-	eventModifyCustomerRegion custRegRscEventType = "Modify"
+	eventDeleteSpace spaceRscEventType = "Delete"
+	eventModifySpace spaceRscEventType = "Modify"
 )
 
-type custRegRscEvent struct {
-	typ     custRegRscEventType
-	custRegRsc spec.CustomerRegion
+type spaceRscEvent struct {
+	typ     spaceRscEventType
+	spaceRsc spec.Space
 }
 
-type CustomerRegionRuntime struct {
+type SpaceRuntime struct {
 	kubeApi kubernetes.Interface
 	namespace string
 	log *logrus.Entry
 
 	//config Config
 
-	crg spec.CustomerRegion
+	spc spec.Space
 
-	// in memory state of the custRegRsc
-	// status is the source of truth after CustomerRegionRuntime struct is materialized.
-	status spec.CustomerRegionStatus
+	// in memory state of the spaceRsc
+	// status is the source of truth after SpaceRuntime struct is materialized.
+	status spec.SpaceStatus
 }
 
 // -----------------------------------------------------------------------------
 
 func New(
-	crg spec.CustomerRegion,
+	spc spec.Space,
 	kubeApi kubernetes.Interface,
 	namespace string,
-) *CustomerRegionRuntime {
+) *SpaceRuntime {
 
-	lg := logrus.WithField("pkg","custregion",
-		).WithField("custregion-name", crg.Name)
+	lg := logrus.WithField("pkg","space",
+		).WithField("space-name", spc.Name)
 
-	c := &CustomerRegionRuntime{
+	c := &SpaceRuntime{
 		kubeApi:  kubeApi,
 		log:      lg,
-		crg:      crg,
-		status:      crg.Status.Copy(),
+		spc:      spc,
+		status:      spc.Status.Copy(),
 		namespace: namespace,
 	}
 
 	if err := c.setup(); err != nil {
 		c.log.Errorf("cluster failed to setup: %v", err)
-		if c.status.Phase != spec.CustomerRegionPhaseFailed {
+		if c.status.Phase != spec.SpacePhaseFailed {
 			c.status.SetReason(err.Error())
-			c.status.SetPhase(spec.CustomerRegionPhaseFailed)
+			c.status.SetPhase(spec.SpacePhaseFailed)
 			if err := c.updateCRStatus(); err != nil {
-				c.log.Errorf("failed to update custregion phase (%v): %v",
-					spec.CustomerRegionPhaseFailed, err)
+				c.log.Errorf("failed to update space phase (%v): %v",
+					spec.SpacePhaseFailed, err)
 			}
 		}
 	}
@@ -82,14 +82,14 @@ func New(
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) Update(crg spec.CustomerRegion) {
+func (c *SpaceRuntime) Update(spc spec.Space) {
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) Delete() {
+func (c *SpaceRuntime) Delete() {
 	nsApi := c.kubeApi.CoreV1().Namespaces()
-	err := nsApi.Delete(c.crg.Name, nil)
+	err := nsApi.Delete(c.spc.Name, nil)
 	if err != nil {
 		c.log.Warn("failed to delete namespace %s: ", err.Error())
 	}
@@ -97,44 +97,44 @@ func (c *CustomerRegionRuntime) Delete() {
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) updateCRStatus() error {
-	if reflect.DeepEqual(c.crg.Status, c.status) {
+func (c *SpaceRuntime) updateCRStatus() error {
+	if reflect.DeepEqual(c.spc.Status, c.status) {
 		return nil
 	}
 
-	newCrg := c.crg
+	newCrg := c.spc
 	newCrg.Status = c.status
-	newCrg, err := k8sutil.UpdateCustomerRegionCustRsc(
+	newCrg, err := k8sutil.UpdateSpaceCustRsc(
 		c.kubeApi.CoreV1().RESTClient(),
 		c.namespace,
 		newCrg)
 	if err != nil {
-		return fmt.Errorf("failed to update crg status: %v", err)
+		return fmt.Errorf("failed to update spc status: %v", err)
 	}
 
-	c.crg = newCrg
+	c.spc = newCrg
 	return nil
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) setup() error {
-	err := c.crg.Spec.Validate()
+func (c *SpaceRuntime) setup() error {
+	err := c.spc.Spec.Validate()
 	if err != nil {
 		return err
 	}
 
 	var shouldCreateResources bool
 	switch c.status.Phase {
-	case spec.CustomerRegionPhaseNone:
+	case spec.SpacePhaseNone:
 		shouldCreateResources = true
-	case spec.CustomerRegionPhaseCreating:
+	case spec.SpacePhaseCreating:
 		return errInCreatingPhase
-	case spec.CustomerRegionPhaseActive:
+	case spec.SpacePhaseActive:
 		shouldCreateResources = false
 
 	default:
-		return fmt.Errorf("unexpected crg phase: %s", c.status.Phase)
+		return fmt.Errorf("unexpected spc phase: %s", c.status.Phase)
 	}
 
 	if shouldCreateResources {
@@ -145,9 +145,9 @@ func (c *CustomerRegionRuntime) setup() error {
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) phaseUpdateError(op string, err error) error {
+func (c *SpaceRuntime) phaseUpdateError(op string, err error) error {
 	return fmt.Errorf(
-		"%s : failed to update crg phase (%v): %v",
+		"%s : failed to update spc phase (%v): %v",
 		op,
 		c.status.Phase,
 		err,
@@ -156,29 +156,29 @@ func (c *CustomerRegionRuntime) phaseUpdateError(op string, err error) error {
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) create() error {
-	c.status.SetPhase(spec.CustomerRegionPhaseCreating)
+func (c *SpaceRuntime) create() error {
+	c.status.SetPhase(spec.SpacePhaseCreating)
 	if err := c.updateCRStatus(); err != nil {
-		return c.phaseUpdateError("crg create", err)
+		return c.phaseUpdateError("spc create", err)
 	}
 	if err := c.internalCreate(); err != nil {
 		return err
 	}
-	c.status.SetPhase(spec.CustomerRegionPhaseActive)
+	c.status.SetPhase(spec.SpacePhaseActive)
 	if err := c.updateCRStatus(); err != nil {
 		return fmt.Errorf(
-			"crg create: failed to update crg phase (%v): %v",
-			spec.CustomerRegionPhaseActive,
+			"spc create: failed to update spc phase (%v): %v",
+			spec.SpacePhaseActive,
 			err,
 		)
 	}
-	c.log.Infof("customer region is now active")
+	c.log.Infof("space is now active")
 	return nil
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) internalCreate() error {
+func (c *SpaceRuntime) internalCreate() error {
 	httpCert, err := c.getHttpCert()
 	if err != nil {
 		return fmt.Errorf("failed to read http cert: %s", err)
@@ -212,14 +212,14 @@ func (c *CustomerRegionRuntime) internalCreate() error {
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) logCreation() {
-	specBytes, err := json.MarshalIndent(c.crg.Spec, "", "    ")
+func (c *SpaceRuntime) logCreation() {
+	specBytes, err := json.MarshalIndent(c.spc.Spec, "", "    ")
 	if err != nil {
 		c.log.Errorf("failed to marshal cluster spec: %v", err)
 		return
 	}
 
-	c.log.Info("creating customer region with Spec:")
+	c.log.Info("creating space with Spec:")
 	for _, m := range strings.Split(string(specBytes), "\n") {
 		c.log.Info(m)
 	}
@@ -227,11 +227,11 @@ func (c *CustomerRegionRuntime) logCreation() {
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) createNamespace() error {
+func (c *SpaceRuntime) createNamespace() error {
 	nsApi := c.kubeApi.CoreV1().Namespaces()
 	ns := v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: c.crg.Name,
+			Name: c.spc.Name,
 			Labels: map[string]string {
 				"app": "decco",
 			},
@@ -243,9 +243,9 @@ func (c *CustomerRegionRuntime) createNamespace() error {
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) createHttpIngress() error {
-	hostName := c.crg.Name + "." + c.crg.Spec.DomainName
-	ingApi := c.kubeApi.ExtensionsV1beta1().Ingresses(c.crg.Name)
+func (c *SpaceRuntime) createHttpIngress() error {
+	hostName := c.spc.Name + "." + c.spc.Spec.DomainName
+	ingApi := c.kubeApi.ExtensionsV1beta1().Ingresses(c.spc.Name)
 	ing := v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "http-ingress",
@@ -283,7 +283,7 @@ func (c *CustomerRegionRuntime) createHttpIngress() error {
 					Hosts: []string {
 						hostName,
 					},
-					SecretName: c.crg.Spec.HttpCertSecretName,
+					SecretName: c.spc.Spec.HttpCertSecretName,
 				},
 			},
 		},
@@ -294,8 +294,8 @@ func (c *CustomerRegionRuntime) createHttpIngress() error {
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) createDefaultHttpDeploy() error {
-	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.crg.Name)
+func (c *SpaceRuntime) createDefaultHttpDeploy() error {
+	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.spc.Name)
 	_, err := depApi.Create(&v1beta1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "default-http",
@@ -378,8 +378,8 @@ func (c *CustomerRegionRuntime) createDefaultHttpDeploy() error {
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) createDefaultHttpSvc() error {
-	svcApi := c.kubeApi.CoreV1().Services(c.crg.Name)
+func (c *SpaceRuntime) createDefaultHttpSvc() error {
+	svcApi := c.kubeApi.CoreV1().Services(c.spc.Name)
 	_, err := svcApi.Create(&v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "default-http",
@@ -404,24 +404,24 @@ func (c *CustomerRegionRuntime) createDefaultHttpSvc() error {
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) getHttpCert() (*v1.Secret, error) {
+func (c *SpaceRuntime) getHttpCert() (*v1.Secret, error) {
 	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
-	return secrApi.Get(c.crg.Spec.HttpCertSecretName, metav1.GetOptions{})
+	return secrApi.Get(c.spc.Spec.HttpCertSecretName, metav1.GetOptions{})
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) getTcpCertAndCa() (*v1.Secret, error) {
-	if c.crg.Spec.TcpCertAndCaSecretName == "" {
+func (c *SpaceRuntime) getTcpCertAndCa() (*v1.Secret, error) {
+	if c.spc.Spec.TcpCertAndCaSecretName == "" {
 		return nil, nil
 	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
-	return secrApi.Get(c.crg.Spec.TcpCertAndCaSecretName, metav1.GetOptions{})
+	return secrApi.Get(c.spc.Spec.TcpCertAndCaSecretName, metav1.GetOptions{})
 }
 
 // -----------------------------------------------------------------------------
 
-func (c *CustomerRegionRuntime) copySecret(s *v1.Secret) error {
+func (c *SpaceRuntime) copySecret(s *v1.Secret) error {
 	newCertSecret := v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: s.Name,
@@ -429,7 +429,7 @@ func (c *CustomerRegionRuntime) copySecret(s *v1.Secret) error {
 		Data: s.Data,
 		StringData: s.StringData,
 	}
-	secrApi := c.kubeApi.CoreV1().Secrets(c.crg.Name)
+	secrApi := c.kubeApi.CoreV1().Secrets(c.spc.Name)
 	_, err := secrApi.Create(&newCertSecret)
 	return err
 }
