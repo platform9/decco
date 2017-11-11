@@ -1,8 +1,8 @@
 apiVersion: "decco.platform9.com/v1beta2"
-kind: "CustomerRegion"
+kind: "Space"
 metadata:
   namespace: "decco"
-  name: "example-customer-region-3"
+  name: "example-space-2"
 spec:
   domainName: platform9.horse
   httpCertSecretName: pf9-horse-secret

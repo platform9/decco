@@ -1,7 +1,7 @@
 apiVersion: "decco.platform9.com/v1beta2"
-kind: "CustomerRegion"
+kind: "Space"
 metadata:
-  name: "example-customer-region"
+  name: "example-space"
 spec:
   size: 3
   version: "3.1.8"

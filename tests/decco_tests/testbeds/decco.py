@@ -166,18 +166,22 @@ def start_mysql(namespace):
     spec = {
         'initialReplicas': 1,
         'verifyTcpClientCert': True,
-        'container': {
-            'name': 'mysql',
-            'image': 'mysql',
-            'env': [
+        'pod': {
+            'containers': [
                 {
-                    'name': 'MYSQL_ROOT_PASSWORD',
-                    'value': root_passwd
-                }
-            ],
-            'ports': [
-                {
-                    'containerPort': 3306,
+                    'name': 'mysql',
+                    'image': 'mysql',
+                    'env': [
+                        {
+                            'name': 'MYSQL_ROOT_PASSWORD',
+                            'value': root_passwd
+                        }
+                    ],
+                    'ports': [
+                        {
+                            'containerPort': 3306,
+                        }
+                    ]
                 }
             ]
         }
@@ -310,12 +314,12 @@ class DeccoTestbed(Testbed):
     Has rabbitmq and consul (via container) installed.
     """
 
-    def __init__(self, tag, kube_config_base64, global_region_info):
+    def __init__(self, tag, kube_config_base64, global_space_info):
         # self.hosts = []
         super(DeccoTestbed, self).__init__()
         self.kube_config_base64 = kube_config_base64
         self.tag = tag
-        self.global_region_info = global_region_info
+        self.global_space_info = global_space_info
 
 
     @classmethod
@@ -383,12 +387,12 @@ class DeccoTestbed(Testbed):
         http_cert_secret_name = 'http-cert-%s' % customer_shortname
         create_http_wildcard_cert_secret(http_cert_secret_name, domain)
         dapi = DeccoApi()
-        global_region_spec = {
+        global_space_spec = {
             'domainName': domain,
             'httpCertSecretName': http_cert_secret_name,
             'tcpCertAndCaSecretName': tcp_cert_secret_name
         }
-        dapi.create_cust_region(customer_shortname, global_region_spec)
+        dapi.create_space(customer_shortname, global_space_spec)
         mysql_root_passwd = start_mysql(customer_shortname)
 
         tmp_dir, stunnel_conf_path = generate_stunnel_config(
@@ -430,12 +434,12 @@ class DeccoTestbed(Testbed):
         create_dockercfg_secret(customer_shortname, 'regsecret', registry_url,
                                 docker_user, docker_token)
 
-        global_region_info = {
+        global_space_info = {
             'name': customer_shortname,
             'mysql_root_passwd': mysql_root_passwd,
             'customer_uuid': cfg.customer.uuid,
             'dbserver_id': dbserver_id,
-            'spec': global_region_spec
+            'spec': global_space_spec
         }
 
         # LOG.info('Adding %s to route53 for %s...',
@@ -462,7 +466,7 @@ class DeccoTestbed(Testbed):
         #setup_decco_hosts(controller['ip'], kube_hosts, admin_user,
         #                 admin_password, token)
 
-        return cls(tag, kube_config_base64, global_region_info)
+        return cls(tag, kube_config_base64, global_space_info)
 
     @staticmethod
     def from_dict(desc):
@@ -473,14 +477,14 @@ class DeccoTestbed(Testbed):
                              (type_name, desc['type']))
         return DeccoTestbed(desc['tag'],
                             desc['kube_config_base64'],
-                            desc['global_region_info']
+                            desc['global_space_info']
                             )
 
     def to_dict(self):
         return {
             'type': '.'.join([__name__, DeccoTestbed.__name__]),
             'kube_config_base64': self.kube_config_base64,
-            'global_region_info': self.global_region_info,
+            'global_space_info': self.global_space_info,
             'tag': self.tag
         }
 
@@ -488,14 +492,14 @@ class DeccoTestbed(Testbed):
         LOG.info('Destroying decco testbed')
         dapi = DeccoApi()
         try:
-            dapi.delete_cust_region(self.global_region_info['name'])
+            dapi.delete_space(self.global_space_info['name'])
         except:
-            LOG.exception("warning: failed to delete customer region")
-        global_region_spec = self.global_region_info['spec']
+            LOG.exception("warning: failed to delete global space")
+        global_space_spec = self.global_space_info['spec']
         v1 = client.CoreV1Api()
         for key in ['httpCertSecretName', 'tcpCertAndCaSecretName']:
             try:
-                secret_name = global_region_spec[key]
+                secret_name = global_space_spec[key]
                 v1.delete_namespaced_secret(secret_name, 'decco',
                                             V1DeleteOptions())
             except:
@@ -510,9 +514,9 @@ class DeccoTestbed(Testbed):
             with stunnel(stunnel_conf_path, tmp_dir):
                 LOG.info('stunnel to consul running')
                 consul = Consul('http://localhost:8500')
-                prefix = 'dbservers/%s' % self.global_region_info['dbserver_id']
+                prefix = 'dbservers/%s' % self.global_space_info['dbserver_id']
                 consul.kv_delete_prefix(prefix)
-                prefix = 'customers/%s' % self.global_region_info['customer_uuid']
+                prefix = 'customers/%s' % self.global_space_info['customer_uuid']
                 consul.kv_delete_prefix(prefix)
 
         except Exception as exc:

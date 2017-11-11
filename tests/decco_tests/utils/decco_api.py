@@ -10,9 +10,9 @@ class DeccoApi():
             config.api_client = ApiClient()
         self.api_client = config.api_client
 
-    def list_cust_regions(self, ns='decco'):
+    def list_spaces(self, ns='decco'):
         prefix = '/apis/decco.platform9.com/v1beta2/namespaces'
-        resource_path = '%s/%s/customerregions' % (prefix, ns)
+        resource_path = '%s/%s/spaces' % (prefix, ns)
         collection_formats = {}
         path_params = {}
         query_params = {}
@@ -44,9 +44,9 @@ class DeccoApi():
                                         collection_formats=collection_formats)
         return data
 
-    def delete_cust_region(self, name, ns='decco'):
+    def delete_space(self, name, ns='decco'):
         prefix = '/apis/decco.platform9.com/v1beta2/namespaces'
-        resource_path = '%s/%s/customerregions/%s' % (prefix, ns, name)
+        resource_path = '%s/%s/spaces/%s' % (prefix, ns, name)
         path_params = {}
         query_params = {}
         header_params = {}
@@ -66,9 +66,8 @@ class DeccoApi():
                                         auth_settings=auth_settings)
         return data
 
-    def create_cust_region(self, name, spec, ns='decco'):
-        return self._create_resource('CustomerRegion', 
-                                     'customerregions', name, spec, ns)
+    def create_space(self, name, spec, ns='decco'):
+        return self._create_resource('Space', 'spaces', name, spec, ns)
 
     def create_app(self, name, spec, ns):
         return self._create_resource('App', 'apps', name, spec, ns)
