@@ -26,8 +26,7 @@ const (
 )
 
 var (
-	ErrContainerMissing = errors.New("spec: missing container")
-	ErrContainerInvalidPorts = errors.New("spec: container must declare exactly one port")
+	ErrContainerInvalidPorts = errors.New("spec: pod must have at least one container port")
 	ErrInvalidUrlPath = errors.New("spec: invalid url path")
 	ErrBothUrlPathAndVerifyTcp = errors.New("spec: url path and verify tcp cannot both be set")
 	ErrNoTcpCert = errors.New("spec: space does not support TCP apps because cert info missing")
@@ -71,15 +70,24 @@ func (c App) DeepCopyObject() runtime.Object {
 type AppSpec struct {
 	HttpUrlPath string `json:"httpUrlPath"`
 	VerifyTcpClientCert bool `json:"verifyTcpClientCert"`
-	ContainerSpec v1.Container `json:"container"`
+	PodSpec v1.PodSpec `json:"pod"`
 	InitialReplicas int32 `json:"initialReplicas"`
 }
 
-func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
-	if c.ContainerSpec.Name == "" {
-		return ErrContainerMissing
+func FirstContainerPort(pod v1.PodSpec) int32 {
+	for _, c := range pod.Containers {
+		for _, p := range c.Ports {
+			if p.ContainerPort > 0 {
+				return p.ContainerPort
+			}
+		}
 	}
-	if len(c.ContainerSpec.Ports) != 1 {
+	return -1
+}
+
+func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
+
+	if FirstContainerPort(c.PodSpec) < 0 {
 		return ErrContainerInvalidPorts
 	}
 	if c.HttpUrlPath == "/" {

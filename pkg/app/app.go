@@ -6,6 +6,7 @@ import (
 	"github.com/platform9/decco/pkg/k8sutil"
 	"reflect"
 	"k8s.io/client-go/kubernetes"
+	cgoCoreV1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	"fmt"
@@ -237,13 +238,15 @@ func (ar *AppRuntime) logCreation() {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) createDeployment() error {
-	port := ar.app.Spec.ContainerSpec.Ports[0].ContainerPort
+	podSpec := ar.app.Spec.PodSpec
+	port := spec.FirstContainerPort(podSpec)
+	if port < 0 {
+		return spec.ErrContainerInvalidPorts
+	}
 	depApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
 	var initialReplicas int32 = ar.app.Spec.InitialReplicas
-	containers := []v1.Container {
-		ar.app.Spec.ContainerSpec,
-	}
-	volumes := []v1.Volume{}
+	containers := podSpec.Containers
+	volumes := podSpec.Volumes
 	if ar.app.Spec.HttpUrlPath == "" {
 		// This is a TCP service. Needs an stunnel container
 		if ar.tcpCertAndCaSecretName == "" {
@@ -288,7 +291,8 @@ func (ar *AppRuntime) createDeployment() error {
 			},
 		})
 	}
-
+	podSpec.Containers = containers
+	podSpec.Volumes = volumes
 	depSpec := &v1beta1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ar.app.Name,
@@ -311,10 +315,7 @@ func (ar *AppRuntime) createDeployment() error {
 						"decco-app": ar.app.Name,
 					},
 				},
-				Spec: v1.PodSpec{
-					Containers: containers,
-					Volumes: volumes,
-				},
+				Spec: podSpec,
 			},
 		},
 	}
@@ -325,17 +326,35 @@ func (ar *AppRuntime) createDeployment() error {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) createSvc() error {
-	port := ar.app.Spec.ContainerSpec.Ports[0].ContainerPort
+	port := spec.FirstContainerPort(ar.app.Spec.PodSpec)
+	appName := ar.app.Name
+	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
 	if ar.app.Spec.HttpUrlPath == "" {
-		// This is a TCP service. Route to pod's stunnel container
+		// This is a TCP service.
+		// Create a cleartext version of the service
+		clearTextSvcName := appName + "-cleartext"
+		err := createSvcInternal(svcApi, clearTextSvcName, appName, port)
+		if err != nil {
+			return fmt.Errorf("failed to create cleartext svc:", err)
+		}
+		// The main service routes to pod's stunnel container
 		port = 443
 	}
-	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
+	// create main service to use as target for ingress controller
+	err := createSvcInternal(svcApi, appName, appName, port)
+	return err
+}
+
+
+func createSvcInternal (svcApi cgoCoreV1.ServiceInterface,
+	svcName string, appName string, port int32) error {
+
 	_, err := svcApi.Create(&v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: ar.app.Name,
+			Name: svcName,
 			Labels: map[string]string {
 				"decco-derived-from": "app",
+				"decco-app": appName,
 			},
 		},
 		Spec: v1.ServiceSpec{
@@ -349,11 +368,12 @@ func (ar *AppRuntime) createSvc() error {
 				},
 			},
 			Selector: map[string]string {
-				"decco-app": ar.app.Name,
+				"decco-app": appName,
 			},
 		},
 	})
 	return err
+
 }
 
 // -----------------------------------------------------------------------------
@@ -378,7 +398,7 @@ func (ar *AppRuntime) addPathToHttpIngress() error {
 	if len(paths) < 1 {
 		return fmt.Errorf("http-ingress has no paths")
 	}
-	port := ar.app.Spec.ContainerSpec.Ports[0].ContainerPort
+	port := spec.FirstContainerPort(ar.app.Spec.PodSpec)
 	paths = append(paths, v1beta1.HTTPIngressPath{
 		Path: ar.app.Spec.HttpUrlPath,
 		Backend: v1beta1.IngressBackend{

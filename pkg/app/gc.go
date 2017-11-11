@@ -68,7 +68,13 @@ func collectServices(kubeApi kubernetes.Interface,
 	}
 	log.Infof("there are %d services", len(svcs.Items))
 	for _, svc := range svcs.Items {
-		if !isKnownApp(svc.Name) {
+		labels := svc.Labels
+		appName, ok := labels["decco-app"]
+		if ! ok {
+			log.Warnf("service %s has no decco-app label", svc.Name)
+			continue
+		}
+		if !isKnownApp(appName) {
 			log.Infof("deleting orphaned service %s", svc.Name)
 			err = svcApi.Delete(svc.Name, nil)
 			if err != nil {
