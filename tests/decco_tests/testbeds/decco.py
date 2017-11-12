@@ -54,7 +54,7 @@ if not stunnel_path:
     raise Exception('STUNNEL_PATH not defined')
 
 
-@retry(log=LOG, max_wait=60)
+@retry(log=LOG, max_wait=60, interval=10)
 def retried_login(*largs, **kwargs):
     return login(*largs, **kwargs)
 
@@ -199,6 +199,78 @@ def start_mysql(namespace):
     raise Exception('failed to create mysql app')
 
 
+def start_keystone(namespace, keystone_image_uri, customer_uuid, region_uuid,
+                   image_pull_secret_name):
+    config_url = "http://consul-cleartext.global.svc.cluster.local:8500"
+    config_host_and_port = "consul-cleartext.global.svc.cluster.local:8500"
+    spec = {
+        'initialReplicas': 1,
+        'httpUrlPath': '/keystone',
+        'pod': {
+            'initContainers': [
+                {
+                    'name': 'init-region',
+                    'image': keystone_image_uri,
+                    'command': [
+                        "/root/init-region",
+                        "--config-url",
+                        config_url,
+                        "--customer-id",
+                        customer_uuid,
+                        "--region-id",
+                        region_uuid
+                    ]
+                }
+            ],
+            'containers': [
+                {
+                    'name': 'keystone',
+                    'image': keystone_image_uri,
+                    'env': [
+                        {
+                            'name': 'CONFIG_URL',
+                            'value': config_url
+                        },
+                        {
+                            'name': 'CONFIG_HOST_AND_PORT',
+                            'value': config_host_and_port
+                        },
+                        {
+                            'name': 'CUSTOMER_ID',
+                            'value': customer_uuid
+                        },
+                        {
+                            'name': 'REGION_ID',
+                            'value': region_uuid
+                        },
+                    ],
+                    'ports': [
+                        {
+                            'containerPort': 5000,
+                        }
+                    ]
+                }
+            ],
+            'imagePullSecrets': [
+                {
+                    'name': image_pull_secret_name
+                }
+            ]
+        }
+    }
+
+    dapi = DeccoApi()
+    for i in range(5):
+        try:
+            time.sleep(2)
+            dapi.create_app('keystone', spec, namespace)
+            LOG.info('successfully created keystone app')
+            return
+        except:
+            LOG.info("failed to create keystone app, may retry...")
+    raise Exception('failed to create mysql app')
+
+
 def create_http_wildcard_cert_secret(secret_name, domain):
     sm = SecretsManager()
     cert_entry = sm.db.certs.find_one({'type': 'wildcard', 'domain': domain})
@@ -325,6 +397,11 @@ class DeccoTestbed(Testbed):
     @classmethod
     def create(cls, tag):
 
+        keystone_image = os.getenv('KEYSTONE_CONTAINER_IMG')
+        keystone_tag = os.getenv('KEYSTONE_CONTAINER_TAG')
+        if not keystone_image or not keystone_image:
+            raise Exception('KEYSTONE_CONTAINER_IMG and KEYSTONE_CONTAINER_TAG must be defined')
+        keystone_image_uri = '%s:%s' % (keystone_image, keystone_tag)
         # Note that the only compatible (image, flavor) combinations are
         # centos7-latest, ubuntu16 and ubuntu16, with 1cpu.2gb.40gb, at least
         # that I know of as of 9/19/17 -Bob
@@ -430,14 +507,19 @@ class DeccoTestbed(Testbed):
             with stunnel(stunnel_conf_path, tmp_dir):
                 LOG.info('stunnel to consul running')
                 _, dbserver_id = sync_to_consul(cfg, state_data)
-                
-        create_dockercfg_secret(customer_shortname, 'regsecret', registry_url,
-                                docker_user, docker_token)
+
+        image_pull_secret = 'regsecret'
+        create_dockercfg_secret(customer_shortname, image_pull_secret,
+                                registry_url, docker_user, docker_token)
+
+        start_keystone(customer_shortname, keystone_image_uri,
+                       cfg.customer.uuid, cfg.uuid, image_pull_secret)
 
         global_space_info = {
             'name': customer_shortname,
             'mysql_root_passwd': mysql_root_passwd,
             'customer_uuid': cfg.customer.uuid,
+            'region_uuid': cfg.uuid,
             'dbserver_id': dbserver_id,
             'spec': global_space_spec
         }
@@ -450,11 +532,10 @@ class DeccoTestbed(Testbed):
 
 
         LOG.info('waiting for keystone to become open')
-        #sleep(5)
-
         LOG.info('obtaining token')
         # user-watch might need a few seconds to propagate the initial admin user
-        token = 'dummy_token'
+        #token = 'dummy_token'
+        token = None
         if not token:
             token_info = retried_login('https://%s' % customer_fqdn,
                                        'whoever@example.com', admin_password,
