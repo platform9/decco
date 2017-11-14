@@ -515,15 +515,6 @@ class DeccoTestbed(Testbed):
         start_keystone(customer_shortname, keystone_image_uri,
                        cfg.customer.uuid, cfg.uuid, image_pull_secret)
 
-        global_space_info = {
-            'name': customer_shortname,
-            'mysql_root_passwd': mysql_root_passwd,
-            'customer_uuid': cfg.customer.uuid,
-            'region_uuid': cfg.uuid,
-            'dbserver_id': dbserver_id,
-            'spec': global_space_spec
-        }
-
         # LOG.info('Adding %s to route53 for %s...',
         #          customer_fqdn, controller['ip'])
         # qbaws.create_dns_record([controller['ip']], customer_fqdn)
@@ -544,8 +535,15 @@ class DeccoTestbed(Testbed):
             tenant_id = token_info['access']['token']['tenant']['id']
             LOG.info('token: %s', str(token_info))
 
-        #setup_decco_hosts(controller['ip'], kube_hosts, admin_user,
-        #                 admin_password, token)
+        global_space_info = {
+            'name': customer_shortname,
+            'mysql_root_passwd': mysql_root_passwd,
+            'customer_uuid': cfg.customer.uuid,
+            'region_uuid': cfg.uuid,
+            'dbserver_id': dbserver_id,
+            'keystone_token': token,
+            'spec': global_space_spec
+        }
 
         return cls(tag, kube_config_base64, global_space_info)
 
