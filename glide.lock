@@ -1,13 +1,48 @@
-hash: a5f33119f585c2062c1465101dd3f17a9c644e4cc208b129a0309d6a2cbe03d8
-updated: 2017-09-01T11:46:59.866158964-07:00
+hash: b80275d73f9eb4d5be5811a0777d8fe5fb8b1fb5395c7ea77a535c837880243e
+updated: 2017-11-14T10:15:13.13255074-08:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
   subpackages:
   - compute/metadata
   - internal
+- name: github.com/aws/aws-sdk-go
+  version: 63ce630574a5ec05ecd8e8de5cea16332a5a684d
+  subpackages:
+  - aws
+  - aws/awserr
+  - aws/awsutil
+  - aws/client
+  - aws/client/metadata
+  - aws/corehandlers
+  - aws/credentials
+  - aws/credentials/ec2rolecreds
+  - aws/credentials/endpointcreds
+  - aws/credentials/stscreds
+  - aws/defaults
+  - aws/ec2metadata
+  - aws/endpoints
+  - aws/request
+  - aws/session
+  - aws/signer/v4
+  - private/protocol
+  - private/protocol/ec2query
+  - private/protocol/json/jsonutil
+  - private/protocol/jsonrpc
+  - private/protocol/query
+  - private/protocol/query/queryutil
+  - private/protocol/rest
+  - private/protocol/restxml
+  - private/protocol/xml/xmlutil
+  - private/waiter
+  - service/autoscaling
+  - service/ec2
+  - service/ecr
+  - service/elb
+  - service/route53
+  - service/sts
 - name: github.com/coreos/etcd-operator
-  version: 49f08f3d7d5c8ed1c0e73ff329da37769c851450
+  version: ba44539dcea6c52eae443871a8a93f7f51e94fdf
   subpackages:
   - pkg/util/retryutil
 - name: github.com/davecgh/go-spew
@@ -22,6 +57,8 @@ imports:
   version: dcef7f55730566d41eae5db10e7d6981829720f6
 - name: github.com/ghodss/yaml
   version: 73d445a93680fa1a78ae23a5839bad48f32ba1ee
+- name: github.com/go-ini/ini
+  version: 2e44421e256d82ebbf3d4d4fcabe8930b905eff3
 - name: github.com/go-openapi/jsonpointer
   version: 46af16f9f7b149af66e5d1bd010e3574dc06de98
 - name: github.com/go-openapi/jsonreference
@@ -48,7 +85,7 @@ imports:
 - name: github.com/google/gofuzz
   version: 44d81051d367757e1c7c6a5a86423ece9afcf63c
 - name: github.com/googleapis/gnostic
-  version: 68f4ded48ba9414dab2ae69b3f0d69971da73aa5
+  version: 0c5108395e2debce0d731cf0287ddf7242066aba
   subpackages:
   - OpenAPIv2
   - compiler
@@ -57,6 +94,8 @@ imports:
   version: bf9dde6d0d2c004a008c27aaee91170c786f6db8
 - name: github.com/imdario/mergo
   version: 6633656539c1639d9d78127b7d47c622b5d7b6dc
+- name: github.com/jmespath/go-jmespath
+  version: 3433f3ea46d9f8019119e7dd41274e112a2359a9
 - name: github.com/juju/ratelimit
   version: 5b9ff866471762aa2ab2dced63c9fb6f53921342
 - name: github.com/mailru/easyjson
@@ -65,12 +104,14 @@ imports:
   - buffer
   - jlexer
   - jwriter
+- name: github.com/pborman/uuid
+  version: ca53cad383cad2479bbba7f7a1a05797ec1386e4
 - name: github.com/PuerkitoBio/purell
   version: 8a290539e2e8629dbc4e6bad948158f790ec31f4
 - name: github.com/PuerkitoBio/urlesc
   version: 5bd2802263f21d8788851d5305584c82a5c75d7e
 - name: github.com/sirupsen/logrus
-  version: 89742aefa4b206dcf400792f3bd35b542998eb3b
+  version: f006c2ac4710855cf0f916dd6b77acf6b048dc6e
 - name: github.com/spf13/pflag
   version: 9ff6c6923cfffbcd502984b8e0c80539a94968b7
 - name: github.com/ugorji/go
@@ -78,7 +119,7 @@ imports:
   subpackages:
   - codec
 - name: golang.org/x/crypto
-  version: 81e90905daefcd6fd217b62423c0908922eadb30
+  version: d172538b2cfce0c13cee31e647d0367aa8cd2486
   subpackages:
   - ssh/terminal
 - name: golang.org/x/net
@@ -86,13 +127,10 @@ imports:
   subpackages:
   - context
   - context/ctxhttp
-  - html
-  - html/atom
   - http2
   - http2/hpack
   - idna
   - lex/httplex
-  - websocket
 - name: golang.org/x/oauth2
   version: a6bd8cefa1811bd24b86f8902872e4e8225f74c4
   subpackages:
@@ -104,7 +142,6 @@ imports:
   version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
   subpackages:
   - unix
-  - windows
 - name: golang.org/x/text
   version: b19bf474d317b857955b12035d2c5acb57ce8b01
   subpackages:
@@ -120,7 +157,7 @@ imports:
   - unicode/norm
   - width
 - name: google.golang.org/appengine
-  version: d9a072cfa7b9736e44311ef77b3e09d804bfa599
+  version: 9d8544a6b2c7df9cff240fcf92d7b2f59bc13416
   subpackages:
   - internal
   - internal/app_identity
@@ -136,10 +173,11 @@ imports:
 - name: gopkg.in/yaml.v2
   version: 53feefa2559fb8dfa8d81baad31be332c97d6c77
 - name: k8s.io/api
-  version: e532fdb5587debfd7aade56dabe9eb5df9544baf
+  version: f30e293246921de7f4ee46bb65b8762b2f890fc4
   subpackages:
   - admissionregistration/v1alpha1
   - apps/v1beta1
+  - apps/v1beta2
   - authentication/v1
   - authentication/v1beta1
   - authorization/v1
@@ -147,20 +185,22 @@ imports:
   - autoscaling/v1
   - autoscaling/v2alpha1
   - batch/v1
+  - batch/v1beta1
   - batch/v2alpha1
   - certificates/v1beta1
   - core/v1
   - extensions/v1beta1
-  - imagepolicy/v1alpha1
   - networking/v1
   - policy/v1beta1
+  - rbac/v1
   - rbac/v1alpha1
   - rbac/v1beta1
+  - scheduling/v1alpha1
   - settings/v1alpha1
   - storage/v1
   - storage/v1beta1
 - name: k8s.io/apiextensions-apiserver
-  version: 6d8c23d2e66ce61e2a7e34f92e8eb3eec13279fa
+  version: 2bfb07d318ed549813240d1165fcebad6250c666
   subpackages:
   - pkg/apis/apiextensions
   - pkg/apis/apiextensions/v1beta1
@@ -168,7 +208,7 @@ imports:
   - pkg/client/clientset/clientset/scheme
   - pkg/client/clientset/clientset/typed/apiextensions/v1beta1
 - name: k8s.io/apimachinery
-  version: a13245d02534abe88286859b547d041816f9a3f4
+  version: 2dc2b12394600198a0176dc967d31ab73a65d74f
   subpackages:
   - pkg/api/equality
   - pkg/api/errors
@@ -182,7 +222,6 @@ imports:
   - pkg/conversion/unstructured
   - pkg/fields
   - pkg/labels
-  - pkg/openapi
   - pkg/runtime
   - pkg/runtime/schema
   - pkg/runtime/serializer
@@ -202,6 +241,7 @@ imports:
   - pkg/util/net
   - pkg/util/runtime
   - pkg/util/sets
+  - pkg/util/uuid
   - pkg/util/validation
   - pkg/util/validation/field
   - pkg/util/wait
@@ -210,13 +250,14 @@ imports:
   - pkg/watch
   - third_party/forked/golang/reflect
 - name: k8s.io/client-go
-  version: 1850dd66e4213a26bd70d0b85fee4176d324b845
+  version: 2554b0b4622d739c8af9da548e8fe2223176803c
   subpackages:
   - discovery
   - kubernetes
   - kubernetes/scheme
   - kubernetes/typed/admissionregistration/v1alpha1
   - kubernetes/typed/apps/v1beta1
+  - kubernetes/typed/apps/v1beta2
   - kubernetes/typed/authentication/v1
   - kubernetes/typed/authentication/v1beta1
   - kubernetes/typed/authorization/v1
@@ -224,18 +265,20 @@ imports:
   - kubernetes/typed/autoscaling/v1
   - kubernetes/typed/autoscaling/v2alpha1
   - kubernetes/typed/batch/v1
+  - kubernetes/typed/batch/v1beta1
   - kubernetes/typed/batch/v2alpha1
   - kubernetes/typed/certificates/v1beta1
   - kubernetes/typed/core/v1
   - kubernetes/typed/extensions/v1beta1
   - kubernetes/typed/networking/v1
   - kubernetes/typed/policy/v1beta1
+  - kubernetes/typed/rbac/v1
   - kubernetes/typed/rbac/v1alpha1
   - kubernetes/typed/rbac/v1beta1
+  - kubernetes/typed/scheduling/v1alpha1
   - kubernetes/typed/settings/v1alpha1
   - kubernetes/typed/storage/v1
   - kubernetes/typed/storage/v1beta1
-  - pkg/api/v1/ref
   - pkg/version
   - plugin/pkg/client/auth/gcp
   - rest
@@ -247,6 +290,7 @@ imports:
   - tools/clientcmd/api/latest
   - tools/clientcmd/api/v1
   - tools/metrics
+  - tools/reference
   - transport
   - util/cert
   - util/flowcontrol
@@ -257,4 +301,11 @@ imports:
   version: 80f07ef71bb4f781233c65aa8d0369e4ecafab87
   subpackages:
   - pkg/common
+- name: k8s.io/kubernetes
+  version: bebdeb749f1fa3da9e1312c4b08e439c404b3136
+  subpackages:
+  - federation/pkg/dnsprovider
+  - federation/pkg/dnsprovider/providers/aws/route53
+  - federation/pkg/dnsprovider/providers/aws/route53/stubs
+  - federation/pkg/dnsprovider/rrstype
 testImports: []
