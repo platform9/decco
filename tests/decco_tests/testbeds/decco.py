@@ -54,7 +54,7 @@ if not stunnel_path:
     raise Exception('STUNNEL_PATH not defined')
 
 
-@retry(log=LOG, max_wait=60, interval=10)
+@retry(log=LOG, max_wait=600, interval=10)
 def retried_login(*largs, **kwargs):
     return login(*largs, **kwargs)
 
