@@ -12,15 +12,22 @@ import (
 	"errors"
 	"strings"
 	"encoding/json"
+	cgoCoreV1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/api/resource"
+	_ "k8s.io/kubernetes/federation/pkg/dnsprovider/providers/aws/route53"
+	//"k8s.io/kubernetes/federation/pkg/dnsprovider/rrstype"
+	"k8s.io/kubernetes/federation/pkg/dnsprovider"
+	"os"
+	"k8s.io/kubernetes/federation/pkg/dnsprovider/rrstype"
 )
 
 type spaceRscEventType string
 
 var (
 	errInCreatingPhase = errors.New("space already in Creating phase")
+	dnsProvider dnsprovider.Interface
 )
 
 const (
@@ -45,6 +52,37 @@ type SpaceRuntime struct {
 	// in memory state of the spaceRsc
 	// status is the source of truth after SpaceRuntime struct is materialized.
 	status spec.SpaceStatus
+}
+
+// -----------------------------------------------------------------------------
+
+func init() {
+	dnsProviderName := os.Getenv("DNS_PROVIDER_NAME")
+	if len(dnsProviderName) > 0 {
+		var err error
+		dnsProvider, err = dnsprovider.GetDnsProvider(dnsProviderName, nil)
+		if err != nil {
+			logrus.Panicf("failed to get dns provider %s", dnsProviderName)
+		}
+	}
+}
+
+// ----------------------------------------------------------------------------
+
+func GetTcpIngressIp(svcApi cgoCoreV1.ServiceInterface) (string, error) {
+	svc, err := svcApi.Get("k8sniff", metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get k8sniff service: %s", err)
+	}
+	lbIngresses := svc.Status.LoadBalancer.Ingress;
+	if len(lbIngresses) == 0 {
+		return "", fmt.Errorf("k8sniff service has no LB ingresses")
+	}
+	ip := lbIngresses[0].IP
+	if len(ip) == 0 {
+		return "", fmt.Errorf("k8sniff service has no IP")
+	}
+	return ip, nil
 }
 
 // -----------------------------------------------------------------------------
@@ -92,6 +130,10 @@ func (c *SpaceRuntime) Delete() {
 	err := nsApi.Delete(c.spc.Name, nil)
 	if err != nil {
 		c.log.Warn("failed to delete namespace %s: ", err.Error())
+	}
+	err = c.updateDns(true)
+	if err != nil {
+		c.log.Warn("failed to delete dns record: %s", err)
 	}
 }
 
@@ -207,7 +249,71 @@ func (c *SpaceRuntime) internalCreate() error {
 	if err = c.createDefaultHttpSvc(); err != nil {
 		return fmt.Errorf("failed to create default http svc: %s", err)
 	}
+	if err = c.updateDns(false); err != nil {
+		return fmt.Errorf("failed to update DNS: %s", err)
+	}
 	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (c * SpaceRuntime) updateDns(delete bool) error {
+	if dnsProvider == nil {
+		c.log.Debug("skipping DNS update: no registered provider")
+		return nil
+	}
+	ip, err := GetTcpIngressIp(c.kubeApi.CoreV1().Services("decco"))
+	if err != nil {
+		return fmt.Errorf("failed to get TCP ingress IP: %s", err)
+	}
+	zonesApi, _ := dnsProvider.Zones()
+	zones, err := zonesApi.List()
+	if err != nil {
+		return fmt.Errorf("failed to list dns zones: %s", err)
+	}
+	zoneName := fmt.Sprintf("%s.", c.spc.Spec.DomainName)
+	for _, zone := range zones {
+		if zone.Name() == zoneName {
+			rrName := fmt.Sprintf("%s.%s", c.spc.Name, zoneName)
+			c.log.Infof("found zone %s, looking for %s record",
+				zoneName, rrName)
+			rrSets, _ := zone.ResourceRecordSets()
+			rrSetList, err := rrSets.Get(rrName)
+			if err != nil {
+				return fmt.Errorf("failed to lookup record name %s: %s",
+					rrName, err)
+			}
+			changeSet := rrSets.StartChangeset()
+			var action string
+			if delete {
+				action = "deletion"
+				if len(rrSetList) == 0 {
+					c.log.Infof("not deleting DNS record because rrSetList empty")
+					return nil
+				} else{
+					changeSet.Remove(rrSetList[0])
+				}
+			} else {
+				rrSet := rrSets.New(rrName, []string{ip}, 180, rrstype.A)
+				if len(rrSetList) == 0 {
+					action = "creation"
+				} else {
+					action = "update"
+					changeSet.Remove(rrSetList[0])
+				}
+				changeSet.Add(rrSet)
+			}
+			err = changeSet.Apply()
+			if err != nil {
+				return fmt.Errorf("%s of record set %s failed: %s",
+					action, rrName, err)
+			}
+			c.log.Infof("%s of record set %s with ip %s succeeded",
+					action, rrName, ip)
+			return nil
+		}
+	}
+	return fmt.Errorf("failed to find DNS zone %s", zoneName)
 }
 
 // -----------------------------------------------------------------------------

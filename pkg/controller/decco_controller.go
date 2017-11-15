@@ -150,6 +150,7 @@ func (c *Controller) initResource() (string, error) {
 	return watchVersion, nil
 }
 
+
 // ----------------------------------------------------------------------------
 
 func (c *Controller) Run() error {
