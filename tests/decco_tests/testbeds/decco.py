@@ -188,9 +188,9 @@ def start_mysql(namespace):
     }
 
     dapi = DeccoApi()
-    for i in range(5):
+    for i in range(60):
         try:
-            time.sleep(2)
+            time.sleep(10)
             dapi.create_app('mysql', spec, namespace)
             LOG.info('successfully created mysql app')
             return root_passwd
@@ -369,7 +369,7 @@ def stunnel(stunnel_conf_path, output_dir):
 
 
 def _get_db_connection(mysql_root_passwd):
-    for attempt in range(5):
+    for attempt in range(120):
         try:
             time.sleep(10)
             db = create_and_verify_db_connection('127.0.0.1', 3306,
@@ -471,7 +471,7 @@ class DeccoTestbed(Testbed):
         }
         dapi.create_space(customer_shortname, global_space_spec)
         mysql_root_passwd = start_mysql(customer_shortname)
-
+        LOG.info('mysql password: %s', mysql_root_passwd)
         tmp_dir, stunnel_conf_path = generate_stunnel_config(
             customer_fqdn, 'mysql', 3306,
             ca.cert_pem, tcp_cert.cert_pem, tcp_cert.private_key_pem)
