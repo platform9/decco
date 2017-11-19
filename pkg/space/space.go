@@ -13,6 +13,7 @@ import (
 	"strings"
 	"encoding/json"
 	cgoCoreV1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	netv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -232,6 +233,9 @@ func (c *SpaceRuntime) internalCreate() error {
 	if err = c.createNamespace(); err != nil {
 		return fmt.Errorf("failed to create namespace: %s", err)
 	}
+	if err = c.createNetPolicy(); err != nil {
+		return fmt.Errorf("failed to create network policy: %s", err)
+	}
 	if err = c.copySecret(httpCert); err != nil {
 		return fmt.Errorf("failed to copy http cert: %s", err)
 	}
@@ -239,7 +243,7 @@ func (c *SpaceRuntime) internalCreate() error {
 		if err = c.copySecret(tcpCertAndCa); err != nil {
 			return fmt.Errorf("failed to copy tcp cert and CA: %s", err)
 		}
-	} 
+	}
 	if err = c.createHttpIngress(); err != nil {
 		return fmt.Errorf("failed to create http ingress: %s", err)
 	}
@@ -253,6 +257,45 @@ func (c *SpaceRuntime) internalCreate() error {
 		return fmt.Errorf("failed to update DNS: %s", err)
 	}
 	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (c * SpaceRuntime) createNetPolicy() error {
+	peers := []netv1.NetworkPolicyPeer{
+		{
+			NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string {
+					"decco-project": spec.RESERVED_PROJECT_NAME,
+				},
+			},
+		},
+	}
+	if c.spc.Spec.Project != "" {
+		peers = append(peers, netv1.NetworkPolicyPeer{
+			NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string {
+					"decco-project": c.spc.Spec.Project,
+				},
+			},
+		})
+	}
+	np := netv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: c.spc.Name,
+		},
+		Spec: netv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{},
+			Ingress: []netv1.NetworkPolicyIngressRule{
+				{
+					From: peers,
+				},
+			},
+		},
+	}
+	netApi := c.kubeApi.NetworkingV1().NetworkPolicies(c.spc.Name)
+	_, err := netApi.Create(&np)
+	return err
 }
 
 // -----------------------------------------------------------------------------
@@ -342,6 +385,9 @@ func (c *SpaceRuntime) createNamespace() error {
 				"app": "decco",
 			},
 		},
+	}
+	if c.spc.Spec.Project != "" {
+		ns.ObjectMeta.Labels["decco-project"] = c.spc.Spec.Project
 	}
 	_, err := nsApi.Create(&ns)
 	return err

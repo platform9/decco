@@ -22,11 +22,13 @@ import (
 )
 
 const (
+	RESERVED_PROJECT_NAME = "system"
 )
 
 var (
 	ErrDomainNameMissing = errors.New("spec: missing domain name")
 	ErrHttpCertSecretNameMissing = errors.New("spec: missing certificate secret name")
+	ErrInvalidProjectName = errors.New("spec: invalid project name")
 )
 
 // SpaceList is a list of spaces.
@@ -66,6 +68,7 @@ func (c Space) DeepCopyObject() runtime.Object {
 
 type SpaceSpec struct {
 	DomainName             string `json:"domainName"`
+	Project                string `json:"project"`
 	HttpCertSecretName     string `json:"httpCertSecretName"`
 	TcpCertAndCaSecretName string `json:"tcpCertAndCaSecretName"`
 }
@@ -76,6 +79,9 @@ func (c *SpaceSpec) Validate() error {
 	}
 	if c.HttpCertSecretName == "" {
 		return ErrHttpCertSecretNameMissing
+	}
+	if c.Project == RESERVED_PROJECT_NAME {
+		return ErrInvalidProjectName
 	}
 	return nil
 }
