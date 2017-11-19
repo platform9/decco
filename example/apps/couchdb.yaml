@@ -3,10 +3,11 @@ kind: "App"
 metadata:
   name: "couchdb"
 spec:
-  httpUrlPath: "/couchdb"
   initialReplicas: 1
-  container:
-    name: couchdb
-    image: couchdb
-    ports:
-    - containerPort: 5984
+  httpUrlPath: "/couchdb"
+  pod:
+    containers:
+    - name: couchdb
+      image: couchdb
+      ports:
+      - containerPort: 5984

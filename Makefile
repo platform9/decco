@@ -37,6 +37,10 @@ local-operator:
 local-default-http:
 	cd $(SRC_DIR)/cmd/default-http && go build -o $${GOPATH}/bin/decco-default-http
 
+local-dns-test:
+	cd $(SRC_DIR)/cmd/dns-test && go build -o $${GOPATH}/bin/dns-test
+
+
 $(OPERATOR_EXE): deps | $(BIN_DIR)
 	cd $(SRC_DIR)/cmd/operator && \
 	export GOPATH=$(BUILD_DIR) && \
