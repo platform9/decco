@@ -7,4 +7,5 @@ spec:
   domainName: platform9.horse
   httpCertSecretName: pf9-horse-secret
   tcpCertAndCaSecretName: example-customer-region-2-secret
+  encrypt: true
 

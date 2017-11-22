@@ -31,6 +31,7 @@ import (
 	"github.com/platform9/decco/pkg/app"
 	"time"
 	"net/http"
+	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/appspec"
 	"github.com/platform9/decco/pkg/client"
 	"sync"
@@ -60,8 +61,7 @@ type Controller struct {
 	kubeApi       kubernetes.Interface
 	appInfo       map[string] AppInfo
 	namespace     string
-	domainName    string
-	tcpCertAndCaSecretName string
+	spaceSpec     spec.SpaceSpec
 	stopCh chan interface{}
 }
 
@@ -75,8 +75,7 @@ type AppInfo struct {
 func StartAppControllerLoop(
 	log *logrus.Entry,
 	namespace string,
-	domainName string,
-	tcpCertAndCaSecretName string,
+	spaceSpec spec.SpaceSpec,
 	stopCh chan interface{},
 	wg *sync.WaitGroup,
 ) {
@@ -84,7 +83,7 @@ func StartAppControllerLoop(
 	go func () {
 		defer wg.Done()
 		for {
-			c := New(namespace, domainName, tcpCertAndCaSecretName, stopCh)
+			c := New(namespace, spaceSpec, stopCh)
 			err := c.Run()
 			switch err {
 			case ErrTerminated:
@@ -107,8 +106,7 @@ func StartAppControllerLoop(
 
 func New(
 	namespace string,
-	domainName string,
-	tcpCertAndCaSecretName string,
+	spaceSpec spec.SpaceSpec,
 	stopCh chan interface{},
 ) *Controller {
 	clustConfig := k8sutil.GetClusterConfigOrDie()
@@ -124,8 +122,7 @@ func New(
 		kubeApi:       kubernetes.NewForConfigOrDie(clustConfig),
 		appInfo:       make(map[string] AppInfo),
 		namespace:     namespace,
-		domainName:    domainName,
-		tcpCertAndCaSecretName: tcpCertAndCaSecretName,
+		spaceSpec:     spaceSpec,
 		stopCh:        stopCh,
 	}
 }
@@ -151,8 +148,7 @@ func (ctl *Controller) findAllApps() (string, error) {
 
 		a.Spec.Cleanup()
 		initialRV := a.ResourceVersion
-		newApp, err := app.New(a, ctl.kubeApi, ctl.namespace, ctl.domainName,
-			ctl.tcpCertAndCaSecretName)
+		newApp, err := app.New(a, ctl.kubeApi, ctl.namespace, ctl.spaceSpec)
 		if err != nil {
 			ctl.log.Warnf("app runtime creation failed: %s", err)
 			continue
@@ -352,8 +348,7 @@ func (c *Controller) handleAppEvent(event *Event) error {
 				" before but we received event (%s)", a.Name, event.Type)
 		}
 
-		newApp, err := app.New(*a, c.kubeApi, c.namespace, c.domainName,
-			c.tcpCertAndCaSecretName)
+		newApp, err := app.New(*a, c.kubeApi, c.namespace, c.spaceSpec)
 		if err != nil {
 			c.log.Warnf("app runtime creation failed: %s", err)
 			break

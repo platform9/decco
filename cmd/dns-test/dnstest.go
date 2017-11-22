@@ -21,6 +21,7 @@ func main() {
 		fmt.Println("dns update successful.")
 	}
 }
+
 func updateDns(ip string, name string, zoneName string) error {
 	dnsProvider, err := dnsprovider.GetDnsProvider("aws-route53", nil)
 	if err != nil {

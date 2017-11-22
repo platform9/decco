@@ -3,6 +3,7 @@ package app
 import (
 	"github.com/sirupsen/logrus"
 	spec "github.com/platform9/decco/pkg/appspec"
+	sspec "github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"reflect"
 	"k8s.io/client-go/kubernetes"
@@ -26,6 +27,7 @@ var (
 const (
 	eventDeleteApp appEventType = "Delete"
 	eventModifyApp appEventType = "Modify"
+	TLS_PORT = 443
 )
 
 type appEvent struct {
@@ -36,8 +38,7 @@ type appEvent struct {
 type AppRuntime struct {
 	kubeApi kubernetes.Interface
 	namespace string
-	domainName string
-	tcpCertAndCaSecretName string
+	spaceSpec sspec.SpaceSpec
 	log *logrus.Entry
 
 	//config Config
@@ -55,8 +56,7 @@ func New(
 	app spec.App,
 	kubeApi kubernetes.Interface,
 	namespace string,
-	domainName string,
-	tcpCertAndCaSecretName string,
+	spaceSpec sspec.SpaceSpec,
 ) (*AppRuntime, error) {
 
 	lg := logrus.WithField("pkg","app",
@@ -68,8 +68,7 @@ func New(
 		app:      app,
 		status:      app.Status.Copy(),
 		namespace: namespace,
-		domainName: domainName,
-		tcpCertAndCaSecretName: tcpCertAndCaSecretName,
+		spaceSpec: spaceSpec,
 	}
 
 	if setupErr := ar.setup(); setupErr != nil {
@@ -145,7 +144,7 @@ func (ar *AppRuntime) updateCRStatus() error {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) setup() error {
-	err := ar.app.Spec.Validate(ar.tcpCertAndCaSecretName)
+	err := ar.app.Spec.Validate(ar.spaceSpec.TcpCertAndCaSecretName)
 	if err != nil {
 		return err
 	}
@@ -244,23 +243,59 @@ func (ar *AppRuntime) createDeployment() error {
 		return spec.ErrContainerInvalidPorts
 	}
 	depApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-	var initialReplicas int32 = ar.app.Spec.InitialReplicas
+	initialReplicas := ar.app.Spec.InitialReplicas
 	containers := podSpec.Containers
 	volumes := podSpec.Volumes
+	verifyChain := "no"
+	tlsSecretName := ""
+	stunnelEnv := []v1.EnvVar {
+		{
+			Name: "STUNNEL_VERIFY_CHAIN",
+			Value: verifyChain,
+		},
+		{
+			Name: "STUNNEL_CONNECT",
+			Value: fmt.Sprintf("%d", port),
+		},
+	}
+
+	// Determine if we need TLS termination (and therefore an stunnel container)
 	if ar.app.Spec.HttpUrlPath == "" {
-		// This is a TCP service. Needs an stunnel container
-		if ar.tcpCertAndCaSecretName == "" {
+		// This is a TCP service.
+		tlsSecretName = ar.spaceSpec.TcpCertAndCaSecretName
+		if tlsSecretName == "" {
 			return fmt.Errorf("space does not have cert for TCP service")
 		}
-		verifyChain := "no"
 		if ar.app.Spec.VerifyTcpClientCert {
 			verifyChain = "yes"
 		}
+	} else if ar.spaceSpec.Encrypt {
+		// This is an encrypted HTTP service.
+		tlsSecretName = ar.spaceSpec.HttpCertSecretName
+		if tlsSecretName == "" {
+			return fmt.Errorf("space does not have cert for HTTP service")
+		}
+		// The server cert file names are different because they follow
+		// the nginx ingress controller conventions (tls.crt and tls.key).
+		// There is no CA for client certificate verification (for now).
+		stunnelEnv = append(stunnelEnv,
+			v1.EnvVar{
+				Name: "STUNNEL_CERT_FILE",
+				Value: "/etc/stunnel/certs/tls.crt",
+			},
+			v1.EnvVar{
+				Name: "STUNNEL_KEY_FILE",
+				Value: "/etc/stunnel/certs/tls.key",
+			},
+		)
+	}
+
+	if tlsSecretName != "" {
 		volumes = append(volumes, v1.Volume{
 			Name: "certs",
 			VolumeSource: v1.VolumeSource{
 				Secret: &v1.SecretVolumeSource{
-					SecretName: ar.tcpCertAndCaSecretName,
+					SecretName: tlsSecretName,
 				},
 			},
 		})
@@ -269,19 +304,10 @@ func (ar *AppRuntime) createDeployment() error {
 			Image: "platform9systems/stunnel",
 			Ports: []v1.ContainerPort{
 				{
-					ContainerPort: 443,
+					ContainerPort: TLS_PORT,
 				},
 			},
-			Env: []v1.EnvVar {
-				{
-					Name: "STUNNEL_VERIFY_CHAIN",
-					Value: verifyChain,
-				},
-				{
-					Name: "STUNNEL_CONNECT",
-					Value: fmt.Sprintf("%d", port),
-				},
-			},
+			Env: stunnelEnv,
 			VolumeMounts: []v1.VolumeMount{
 				{
 					Name: "certs",
@@ -338,7 +364,9 @@ func (ar *AppRuntime) createSvc() error {
 			return fmt.Errorf("failed to create cleartext svc:", err)
 		}
 		// The main service routes to pod's stunnel container
-		port = 443
+		port = TLS_PORT
+	} else if ar.spaceSpec.Encrypt {
+		port = TLS_PORT
 	}
 	// create main service to use as target for ingress controller
 	err := createSvcInternal(svcApi, appName, appName, port)
@@ -399,6 +427,9 @@ func (ar *AppRuntime) addPathToHttpIngress() error {
 		return fmt.Errorf("http-ingress has no paths")
 	}
 	port := spec.FirstContainerPort(ar.app.Spec.PodSpec)
+	if ar.spaceSpec.Encrypt {
+		port = TLS_PORT
+	}
 	paths = append(paths, v1beta1.HTTPIngressPath{
 		Path: ar.app.Spec.HttpUrlPath,
 		Backend: v1beta1.IngressBackend{
@@ -458,7 +489,7 @@ func (ar *AppRuntime) createTcpIngress() error {
 	if path != "" {
 		return nil
 	}
-	hostName := ar.app.Name + "." + ar.namespace + "." + ar.domainName
+	hostName := ar.app.Name + "." + ar.namespace + "." + ar.spaceSpec.DomainName
 	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
 	ing := v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -482,7 +513,7 @@ func (ar *AppRuntime) createTcpIngress() error {
 										ServiceName: ar.app.Name,
 										ServicePort: intstr.IntOrString {
 											Type: intstr.Int,
-											IntVal: 443,
+											IntVal: TLS_PORT,
 										},
 									},
 								},

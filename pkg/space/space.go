@@ -18,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/api/resource"
 	_ "k8s.io/kubernetes/federation/pkg/dnsprovider/providers/aws/route53"
-	//"k8s.io/kubernetes/federation/pkg/dnsprovider/rrstype"
 	"k8s.io/kubernetes/federation/pkg/dnsprovider"
 	"os"
 	"k8s.io/kubernetes/federation/pkg/dnsprovider/rrstype"
@@ -398,15 +397,19 @@ func (c *SpaceRuntime) createNamespace() error {
 func (c *SpaceRuntime) createHttpIngress() error {
 	hostName := c.spc.Name + "." + c.spc.Spec.DomainName
 	ingApi := c.kubeApi.ExtensionsV1beta1().Ingresses(c.spc.Name)
+	annotations := map[string]string {
+		"ingress.kubernetes.io/rewrite-target": "/",
+	}
+	if c.spc.Spec.Encrypt {
+		annotations["ingress.kubernetes.io/secure-backends"] = "true"
+	}
 	ing := v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "http-ingress",
 			Labels: map[string]string {
 				"app": "decco",
 			},
-			Annotations: map[string]string {
-				"ingress.kubernetes.io/rewrite-target": "/",
-			},
+			Annotations: annotations,
 		},
 		Spec: v1beta1.IngressSpec{
 			Rules: []v1beta1.IngressRule{

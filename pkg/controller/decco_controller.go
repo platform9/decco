@@ -114,8 +114,7 @@ func (ctl *Controller) findAllSpaces() (string, error) {
 			stopAppCh: stopAppCh,
 		}
 		appcontroller.StartAppControllerLoop(ctl.log, spc.Name,
-			spc.Spec.DomainName, spc.Spec.TcpCertAndCaSecretName,
-			stopAppCh, &ctl.waitApps)
+			spc.Spec, stopAppCh, &ctl.waitApps)
 	}
 
 	return spcList.ResourceVersion, nil
@@ -316,8 +315,7 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 			stopAppCh: stopAppCh,
 		}
 		appcontroller.StartAppControllerLoop(c.log, spc.Name,
-			spc.Spec.DomainName, spc.Spec.TcpCertAndCaSecretName,
-			stopAppCh, &c.waitApps)
+			spc.Spec, stopAppCh, &c.waitApps)
 
 		c.log.Printf("space (%s) added. " +
 			"There now %d spaces", spc.Name, len(c.spcInfo))
