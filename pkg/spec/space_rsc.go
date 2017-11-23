@@ -71,7 +71,7 @@ type SpaceSpec struct {
 	Project                string `json:"project"`
 	HttpCertSecretName     string `json:"httpCertSecretName"`
 	TcpCertAndCaSecretName string `json:"tcpCertAndCaSecretName"`
-	Encrypt                bool   `json:"encrypt"`
+	EncryptHttp            bool   `json:"encryptHttp"`
 }
 
 func (c *SpaceSpec) Validate() error {

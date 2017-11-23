@@ -33,6 +33,7 @@ var (
 const (
 	eventDeleteSpace spaceRscEventType = "Delete"
 	eventModifySpace spaceRscEventType = "Modify"
+	defaultHttpInternalPort int32 = 8081
 )
 
 type spaceRscEvent struct {
@@ -400,8 +401,12 @@ func (c *SpaceRuntime) createHttpIngress() error {
 	annotations := map[string]string {
 		"ingress.kubernetes.io/rewrite-target": "/",
 	}
-	if c.spc.Spec.Encrypt {
+	if c.spc.Spec.EncryptHttp {
 		annotations["ingress.kubernetes.io/secure-backends"] = "true"
+	}
+	defaultHttpSvcPort := int32(80)
+	if c.spc.Spec.EncryptHttp {
+		defaultHttpSvcPort = k8sutil.TlsPort
 	}
 	ing := v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -424,7 +429,7 @@ func (c *SpaceRuntime) createHttpIngress() error {
 										ServiceName: "default-http",
 										ServicePort: intstr.IntOrString {
 											Type: intstr.Int,
-											IntVal: 80,
+											IntVal: defaultHttpSvcPort,
 										},
 									},
 								},
@@ -451,6 +456,66 @@ func (c *SpaceRuntime) createHttpIngress() error {
 
 func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.spc.Name)
+	volumes := []v1.Volume{}
+	containers := []v1.Container {
+		{
+			Name: "default-http",
+			Image: "platform9systems/decco-default-http",
+			Env: []v1.EnvVar{
+				{
+					Name: "MY_POD_NAMESPACE",
+					ValueFrom: &v1.EnvVarSource{
+						FieldRef: &v1.ObjectFieldSelector{
+							FieldPath: "metadata.namespace",
+						},
+					},
+				},
+			},
+			LivenessProbe: &v1.Probe{
+				Handler: v1.Handler {
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/healthz",
+						Port: intstr.IntOrString {
+							Type: intstr.Int,
+							IntVal: defaultHttpInternalPort,
+						},
+						Scheme: "HTTP",
+					},
+				},
+				InitialDelaySeconds: 30,
+				TimeoutSeconds: 5,
+			},
+			Resources: v1.ResourceRequirements {
+				Limits: v1.ResourceList{
+					"cpu": resource.Quantity{
+						Format: "10m",
+					},
+					"memory": resource.Quantity{
+						Format: "20Mi",
+					},
+				},
+				Requests: v1.ResourceList{
+					"cpu": resource.Quantity{
+						Format: "10m",
+					},
+					"memory": resource.Quantity{
+						Format: "20Mi",
+					},
+				},
+			},
+		},
+	}
+
+	if c.spc.Spec.EncryptHttp {
+		volumes, containers = k8sutil.InsertStunnel("no",
+			defaultHttpInternalPort, c.spc.Spec.HttpCertSecretName,
+			true, volumes, containers)
+	} else {
+		containers[0].Ports = []v1.ContainerPort{
+			{ContainerPort: defaultHttpInternalPort },
+		}
+	}
+
 	_, err := depApi.Create(&v1beta1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "default-http",
@@ -473,57 +538,8 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 					},
 				},
 				Spec: v1.PodSpec{
-					Containers: []v1.Container {
-						{
-							Name: "default-http",
-							Image: "platform9systems/decco-default-http",
-							Env: []v1.EnvVar{
-								{
-									Name: "MY_POD_NAMESPACE",
-									ValueFrom: &v1.EnvVarSource{
-										FieldRef: &v1.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
-										},
-									},
-								},
-							},
-							LivenessProbe: &v1.Probe{
-								Handler: v1.Handler {
-									HTTPGet: &v1.HTTPGetAction{
-										Path: "/healthz",
-										Port: intstr.IntOrString {
-											Type: intstr.Int,
-											IntVal: 8081,
-										},
-										Scheme: "HTTP",
-									},
-								},
-								InitialDelaySeconds: 30,
-								TimeoutSeconds: 5,
-							},
-							Ports: []v1.ContainerPort {
-								{ ContainerPort: 8081 },
-							},
-							Resources: v1.ResourceRequirements {
-								Limits: v1.ResourceList{
-									"cpu": resource.Quantity{
-										Format: "10m",
-									},
-									"memory": resource.Quantity{
-										Format: "20Mi",
-									},
-								},
-								Requests: v1.ResourceList{
-									"cpu": resource.Quantity{
-										Format: "10m",
-									},
-									"memory": resource.Quantity{
-										Format: "20Mi",
-									},
-								},
-							},
-						},
-					},
+					Containers: containers,
+					Volumes: volumes,
 				},
 			},
 		},
@@ -535,6 +551,12 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 
 func (c *SpaceRuntime) createDefaultHttpSvc() error {
 	svcApi := c.kubeApi.CoreV1().Services(c.spc.Name)
+	svcPort := int32(80)
+	tgtPort := defaultHttpInternalPort
+	if c.spc.Spec.EncryptHttp {
+		svcPort = k8sutil.TlsPort
+		tgtPort = k8sutil.TlsPort
+	}
 	_, err := svcApi.Create(&v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "default-http",
@@ -542,10 +564,10 @@ func (c *SpaceRuntime) createDefaultHttpSvc() error {
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{
 				{
-					Port: 80,
+					Port: svcPort,
 					TargetPort: intstr.IntOrString {
 						Type: intstr.Int,
-						IntVal: 8081,
+						IntVal: tgtPort,
 					},
 				},
 			},

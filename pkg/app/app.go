@@ -27,7 +27,6 @@ var (
 const (
 	eventDeleteApp appEventType = "Delete"
 	eventModifyApp appEventType = "Modify"
-	TLS_PORT = 443
 )
 
 type appEvent struct {
@@ -248,16 +247,7 @@ func (ar *AppRuntime) createDeployment() error {
 	volumes := podSpec.Volumes
 	verifyChain := "no"
 	tlsSecretName := ""
-	stunnelEnv := []v1.EnvVar {
-		{
-			Name: "STUNNEL_VERIFY_CHAIN",
-			Value: verifyChain,
-		},
-		{
-			Name: "STUNNEL_CONNECT",
-			Value: fmt.Sprintf("%d", port),
-		},
-	}
+	isNginxIngressStyleCertSecret := false
 
 	// Determine if we need TLS termination (and therefore an stunnel container)
 	if ar.app.Spec.HttpUrlPath == "" {
@@ -269,53 +259,18 @@ func (ar *AppRuntime) createDeployment() error {
 		if ar.app.Spec.VerifyTcpClientCert {
 			verifyChain = "yes"
 		}
-	} else if ar.spaceSpec.Encrypt {
+	} else if ar.spaceSpec.EncryptHttp {
 		// This is an encrypted HTTP service.
 		tlsSecretName = ar.spaceSpec.HttpCertSecretName
 		if tlsSecretName == "" {
 			return fmt.Errorf("space does not have cert for HTTP service")
 		}
-		// The server cert file names are different because they follow
-		// the nginx ingress controller conventions (tls.crt and tls.key).
-		// There is no CA for client certificate verification (for now).
-		stunnelEnv = append(stunnelEnv,
-			v1.EnvVar{
-				Name: "STUNNEL_CERT_FILE",
-				Value: "/etc/stunnel/certs/tls.crt",
-			},
-			v1.EnvVar{
-				Name: "STUNNEL_KEY_FILE",
-				Value: "/etc/stunnel/certs/tls.key",
-			},
-		)
+		isNginxIngressStyleCertSecret = true
 	}
 
 	if tlsSecretName != "" {
-		volumes = append(volumes, v1.Volume{
-			Name: "certs",
-			VolumeSource: v1.VolumeSource{
-				Secret: &v1.SecretVolumeSource{
-					SecretName: tlsSecretName,
-				},
-			},
-		})
-		containers = append(containers, v1.Container{
-			Name: "stunnel",
-			Image: "platform9systems/stunnel",
-			Ports: []v1.ContainerPort{
-				{
-					ContainerPort: TLS_PORT,
-				},
-			},
-			Env: stunnelEnv,
-			VolumeMounts: []v1.VolumeMount{
-				{
-					Name: "certs",
-					ReadOnly: true,
-					MountPath: "/etc/stunnel/certs",
-				},
-			},
-		})
+		volumes, containers = k8sutil.InsertStunnel(verifyChain, port,
+			tlsSecretName, isNginxIngressStyleCertSecret, volumes, containers)
 	}
 	podSpec.Containers = containers
 	podSpec.Volumes = volumes
@@ -364,9 +319,9 @@ func (ar *AppRuntime) createSvc() error {
 			return fmt.Errorf("failed to create cleartext svc:", err)
 		}
 		// The main service routes to pod's stunnel container
-		port = TLS_PORT
-	} else if ar.spaceSpec.Encrypt {
-		port = TLS_PORT
+		port = k8sutil.TlsPort
+	} else if ar.spaceSpec.EncryptHttp {
+		port = k8sutil.TlsPort
 	}
 	// create main service to use as target for ingress controller
 	err := createSvcInternal(svcApi, appName, appName, port)
@@ -427,8 +382,8 @@ func (ar *AppRuntime) addPathToHttpIngress() error {
 		return fmt.Errorf("http-ingress has no paths")
 	}
 	port := spec.FirstContainerPort(ar.app.Spec.PodSpec)
-	if ar.spaceSpec.Encrypt {
-		port = TLS_PORT
+	if ar.spaceSpec.EncryptHttp {
+		port = k8sutil.TlsPort
 	}
 	paths = append(paths, v1beta1.HTTPIngressPath{
 		Path: ar.app.Spec.HttpUrlPath,
@@ -439,8 +394,8 @@ func (ar *AppRuntime) addPathToHttpIngress() error {
 				IntVal: port,
 			},
 		},
-	})	
-	
+	})
+
 	ing.Spec.Rules[0].IngressRuleValue.HTTP.Paths = paths
 	ing, err = ingApi.Update(ing)
 	if err != nil {
@@ -513,7 +468,7 @@ func (ar *AppRuntime) createTcpIngress() error {
 										ServiceName: ar.app.Name,
 										ServicePort: intstr.IntOrString {
 											Type: intstr.Int,
-											IntVal: TLS_PORT,
+											IntVal: k8sutil.TlsPort,
 										},
 									},
 								},
