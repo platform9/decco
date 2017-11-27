@@ -5,8 +5,9 @@ metadata:
 spec:
   initialReplicas: 1
   verifyTcpClientCert: true
-  container:
-    name: timeserver
-    image: platform9systems/current-time-standalone
-    ports:
-    - containerPort: 80
+  pod:
+    containers:
+    - name: timeserver
+      image: platform9systems/current-time-standalone
+      ports:
+      - containerPort: 80

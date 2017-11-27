@@ -3,10 +3,11 @@ kind: "App"
 metadata:
   name: "timeserver"
 spec:
-  httpUrlPath: "/timeserver"
   initialReplicas: 1
-  container:
-    name: timeserver
-    image: platform9systems/current-time-standalone
-    ports:
-    - containerPort: 80
+  httpUrlPath: "/timeserver"
+  pod:
+    containers:
+    - name: timeserver
+      image: platform9systems/current-time-standalone
+      ports:
+      - containerPort: 80
