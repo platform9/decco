@@ -9,17 +9,40 @@ const TlsPort = 443
 
 // -----------------------------------------------------------------------------
 
-func stunnelEnvVars(verifyChain string, port int32, tlsSecretName string,
-	isNginxIngressStyleCertSecret bool) []v1.EnvVar {
+func stunnelEnvVars(
+	verifyChain string,
+	listenPort int32,
+	destHostAndPort string,
+	checkHost string,
+	isNginxIngressStyleCertSecret bool,
+	isClientMode bool,
+) []v1.EnvVar {
+
 	stunnelEnv := []v1.EnvVar {
 		{
 			Name: "STUNNEL_VERIFY_CHAIN",
 			Value: verifyChain,
 		},
 		{
-			Name: "STUNNEL_CONNECT",
-			Value: fmt.Sprintf("%d", port),
+			Name: "STUNNEL_ACCEPT_PORT",
+			Value: fmt.Sprintf("%d", listenPort),
 		},
+		{
+			Name: "STUNNEL_CONNECT",
+			Value: destHostAndPort,
+		},
+	}
+	if isClientMode {
+		stunnelEnv = append(stunnelEnv, v1.EnvVar{
+			Name: "STUNNEL_CLIENT_MODE",
+			Value: "yes",
+		})
+	}
+	if checkHost != "" {
+		stunnelEnv = append(stunnelEnv, v1.EnvVar{
+			Name: "STUNNEL_CHECKHOST_LINE",
+			Value: fmt.Sprintf("checkHost=%s", checkHost),
+		})
 	}
 	if isNginxIngressStyleCertSecret {
 		// The server cert file names are different because they follow
@@ -42,19 +65,24 @@ func stunnelEnvVars(verifyChain string, port int32, tlsSecretName string,
 // -----------------------------------------------------------------------------
 
 func InsertStunnel(
+	containerName string,
+	listenPort int32,
 	verifyChain string,
-	port int32,
+	destHostAndPort string,
+	checkHost string,
 	tlsSecretName string,
 	isNginxIngressStyleCertSecret bool,
+	isClientMode bool,
 	volumes []v1.Volume,
 	containers []v1.Container,
 ) ([]v1.Volume, []v1.Container) {
 
-	stunnelEnv := stunnelEnvVars(verifyChain, port, tlsSecretName,
-		isNginxIngressStyleCertSecret)
+	stunnelEnv := stunnelEnvVars(verifyChain, listenPort, destHostAndPort,
+		checkHost, isNginxIngressStyleCertSecret, isClientMode)
 
+	volumeName := fmt.Sprintf("%s-certs", containerName)
 	volumes = append(volumes, v1.Volume{
-		Name: "certs",
+		Name: volumeName,
 		VolumeSource: v1.VolumeSource{
 			Secret: &v1.SecretVolumeSource{
 				SecretName: tlsSecretName,
@@ -62,17 +90,17 @@ func InsertStunnel(
 		},
 	})
 	containers = append(containers, v1.Container{
-		Name: "stunnel",
+		Name: containerName,
 		Image: "platform9systems/stunnel",
 		Ports: []v1.ContainerPort{
 			{
-				ContainerPort: TlsPort,
+				ContainerPort: listenPort,
 			},
 		},
 		Env: stunnelEnv,
 		VolumeMounts: []v1.VolumeMount{
 			{
-				Name: "certs",
+				Name: volumeName,
 				ReadOnly: true,
 				MountPath: "/etc/stunnel/certs",
 			},

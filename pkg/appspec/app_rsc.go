@@ -67,11 +67,34 @@ func (c App) DeepCopyObject() runtime.Object {
 	return &c
 }
 
+// Specifies the stunnel client configuration for connecting to another app
+// The following destination specifications are allowed:
+// Fqdn not empty : fully qualified domain name for destination
+//                  AppName and SpaceName ignored.
+//                  Example: appname.spacename.svc.cluster.local
+// AppName not empty, Fqdn and SpaceName empty: connect to the app in the
+//                    same namespace. The constructed fqdn is internal and is:
+//                    ${AppName}.${CURRENT_SPACE_NAME}.svc.cluster.local
+// AppName and SpaceName not empty, Fqdn empty: connect to the app in the
+//                    specified space. The constructed fqdn is internal and is:
+//                    ${AppName}.${SpaceName}.svc.cluster.local
+type TlsEgress struct {
+	Fqdn string                `json:"fqdn"`
+	AppName string             `json:"appName"`
+	SpaceName string           `json:"spaceName"`
+	TargetPort int32           `json:"targetPort"`
+	LocalPort int32            `json:"localPort"`   // local listening port
+	CertAndCaSecretName string `json:"certAndCaSecretName"`
+}
+
 type AppSpec struct {
 	HttpUrlPath string `json:"httpUrlPath"`
+	// optional Cert and CA if don't want to use default one for the space
+	CertAndCaSecretName string `json:"certAndCaSecretName"`
 	VerifyTcpClientCert bool `json:"verifyTcpClientCert"`
 	PodSpec v1.PodSpec `json:"pod"`
 	InitialReplicas int32 `json:"initialReplicas"`
+	TlsEgresses []TlsEgress
 }
 
 func FirstContainerPort(pod v1.PodSpec) int32 {

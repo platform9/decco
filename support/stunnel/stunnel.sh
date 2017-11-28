@@ -1,6 +1,6 @@
 #!/bin/bash -e
 export STUNNEL_DEBUG="${STUNNEL_DEBUG:-7}"
-export STUNNEL_CA_FILE="${STUNNEL_CA_FILE:-}"
+export STUNNEL_CLIENT_MODE="${STUNNEL_CLIENT_MODE:-no}"
 export STUNNEL_CERT_FILE="${STUNNEL_CERT_FILE:-/etc/stunnel/certs/cert.pem}"
 export STUNNEL_KEY_FILE="${STUNNEL_KEY_FILE:-/etc/stunnel/certs/key.pem}"
 export STUNNEL_CA_FILE="${STUNNEL_CA_FILE:-/etc/stunnel/certs/ca.pem}"
@@ -20,6 +20,11 @@ fi
 
 if [ -z "${STUNNEL_CONNECT}" ]; then
 	echo STUNNEL_CONNECT not defined
+	exit 1
+fi
+
+if [ -z "${STUNNEL_ACCEPT_PORT}" ]; then
+	echo STUNNEL_ACCEPT_PORT not defined
 	exit 1
 fi
 

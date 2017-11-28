@@ -249,7 +249,7 @@ func (ar *AppRuntime) createDeployment() error {
 	tlsSecretName := ""
 	isNginxIngressStyleCertSecret := false
 
-	// Determine if we need TLS termination (and therefore an stunnel container)
+	// Determine if we need ingress TLS termination
 	if ar.app.Spec.HttpUrlPath == "" {
 		// This is a TCP service.
 		tlsSecretName = ar.spaceSpec.TcpCertAndCaSecretName
@@ -269,8 +269,45 @@ func (ar *AppRuntime) createDeployment() error {
 	}
 
 	if tlsSecretName != "" {
-		volumes, containers = k8sutil.InsertStunnel(verifyChain, port,
-			tlsSecretName, isNginxIngressStyleCertSecret, volumes, containers)
+		destHostAndPort := fmt.Sprintf("%d", port)
+		volumes, containers = k8sutil.InsertStunnel(
+			"stunnel-ingress", k8sutil.TlsPort, verifyChain,
+			destHostAndPort, "",
+			tlsSecretName, isNginxIngressStyleCertSecret, false,
+			volumes, containers,
+		)
+	}
+
+	// egress TLS initiation
+	for i, egress := range ar.app.Spec.TlsEgresses {
+		clientTlsSecretName := egress.CertAndCaSecretName
+		if clientTlsSecretName == "" {
+			clientTlsSecretName = tlsSecretName
+			if clientTlsSecretName == "" {
+				return fmt.Errorf("tls secret not specified and there is no default for the space")
+			}
+		}
+		containerName := fmt.Sprintf("stunnel-egress-%d", i)
+		destHost := egress.Fqdn
+		if destHost == "" {
+			appName := egress.AppName
+			if appName == "" {
+				return fmt.Errorf("tlsEgress entry: Fqdn and AppName cannot both be empty")
+			}
+			spaceName := egress.SpaceName
+			if spaceName == "" {
+				spaceName = ar.namespace
+			}
+			destHost = fmt.Sprintf("%s.%s.svc.cluster.local",
+				appName, spaceName)
+		}
+		destHostAndPort := fmt.Sprintf("%s:%d", destHost, egress.TargetPort)
+		volumes, containers = k8sutil.InsertStunnel(
+			containerName, egress.LocalPort, "yes",
+			destHostAndPort, destHost,
+			clientTlsSecretName, false, true,
+			volumes, containers,
+		)
 	}
 	podSpec.Containers = containers
 	podSpec.Volumes = volumes
