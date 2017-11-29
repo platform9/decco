@@ -88,7 +88,8 @@ type TlsEgress struct {
 }
 
 type AppSpec struct {
-	HttpUrlPath string `json:"httpUrlPath"`
+	HttpUrlPath string   `json:"httpUrlPath"`
+	CreateDnsRecord bool `json:"createDnsRecord"`
 	// optional Cert and CA if don't want to use default one for the space
 	CertAndCaSecretName string `json:"certAndCaSecretName"`
 	VerifyTcpClientCert bool `json:"verifyTcpClientCert"`

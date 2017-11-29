@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"github.com/platform9/decco/pkg/dns"
 )
 
 type appEventType string
@@ -99,21 +100,26 @@ func (ar *AppRuntime) GetApp() spec.App {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) Delete() {
+	log := ar.log.WithField("func", "Delete")
 	err := ar.removePathFromHttpIngress()
 	if err != nil {
-		ar.log.Warn("failed to remove path from ingress: %s", err)
+		log.Warn("failed to remove path from ingress: %s", err)
 	}
 	deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
 	propPolicy := metav1.DeletePropagationBackground
 	delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
 	err = deployApi.Delete(ar.app.Name, &delOpts)
 	if err != nil {
-		ar.log.Warn("failed to delete deployment: %s", err)
+		log.Warn("failed to delete deployment: %s", err)
 	}
 	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
 	err = svcApi.Delete(ar.app.Name, nil)
 	if err != nil {
-		ar.log.Warn("failed to delete service: %s", err)
+		log.Warn("failed to delete service: %s", err)
+	}
+	err = ar.updateDns(true)
+	if err != nil {
+		log.Warn("failed to clean up DNS: %s", err)
 	}
 	// TCP (k8sniff) ingress resources will be
 	// cleaned up by garbage collection
@@ -215,7 +221,27 @@ func (ar *AppRuntime) internalCreate() error {
 	if err := ar.createTcpIngress(); err != nil {
 		return fmt.Errorf("failed to create TCP ingress: %s", err)
 	}
+	if err := ar.updateDns(false); err != nil {
+		return fmt.Errorf("failed to update DNS: %s", err)
+	}
 	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (ar *AppRuntime) updateDns(delete bool) error {
+	if !ar.app.Spec.CreateDnsRecord {
+		return nil
+	}
+	if !dns.Enabled() {
+		return fmt.Errorf("CreateDnsRecord set but no DNS provider exists")
+	}
+	ip, err := k8sutil.GetTcpIngressIp(ar.kubeApi)
+	if err != nil {
+		return fmt.Errorf("failed to get TCP ingress IP: %s", err)
+	}
+	name := fmt.Sprintf("%s.%s", ar.app.Name, ar.namespace)
+	return dns.UpdateRecord(ar.spaceSpec.DomainName, name, ip, delete)
 }
 
 // -----------------------------------------------------------------------------
