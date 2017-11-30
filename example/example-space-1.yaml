@@ -8,4 +8,4 @@ spec:
   httpCertSecretName: pf9-horse-secret
   tcpCertAndCaSecretName: example-space-1
   encryptHttp: true
-
+  project: dev

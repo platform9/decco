@@ -11,3 +11,4 @@ spec:
       image: platform9systems/current-time-standalone
       ports:
       - containerPort: 80
+
