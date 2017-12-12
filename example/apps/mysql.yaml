@@ -1,0 +1,17 @@
+apiVersion: "decco.platform9.com/v1beta2"
+kind: "App"
+metadata:
+  name: "mysql"
+spec:
+  initialReplicas: 1
+  verifyTcpClientCert: true
+  createDnsRecord: true
+  pod:
+    containers:
+    - name: mysql
+      image: mysql
+      ports:
+      - containerPort: 3306
+      env:
+      - name: MYSQL_ROOT_PASSWORD
+        value: dummy
