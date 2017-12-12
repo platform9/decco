@@ -226,6 +226,9 @@ func (c *SpaceRuntime) internalCreate() error {
 // -----------------------------------------------------------------------------
 
 func (c * SpaceRuntime) createNetPolicy() error {
+	if c.spc.Spec.Project == "" {
+		return nil
+	}
 	peers := []netv1.NetworkPolicyPeer{
 		{
 			NamespaceSelector: &metav1.LabelSelector{
@@ -234,15 +237,13 @@ func (c * SpaceRuntime) createNetPolicy() error {
 				},
 			},
 		},
-	}
-	if c.spc.Spec.Project != "" {
-		peers = append(peers, netv1.NetworkPolicyPeer{
+		{
 			NamespaceSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string {
+				MatchLabels: map[string]string{
 					"decco-project": c.spc.Spec.Project,
 				},
 			},
-		})
+		},
 	}
 	np := netv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
