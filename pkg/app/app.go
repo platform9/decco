@@ -10,6 +10,7 @@ import (
 	cgoCoreV1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
+	batchv1 "k8s.io/api/batch/v1"
 	"fmt"
 	"errors"
 	"strings"
@@ -101,23 +102,29 @@ func (ar *AppRuntime) GetApp() spec.App {
 
 func (ar *AppRuntime) Delete() {
 	log := ar.log.WithField("func", "Delete")
-	err := ar.removePathFromHttpIngress()
-	if err != nil {
-		log.Warn("failed to remove path from ingress: %s", err)
+
+	if ar.app.Spec.RunAsJob {
+		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
+		batchApi.Delete(ar.app.Name, &metav1.DeleteOptions{})
+	} else {
+		err := ar.removePathFromHttpIngress()
+		if err != nil {
+			log.Warn("failed to remove path from ingress: %s", err)
+		}
+		deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
+		propPolicy := metav1.DeletePropagationBackground
+		delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
+		err = deployApi.Delete(ar.app.Name, &delOpts)
+		if err != nil {
+			log.Warn("failed to delete deployment: %s", err)
+		}
+		svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
+		err = svcApi.Delete(ar.app.Name, nil)
+		if err != nil {
+			log.Warn("failed to delete service: %s", err)
+		}
 	}
-	deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-	propPolicy := metav1.DeletePropagationBackground
-	delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
-	err = deployApi.Delete(ar.app.Name, &delOpts)
-	if err != nil {
-		log.Warn("failed to delete deployment: %s", err)
-	}
-	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
-	err = svcApi.Delete(ar.app.Name, nil)
-	if err != nil {
-		log.Warn("failed to delete service: %s", err)
-	}
-	err = ar.updateDns(true)
+	err := ar.updateDns(true)
 	if err != nil {
 		log.Warn("failed to clean up DNS: %s", err)
 	}
@@ -263,11 +270,6 @@ func (ar *AppRuntime) logCreation() {
 
 func (ar *AppRuntime) createDeployment() error {
 	podSpec := ar.app.Spec.PodSpec
-	port := spec.FirstContainerPort(podSpec)
-	if port < 0 {
-		return spec.ErrContainerInvalidPorts
-	}
-	depApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
 	initialReplicas := ar.app.Spec.InitialReplicas
 	containers := podSpec.Containers
 	volumes := podSpec.Volumes
@@ -294,7 +296,11 @@ func (ar *AppRuntime) createDeployment() error {
 		isNginxIngressStyleCertSecret = true
 	}
 
-	if tlsSecretName != "" {
+	if !ar.app.Spec.RunAsJob && tlsSecretName != "" {
+		port := spec.FirstContainerPort(podSpec)
+		if port < 0 {
+			return spec.ErrContainerInvalidPorts
+		}
 		destHostAndPort := fmt.Sprintf("%d", port)
 		volumes, containers = k8sutil.InsertStunnel(
 			"stunnel-ingress", k8sutil.TlsPort, verifyChain,
@@ -337,39 +343,56 @@ func (ar *AppRuntime) createDeployment() error {
 	}
 	podSpec.Containers = containers
 	podSpec.Volumes = volumes
-	depSpec := &v1beta1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
+	objMeta := metav1.ObjectMeta{
+		Name: ar.app.Name,
+		Labels: map[string]string {
+			"decco-derived-from": "app",
+		},
+	}
+	podTemplateSpec := v1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta {
 			Name: ar.app.Name,
 			Labels: map[string]string {
-				"decco-derived-from": "app",
+				"app": "decco",
+				"decco-app": ar.app.Name,
 			},
 		},
-		Spec: v1beta1.DeploymentSpec{
-			Replicas: &initialReplicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string {
-					"decco-app": ar.app.Name,
-				},
+		Spec: podSpec,
+	}
+	if ar.app.Spec.RunAsJob {
+		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
+		_, err := batchApi.Create(&batchv1.Job{
+			ObjectMeta: objMeta,
+			Spec: batchv1.JobSpec{
+				Template: podTemplateSpec,
 			},
-			Template: v1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta {
-					Name: ar.app.Name,
-					Labels: map[string]string {
-						"app": "decco",
+		})
+		return err
+	} else {
+		depSpec := &v1beta1.Deployment{
+			ObjectMeta: objMeta,
+			Spec: v1beta1.DeploymentSpec{
+				Replicas: &initialReplicas,
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string {
 						"decco-app": ar.app.Name,
 					},
 				},
-				Spec: podSpec,
+				Template: podTemplateSpec,
 			},
-		},
+		}
+		depApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
+		_, err := depApi.Create(depSpec)
+		return err
 	}
-	_, err := depApi.Create(depSpec)
-	return err
 }
 
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) createSvc() error {
+	if ar.app.Spec.RunAsJob {
+		return nil // no service for a job
+	}
 	port := spec.FirstContainerPort(ar.app.Spec.PodSpec)
 	appName := ar.app.Name
 	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
@@ -425,6 +448,9 @@ func createSvcInternal (svcApi cgoCoreV1.ServiceInterface,
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) addPathToHttpIngress() error {
+	if ar.app.Spec.RunAsJob {
+		return nil
+	}
 	path := ar.app.Spec.HttpUrlPath
 	if path == "" {
 		ar.log.Debug("app does not have http path")

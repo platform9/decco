@@ -96,6 +96,7 @@ type AppSpec struct {
 	PodSpec v1.PodSpec `json:"pod"`
 	InitialReplicas int32 `json:"initialReplicas"`
 	TlsEgresses []TlsEgress
+	RunAsJob bool `json:"runAsJob"`
 }
 
 func FirstContainerPort(pod v1.PodSpec) int32 {
@@ -111,7 +112,7 @@ func FirstContainerPort(pod v1.PodSpec) int32 {
 
 func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
 
-	if FirstContainerPort(c.PodSpec) < 0 {
+	if !c.RunAsJob && FirstContainerPort(c.PodSpec) < 0 {
 		return ErrContainerInvalidPorts
 	}
 	if c.HttpUrlPath == "/" {
