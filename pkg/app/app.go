@@ -333,7 +333,11 @@ func (ar *AppRuntime) createDeployment() error {
 			destHost = fmt.Sprintf("%s.%s.svc.cluster.local",
 				appName, spaceName)
 		}
-		destHostAndPort := fmt.Sprintf("%s:%d", destHost, egress.TargetPort)
+		targetPort := egress.TargetPort
+		if targetPort == 0 {
+			targetPort = 443
+		}
+		destHostAndPort := fmt.Sprintf("%s:%d", destHost, targetPort)
 		volumes, containers = k8sutil.InsertStunnel(
 			containerName, egress.LocalPort, "yes",
 			destHostAndPort, destHost,
@@ -398,11 +402,13 @@ func (ar *AppRuntime) createSvc() error {
 	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
 	if ar.app.Spec.HttpUrlPath == "" {
 		// This is a TCP service.
-		// Create a cleartext version of the service
-		clearTextSvcName := appName + "-cleartext"
-		err := createSvcInternal(svcApi, clearTextSvcName, appName, port)
-		if err != nil {
-			return fmt.Errorf("failed to create cleartext svc:", err)
+		// Create a cleartext version of the service if necessary
+		if ar.app.Spec.CreateClearTextSvc {
+			clearTextSvcName := appName + "-cleartext"
+			err := createSvcInternal(svcApi, clearTextSvcName, appName, port)
+			if err != nil {
+				return fmt.Errorf("failed to create cleartext svc:", err)
+			}
 		}
 		// The main service routes to pod's stunnel container
 		port = k8sutil.TlsPort

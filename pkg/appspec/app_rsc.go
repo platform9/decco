@@ -97,6 +97,7 @@ type AppSpec struct {
 	InitialReplicas int32 `json:"initialReplicas"`
 	TlsEgresses []TlsEgress
 	RunAsJob bool `json:"runAsJob"`
+	CreateClearTextSvc bool `json:"createClearTextSvc"`
 }
 
 func FirstContainerPort(pod v1.PodSpec) int32 {
