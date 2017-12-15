@@ -16,8 +16,11 @@ func stunnelEnvVars(
 	checkHost string,
 	isNginxIngressStyleCertSecret bool,
 	isClientMode bool,
+	clientModeSpringBoardDelaySeconds int32,
+	index int,
 ) []v1.EnvVar {
 
+	springboardListenPort := fmt.Sprintf("%d", 6789 + index)
 	stunnelEnv := []v1.EnvVar {
 		{
 			Name: "STUNNEL_VERIFY_CHAIN",
@@ -31,12 +34,22 @@ func stunnelEnvVars(
 			Name: "STUNNEL_CONNECT",
 			Value: destHostAndPort,
 		},
+		{
+			Name: "SPRINGBOARD_LISTEN_PORT",
+			Value: springboardListenPort,
+		},
 	}
 	if isClientMode {
 		stunnelEnv = append(stunnelEnv, v1.EnvVar{
 			Name: "STUNNEL_CLIENT_MODE",
 			Value: "yes",
 		})
+		if clientModeSpringBoardDelaySeconds > 0 {
+			stunnelEnv = append(stunnelEnv, v1.EnvVar{
+				Name: "SPRINGBOARD_DELAY_SECONDS",
+				Value: fmt.Sprintf("%d", clientModeSpringBoardDelaySeconds),
+			})
+		}
 	}
 	if checkHost != "" {
 		stunnelEnv = append(stunnelEnv, v1.EnvVar{
@@ -75,10 +88,13 @@ func InsertStunnel(
 	isClientMode bool,
 	volumes []v1.Volume,
 	containers []v1.Container,
+	clientModeSpringBoardDelaySeconds int32,
+	index int,
 ) ([]v1.Volume, []v1.Container) {
 
 	stunnelEnv := stunnelEnvVars(verifyChain, listenPort, destHostAndPort,
-		checkHost, isNginxIngressStyleCertSecret, isClientMode)
+		checkHost, isNginxIngressStyleCertSecret, isClientMode,
+		clientModeSpringBoardDelaySeconds, index)
 
 	volumeName := fmt.Sprintf("%s-certs", containerName)
 	volumes = append(volumes, v1.Volume{
@@ -91,7 +107,7 @@ func InsertStunnel(
 	})
 	containers = append(containers, v1.Container{
 		Name: containerName,
-		Image: "platform9systems/stunnel",
+		Image: "platform9systems/stunnel-with-springboard",
 		Ports: []v1.ContainerPort{
 			{
 				ContainerPort: listenPort,

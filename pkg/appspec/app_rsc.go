@@ -85,6 +85,7 @@ type TlsEgress struct {
 	TargetPort int32           `json:"targetPort"`
 	LocalPort int32            `json:"localPort"`   // local listening port
 	CertAndCaSecretName string `json:"certAndCaSecretName"`
+	SpringBoardDelaySeconds int32 `json:"springBoardDelaySeconds"`
 }
 
 type AppSpec struct {

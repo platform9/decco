@@ -276,6 +276,7 @@ func (ar *AppRuntime) createDeployment() error {
 	verifyChain := "no"
 	tlsSecretName := ""
 	isNginxIngressStyleCertSecret := false
+	stunnelIndex := 0
 
 	// Determine if we need ingress TLS termination
 	if ar.app.Spec.HttpUrlPath == "" {
@@ -307,7 +308,9 @@ func (ar *AppRuntime) createDeployment() error {
 			destHostAndPort, "",
 			tlsSecretName, isNginxIngressStyleCertSecret, false,
 			volumes, containers,
+			0, stunnelIndex,
 		)
+		stunnelIndex += 1
 	}
 
 	// egress TLS initiation
@@ -342,8 +345,9 @@ func (ar *AppRuntime) createDeployment() error {
 			containerName, egress.LocalPort, "yes",
 			destHostAndPort, destHost,
 			clientTlsSecretName, false, true,
-			volumes, containers,
+			volumes, containers, egress.SpringBoardDelaySeconds, stunnelIndex,
 		)
+		stunnelIndex += 1
 	}
 	podSpec.Containers = containers
 	podSpec.Volumes = volumes

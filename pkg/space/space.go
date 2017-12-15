@@ -430,7 +430,8 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 		volumes, containers = k8sutil.InsertStunnel("stunnel",
 			k8sutil.TlsPort,"no",
 			destHostAndPort, "", c.spc.Spec.HttpCertSecretName,
-			true, false, volumes, containers)
+			true, false, volumes,
+			containers, 0, 0)
 	} else {
 		containers[0].Ports = []v1.ContainerPort{
 			{ContainerPort: defaultHttpInternalPort },

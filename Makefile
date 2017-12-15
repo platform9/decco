@@ -34,6 +34,10 @@ local-deps:
 local-operator:
 	cd $(SRC_DIR)/cmd/operator && go build -o $${GOPATH}/bin/decco-operator
 
+springboard:
+	cd $(SRC_DIR)/cmd/springboard && go build -o $(SRC_DIR)/support/stunnel-with-springboard/springboard
+
+
 local-default-http:
 	cd $(SRC_DIR)/cmd/default-http && go build -o $${GOPATH}/bin/decco-default-http
 
