@@ -1,0 +1,17 @@
+socket=l:TCP_NODELAY=1
+socket=r:TCP_NODELAY=1
+
+debug=${STUNNEL_DEBUG}
+# output=/dev/stdout
+foreground=yes
+
+[app]
+accept=${STUNNEL_ACCEPT_PORT}
+client=${STUNNEL_CLIENT_MODE}
+connect=${STUNNEL_CONNECT}
+cert=${STUNNEL_CERT_FILE}
+key=${STUNNEL_KEY_FILE}
+verifyChain=${STUNNEL_VERIFY_CHAIN}
+${STUNNEL_CAFILE_LINE}
+${STUNNEL_CHECKHOST_LINE}
+${STUNNEL_SNI_LINE}
