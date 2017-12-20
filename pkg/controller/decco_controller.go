@@ -263,11 +263,12 @@ func (c *Controller) processWatchResponse(
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) deleteRuntime(
+func (c *Controller) deleteSpace(
 	name string,
 	allowDelayedAppCtrlShutdown bool,
 ) {
 	if spcInfo, ok := c.spcInfo[name]; ok {
+		spcInfo.spc.Delete()
 		spcInfo.appCtrl.Stop(allowDelayedAppCtrlShutdown)
 		delete(c.spcInfo, name)
 	}
@@ -295,7 +296,7 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 	spc := event.Object
 
 	if spc.Status.IsFailed() {
-		c.deleteRuntime(spc.Name, false)
+		c.deleteSpace(spc.Name, false)
 		if event.Type == kwatch.Deleted {
 			return ErrVersionOutdated
 		}
@@ -332,7 +333,7 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 			return fmt.Errorf("unsafe state. space (%s) was never " +
 				"created but we received event (%s)", spc.Name, event.Type)
 		}
-		c.deleteRuntime(spc.Name, true)
+		c.deleteSpace(spc.Name, true)
 		c.log.Printf("space (%s) deleted. " +
 			"There now %d spaces", spc.Name, len(c.spcInfo))
 		return ErrVersionOutdated
