@@ -38,6 +38,14 @@ func stunnelEnvVars(
 			Name: "SPRINGBOARD_LISTEN_PORT",
 			Value: springboardListenPort,
 		},
+		{
+			Name: "STUNNEL_CERT_FILE",
+			Value: "/etc/stunnel/certs/tls.cert",
+		},
+		{
+			Name: "STUNNEL_KEY_FILE",
+			Value: "/etc/stunnel/certs/tls.key",
+		},
 	}
 	if isClientMode {
 		stunnelEnv = append(stunnelEnv, v1.EnvVar{

@@ -203,9 +203,15 @@ func (c *SpaceRuntime) internalCreate() error {
 	if err = c.copySecret(httpCert); err != nil {
 		return fmt.Errorf("failed to copy http cert: %s", err)
 	}
+	if err = c.deleteHttpCert(); err != nil {
+		return fmt.Errorf("failed to delete http cert: %s", err)
+	}
 	if tcpCertAndCa != nil {
 		if err = c.copySecret(tcpCertAndCa); err != nil {
 			return fmt.Errorf("failed to copy tcp cert and CA: %s", err)
+		}
+		if err = c.deleteTcpCertAndCa(); err != nil {
+			return fmt.Errorf("failed to delete tcp cert and CA: %s", err)
 		}
 	}
 	if err = c.createHttpIngress(); err != nil {
@@ -506,6 +512,28 @@ func (c *SpaceRuntime) createDefaultHttpSvc() error {
 func (c *SpaceRuntime) getHttpCert() (*v1.Secret, error) {
 	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
 	return secrApi.Get(c.spc.Spec.HttpCertSecretName, metav1.GetOptions{})
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *SpaceRuntime) deleteHttpCert() error {
+	if !c.spc.Spec.DeleteHttpCertSecretAfterCopy {
+		return nil
+	}
+	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
+	return secrApi.Delete(c.spc.Spec.HttpCertSecretName,
+		&metav1.DeleteOptions{})
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *SpaceRuntime) deleteTcpCertAndCa() error {
+	if !c.spc.Spec.DeleteTcpCertAndCaSecretAfterCopy {
+		return nil
+	}
+	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
+	return secrApi.Delete(c.spc.Spec.TcpCertAndCaSecretName,
+		&metav1.DeleteOptions{})
 }
 
 // -----------------------------------------------------------------------------

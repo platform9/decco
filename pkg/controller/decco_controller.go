@@ -66,7 +66,7 @@ type Controller struct {
 type SpaceInfo struct {
 	spc *space.SpaceRuntime
 	rscVersion *string
-	stopAppCh chan interface{}
+	appCtrl    *appcontroller.Controller
 }
 
 // ----------------------------------------------------------------------------
@@ -97,24 +97,13 @@ func (ctl *Controller) findAllSpaces() (string, error) {
 
 	for i := range spcList.Items {
 		spc := spcList.Items[i]
-
 		if spc.Status.IsFailed() {
 			ctl.log.Warnf("ignore failed space %s." +
 				" Please delete its custom resource", spc.Name)
 			continue
 		}
-
 		spc.Spec.Cleanup()
-		initialRV := spc.ResourceVersion
-		newCr := space.New(spc, ctl.kubeApi, ctl.namespace)
-		stopAppCh := make(chan interface{})
-		ctl.spcInfo[spc.Name] = SpaceInfo{
-			spc: newCr,
-			rscVersion: &initialRV,
-			stopAppCh: stopAppCh,
-		}
-		appcontroller.StartAppControllerLoop(ctl.log, spc.Name,
-			spc.Spec, stopAppCh, &ctl.waitApps)
+		ctl.newSpace(&spc)
 	}
 
 	return spcList.ResourceVersion, nil
@@ -176,7 +165,7 @@ func (c *Controller) Run() error {
 
 	defer func() {
 		for _, spcInfo := range c.spcInfo {
-			close(spcInfo.stopAppCh)
+			spcInfo.appCtrl.Stop(true)
 		}
 		c.waitApps.Wait()
 	}()
@@ -274,11 +263,30 @@ func (c *Controller) processWatchResponse(
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) deleteRuntime(name string) {
+func (c *Controller) deleteRuntime(
+	name string,
+	allowDelayedAppCtrlShutdown bool,
+) {
 	if spcInfo, ok := c.spcInfo[name]; ok {
-		close(spcInfo.stopAppCh)
+		spcInfo.appCtrl.Stop(allowDelayedAppCtrlShutdown)
 		delete(c.spcInfo, name)
 	}
+}
+
+// ----------------------------------------------------------------------------
+
+func (c *Controller) newSpace(spc *spec.Space) {
+	newSpace := space.New(*spc, c.kubeApi, c.namespace)
+	initialRV := spc.ResourceVersion
+	c.spcInfo[spc.Name] = SpaceInfo{
+		spc: newSpace,
+		rscVersion: &initialRV,
+		appCtrl:    appcontroller.New(
+			c.log, spc.Name,
+			spc.Spec, &c.waitApps,
+		),
+	}
+	c.spcInfo[spc.Name].appCtrl.Start()
 }
 
 // ----------------------------------------------------------------------------
@@ -287,7 +295,7 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 	spc := event.Object
 
 	if spc.Status.IsFailed() {
-		c.deleteRuntime(spc.Name)
+		c.deleteRuntime(spc.Name, false)
 		if event.Type == kwatch.Deleted {
 			return ErrVersionOutdated
 		}
@@ -305,18 +313,7 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 			return fmt.Errorf("unsafe state. space (%s) was created" +
 				" before but we received event (%s)", spc.Name, event.Type)
 		}
-
-		newSpace := space.New(*spc, c.kubeApi, c.namespace)
-		initialRV := spc.ResourceVersion
-		stopAppCh := make(chan interface{})
-		c.spcInfo[spc.Name] = SpaceInfo{
-			spc: newSpace,
-			rscVersion: &initialRV,
-			stopAppCh: stopAppCh,
-		}
-		appcontroller.StartAppControllerLoop(c.log, spc.Name,
-			spc.Spec, stopAppCh, &c.waitApps)
-
+		c.newSpace(spc)
 		c.log.Printf("space (%s) added. " +
 			"There now %d spaces", spc.Name, len(c.spcInfo))
 
@@ -335,8 +332,7 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 			return fmt.Errorf("unsafe state. space (%s) was never " +
 				"created but we received event (%s)", spc.Name, event.Type)
 		}
-		c.spcInfo[spc.Name].spc.Delete()
-		c.deleteRuntime(spc.Name)
+		c.deleteRuntime(spc.Name, true)
 		c.log.Printf("space (%s) deleted. " +
 			"There now %d spaces", spc.Name, len(c.spcInfo))
 		return ErrVersionOutdated

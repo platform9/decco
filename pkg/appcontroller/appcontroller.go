@@ -35,10 +35,13 @@ import (
 	"github.com/platform9/decco/pkg/appspec"
 	"github.com/platform9/decco/pkg/client"
 	"sync"
+	"os"
+	"strconv"
 )
 
 var (
 	initRetryWaitTime = 30 * time.Second
+	appCtrlShutdownDelaySeconds = 5
 	ErrVersionOutdated = errors.New("(not a true error) watch needs to be " +
 		"restarted to refresh resource version after a DELETED event")
 	ErrTerminated = errors.New("gracefully terminated")
@@ -46,6 +49,14 @@ var (
 
 
 func init() {
+	delayStr := os.Getenv("APP_CONTROLLER_SHUTDOWN_DELAY_SECONDS")
+	if delayStr != "" {
+		var err error
+		appCtrlShutdownDelaySeconds, err = strconv.Atoi(delayStr)
+		if err != nil {
+			logrus.Fatalf("failed to parse APP_CONTROLLER_SHUTDOWN_DELAY_SECONDS: %s", err)
+		}
+	}
 	logrus.Println("appcontroller package initialized")
 }
 
@@ -54,7 +65,7 @@ type Event struct {
 	Object *appspec.App
 }
 
-type Controller struct {
+type InternalController struct {
 	log           *logrus.Entry
 	apiHost       string
 	extensionsApi apiextensionsclient.Interface
@@ -65,6 +76,14 @@ type Controller struct {
 	stopCh chan interface{}
 }
 
+type Controller struct {
+	log           *logrus.Entry
+	wg            *sync.WaitGroup
+	stopCh        chan interface{}
+	spaceSpec     spec.SpaceSpec
+	namespace     string
+}
+
 type AppInfo struct {
 	app *app.AppRuntime
 	rscVersion *string
@@ -72,30 +91,42 @@ type AppInfo struct {
 
 // ----------------------------------------------------------------------------
 
-func StartAppControllerLoop(
+func New(
 	log *logrus.Entry,
 	namespace string,
 	spaceSpec spec.SpaceSpec,
-	stopCh chan interface{},
 	wg *sync.WaitGroup,
-) {
-	wg.Add(1)
+) *Controller {
+	return &Controller{
+		log:        log.WithFields(logrus.Fields{"appctrl_ns": namespace}),
+		namespace:  namespace,
+		wg:         wg,
+		spaceSpec:  spaceSpec,
+		stopCh:     make(chan interface{}),
+	}
+}
+
+// ----------------------------------------------------------------------------
+
+func (ctl *Controller) Start() {
+	ctl.wg.Add(1)
+	log := ctl.log
 	go func () {
-		defer wg.Done()
+		defer ctl.wg.Done()
 		for {
-			c := New(namespace, spaceSpec, stopCh)
+			c := NewInternalController(ctl.namespace, ctl.spaceSpec, ctl.stopCh)
 			err := c.Run()
 			switch err {
 			case ErrTerminated:
 				log.Infof("app controller for %s gracefully terminated",
-					namespace)
+					ctl.namespace)
 				return
 			case ErrVersionOutdated:
-				log.Infof("restarting app controller for %s " + 
-					"due to ErrVersionOutdated", namespace)
+				log.Infof("restarting app controller for %s " +
+					"due to ErrVersionOutdated", ctl.namespace)
 			default:
 				log.Warnf("restarting app controller for %s due to: %v",
-					namespace, err)
+					ctl.namespace, err)
 				time.Sleep(2 * time.Second)
 			}
 		}
@@ -104,18 +135,32 @@ func StartAppControllerLoop(
 
 // ----------------------------------------------------------------------------
 
-func New(
+func (ctl *Controller) Stop(allowDelayedAppCtrlShutdown bool) {
+	go func() {
+		if allowDelayedAppCtrlShutdown && appCtrlShutdownDelaySeconds > 0 {
+			ctl.log.Printf("delaying app controller shutdown by %d seconds",
+				appCtrlShutdownDelaySeconds)
+			t := time.Second * time.Duration(appCtrlShutdownDelaySeconds)
+			time.Sleep(t)
+		}
+		close(ctl.stopCh)
+	}()
+}
+
+// ----------------------------------------------------------------------------
+
+func NewInternalController(
 	namespace string,
 	spaceSpec spec.SpaceSpec,
 	stopCh chan interface{},
-) *Controller {
+) *InternalController {
 	clustConfig := k8sutil.GetClusterConfigOrDie()
 	logger := logrus.WithFields(logrus.Fields{
 		"pkg": "appcontroller",
 		"namespace": namespace,
 	})
 	logger.Logger.SetLevel(logrus.DebugLevel)
-	return &Controller{
+	return &InternalController{
 		log:           logger,
 		apiHost:       clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
@@ -129,7 +174,7 @@ func New(
 
 // ----------------------------------------------------------------------------
 
-func (ctl *Controller) findAllApps() (string, error) {
+func (ctl *InternalController) findAllApps() (string, error) {
 	ctl.log.Info("finding existing apps ...")
 	appList, err := k8sutil.GetAppList(
 		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
@@ -164,7 +209,7 @@ func (ctl *Controller) findAllApps() (string, error) {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) initCRD() error {
+func (c *InternalController) initCRD() error {
 	err := k8sutil.CreateAppCRD(c.extensionsApi)
 	if err != nil {
 		return err
@@ -174,7 +219,7 @@ func (c *Controller) initCRD() error {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) initResource() (string, error) {
+func (c *InternalController) initResource() (string, error) {
 	watchVersion := "0"
 	err := c.initCRD()
 	if err != nil {
@@ -193,7 +238,7 @@ func (c *Controller) initResource() (string, error) {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) Run() error {
+func (c *InternalController) Run() error {
 	var (
 		watchVersion string
 		err          error
@@ -224,7 +269,7 @@ func (c *Controller) Run() error {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) collectGarbage() {
+func (c *InternalController) collectGarbage() {
 	knownUrlPaths := map[string] bool {}
 	for _, info := range c.appInfo {
 		urlPath := info.app.GetApp().Spec.HttpUrlPath
@@ -243,7 +288,7 @@ func (c *Controller) collectGarbage() {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) watch(
+func (c *InternalController) watch(
 	watchVersion string,
 	httpClient *http.Client,
 	periodicCallback func(),
@@ -272,7 +317,7 @@ func (c *Controller) watch(
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) processWatchResponse(
+func (c *InternalController) processWatchResponse(
 	initialWatchVersion string,
 	resp *http.Response) (
 		nextWatchVersion string,
@@ -288,9 +333,10 @@ func (c *Controller) processWatchResponse(
 	for {
 		var chunk eventChunk
 		select {
+		case chunk = <- decodeOneChunk(decoder):
+			break
 		case <- c.stopCh:
 			return "", ErrTerminated
-		case chunk = <- decodeOneChunk(decoder):
 		}
 		ev, st, err := chunk.ev, chunk.st, chunk.err
 		if err != nil {
@@ -324,7 +370,7 @@ func (c *Controller) processWatchResponse(
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) handleAppEvent(event *Event) error {
+func (c *InternalController) handleAppEvent(event *Event) error {
 	a := event.Object
 
 	if a.Status.IsFailed() {
