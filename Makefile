@@ -34,6 +34,9 @@ local-deps:
 local-operator:
 	cd $(SRC_DIR)/cmd/operator && go build -o $${GOPATH}/bin/decco-operator
 
+local-operator-dbg:
+	cd $(SRC_DIR)/cmd/operator && go build -gcflags='-N -l' -o $${GOPATH}/bin/decco-operator-dbg
+
 springboard:
 	cd $(SRC_DIR)/cmd/springboard && go build -o $(SRC_DIR)/support/stunnel-with-springboard/springboard
 
