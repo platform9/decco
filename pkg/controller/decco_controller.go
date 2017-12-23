@@ -164,10 +164,14 @@ func (c *Controller) Run() error {
 	}
 
 	defer func() {
+		/*
 		for _, spcInfo := range c.spcInfo {
 			spcInfo.appCtrl.Stop(true)
 		}
+		*/
+		c.log.Infof("waiting for app controllers to shut down ...")
 		c.waitApps.Wait()
+		c.log.Infof("all app controllers have shut down.")
 	}()
 
 	c.log.Infof("controller started in namespace %s " +
@@ -269,7 +273,7 @@ func (c *Controller) deleteSpace(
 ) {
 	if spcInfo, ok := c.spcInfo[name]; ok {
 		spcInfo.spc.Delete()
-		spcInfo.appCtrl.Stop(allowDelayedAppCtrlShutdown)
+		//spcInfo.appCtrl.Stop(allowDelayedAppCtrlShutdown)
 		delete(c.spcInfo, name)
 	}
 }

@@ -35,19 +35,19 @@ import (
 	"github.com/platform9/decco/pkg/appspec"
 	"github.com/platform9/decco/pkg/client"
 	"sync"
-	"os"
-	"strconv"
+	// "os"
+	// "strconv"
 )
 
 var (
 	initRetryWaitTime = 30 * time.Second
-	appCtrlShutdownDelaySeconds = 5
+	// appCtrlShutdownDelaySeconds = 5
 	ErrVersionOutdated = errors.New("(not a true error) watch needs to be " +
 		"restarted to refresh resource version after a DELETED event")
 	ErrTerminated = errors.New("gracefully terminated")
 )
 
-
+/*
 func init() {
 	delayStr := os.Getenv("APP_CONTROLLER_SHUTDOWN_DELAY_SECONDS")
 	if delayStr != "" {
@@ -59,6 +59,7 @@ func init() {
 	}
 	logrus.Println("appcontroller package initialized")
 }
+*/
 
 type Event struct {
 	Type   kwatch.EventType
@@ -98,7 +99,10 @@ func New(
 	wg *sync.WaitGroup,
 ) *Controller {
 	return &Controller{
-		log:        log.WithFields(logrus.Fields{"appctrl_ns": namespace}),
+		log:        log.WithFields(logrus.Fields{
+			"namespace": namespace,
+			"module": "appcontroller",
+		}),
 		namespace:  namespace,
 		wg:         wg,
 		spaceSpec:  spaceSpec,
@@ -111,6 +115,7 @@ func New(
 func (ctl *Controller) Start() {
 	ctl.wg.Add(1)
 	log := ctl.log
+	go ctl.watchNamespace()
 	go func () {
 		defer ctl.wg.Done()
 		for {
@@ -135,6 +140,7 @@ func (ctl *Controller) Start() {
 
 // ----------------------------------------------------------------------------
 
+/*
 func (ctl *Controller) Stop(allowDelayedAppCtrlShutdown bool) {
 	go func() {
 		if allowDelayedAppCtrlShutdown && appCtrlShutdownDelaySeconds > 0 {
@@ -146,6 +152,7 @@ func (ctl *Controller) Stop(allowDelayedAppCtrlShutdown bool) {
 		close(ctl.stopCh)
 	}()
 }
+*/
 
 // ----------------------------------------------------------------------------
 
