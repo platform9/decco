@@ -34,7 +34,7 @@ func main() {
 	restClient := kubeApi.CoreV1().RESTClient()
 	listOpts := meta_v1.ListOptions{
 		Watch: true,
-		FieldSelector: "metadata.name=test-ns-1",
+		FieldSelector: "metadata.name=decco",
 	}
 	for {
 		watcher, err := restClient.

@@ -23,6 +23,7 @@ import (
 	"github.com/platform9/decco/pkg/controller"
 	"os"
 	"time"
+	"fmt"
 )
 
 func main() {
@@ -32,6 +33,16 @@ func main() {
 		log.Fatalf("must set env MY_POD_NAMESPACE")
 	}
 	log.Println("decco operator started!")
+
+	logLevelStr := os.Getenv("LOG_LEVEL")
+	if logLevelStr == "" {
+		logLevelStr = "info"
+	}
+	logLevel, err := log.ParseLevel(logLevelStr)
+	if err != nil {
+		log.Fatalf("failed to parse log level: %s", err)
+	}
+	log.SetLevel(logLevel)
 
 	for {
 		c := controller.New(namespace)

@@ -101,7 +101,7 @@ func New(
 	return &Controller{
 		log:        log.WithFields(logrus.Fields{
 			"namespace": namespace,
-			"module": "appcontroller",
+			"pkg": "appcontroller",
 		}),
 		namespace:  namespace,
 		wg:         wg,
@@ -115,7 +115,7 @@ func New(
 func (ctl *Controller) Start() {
 	ctl.wg.Add(1)
 	log := ctl.log
-	go ctl.watchNamespace()
+	go ctl.shutdownWhenNamespaceGone()
 	go func () {
 		defer ctl.wg.Done()
 		for {
