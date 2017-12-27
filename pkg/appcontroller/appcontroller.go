@@ -81,6 +81,7 @@ type Controller struct {
 	log           *logrus.Entry
 	wg            *sync.WaitGroup
 	stopCh        chan interface{}
+	stopOnce      sync.Once
 	spaceSpec     spec.SpaceSpec
 	namespace     string
 }
@@ -141,7 +142,12 @@ func (ctl *Controller) Start() {
 // ----------------------------------------------------------------------------
 
 func (ctl *Controller) Stop() {
-	close(ctl.stopCh)
+	// It's possible for Stop() to be called multiple times.
+	// But a channel can only be closed once, so use this trick from
+	// https://groups.google.com/forum/#!topic/golang-nuts/rhxMiNmRAPk
+	ctl.stopOnce.Do(func() {
+		close(ctl.stopCh)
+	})
 }
 
 // ----------------------------------------------------------------------------

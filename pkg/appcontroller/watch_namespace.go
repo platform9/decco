@@ -65,7 +65,10 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 		// rv = ns.ResourceVersion
 		log.Debugf("ns rv: %s", ns.ResourceVersion)
 		deleted, err := ctl.watchNamespaceInternal(fs, ns, restClient, rv)
-		if err != nil {
+		if err == ErrTerminated {
+			log.Debugf("ns watch graceful shut down")
+			return
+		} else if err != nil {
 			log.Errorf("watchNamespaceInternal failed: %s", err)
 			continue
 		}
@@ -113,15 +116,19 @@ func (ctl *Controller) watchNamespaceInternal(
 		} else {
 			events := watcher.ResultChan()
 			for {
-				event := <- events
-				if event.Type == "" {
-					log.Debugf("stream closed")
-					return false, nil
-				}
-				log.Infof("%s %v", event.Type, event.Object)
-				if event.Type == kwatch.Deleted {
-					log.Debugf("namespace deleted")
-					return true, nil
+				select {
+				case <- ctl.stopCh:
+					return false, ErrTerminated
+				case event := <- events:
+					if event.Type == "" {
+						log.Debugf("stream closed")
+						return false, nil
+					}
+					log.Infof("%s %v", event.Type, event.Object)
+					if event.Type == kwatch.Deleted {
+						log.Debugf("namespace deleted")
+						return true, nil
+					}
 				}
 			}
 		}
