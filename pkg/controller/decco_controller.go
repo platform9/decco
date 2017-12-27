@@ -97,13 +97,8 @@ func (ctl *Controller) findAllSpaces() (string, error) {
 
 	for i := range spcList.Items {
 		spc := spcList.Items[i]
-		if spc.Status.IsFailed() {
-			ctl.log.Warnf("ignore failed space %s." +
-				" Please delete its custom resource", spc.Name)
-			continue
-		}
 		spc.Spec.Cleanup()
-		ctl.newSpace(&spc)
+		ctl.registerSpace(&spc)
 	}
 
 	return spcList.ResourceVersion, nil
@@ -270,14 +265,15 @@ func (c *Controller) unregisterSpace(
 	deleteResources bool,
 ) {
 	if spcInfo, ok := c.spcInfo[name]; ok {
+		c.log.Debugf("unregistering space %s", name)
 		delete(c.spcInfo, name)
 		if deleteResources {
 			spcInfo.spc.Delete()
-			// the deletion of the namespace will cause
-			// the app controller to stop eventually
-		} else {
-			// stop the app controller with the intent of restarting it
-			// as a child of a future decco controller instance
+			// the app controller will eventually detect the deletion
+			// of the associated namespace resource and shut itself down
+		} else if spcInfo.appCtrl != nil {
+			// shut down the app controller. A new app controller instance will
+			// start as a child of the future decco controller instance
 			spcInfo.appCtrl.Stop()
 		}
 	}
@@ -285,35 +281,32 @@ func (c *Controller) unregisterSpace(
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) newSpace(spc *spec.Space) {
+func (c *Controller) registerSpace(spc *spec.Space) {
 	newSpace := space.New(*spc, c.kubeApi, c.namespace)
 	initialRV := spc.ResourceVersion
+	var appCtrl *appcontroller.Controller
+	if newSpace.Status.Phase == spec.SpacePhaseActive {
+		c.log.Infof("starting app controller for %s", spc.Name)
+		appCtrl = appcontroller.New(
+			c.log, spc.Name,
+			spc.Spec, &c.waitApps,
+		)
+		appCtrl.Start()
+	} else {
+		c.log.Warnf("not starting app controller for failed space %s",
+			spc.Name)
+	}
 	c.spcInfo[spc.Name] = SpaceInfo{
 		spc: newSpace,
 		rscVersion: &initialRV,
-		appCtrl:    appcontroller.New(
-			c.log, spc.Name,
-			spc.Spec, &c.waitApps,
-		),
+		appCtrl: appCtrl,
 	}
-	c.spcInfo[spc.Name].appCtrl.Start()
 }
 
 // ----------------------------------------------------------------------------
 
 func (c *Controller) handleSpaceEvent(event *Event) error {
 	spc := event.Object
-
-	if spc.Status.IsFailed() {
-		c.unregisterSpace(spc.Name, false)
-		if event.Type == kwatch.Deleted {
-			return ErrVersionOutdated
-		}
-		c.log.Warnf("ignore failed space %s. Please delete its CR",
-			spc.Name)
-		return nil
-	}
-
 	// TODO: add validation to spec update.
 	spc.Spec.Cleanup()
 
@@ -323,7 +316,7 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 			return fmt.Errorf("unsafe state. space (%s) was created" +
 				" before but we received event (%s)", spc.Name, event.Type)
 		}
-		c.newSpace(spc)
+		c.registerSpace(spc)
 		c.log.Printf("space (%s) added. " +
 			"There now %d spaces", spc.Name, len(c.spcInfo))
 

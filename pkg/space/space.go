@@ -46,8 +46,8 @@ type SpaceRuntime struct {
 	spc spec.Space
 
 	// in memory state of the spaceRsc
-	// status is the source of truth after SpaceRuntime struct is materialized.
-	status spec.SpaceStatus
+	// Status is the source of truth after SpaceRuntime struct is materialized.
+	Status spec.SpaceStatus
 }
 
 // -----------------------------------------------------------------------------
@@ -62,18 +62,18 @@ func New(
 		).WithField("space-name", spc.Name)
 
 	c := &SpaceRuntime{
-		kubeApi:  kubeApi,
-		log:      lg,
-		spc:      spc,
-		status:      spc.Status.Copy(),
+		kubeApi:   kubeApi,
+		log:       lg,
+		spc:       spc,
+		Status:    spc.Status.Copy(),
 		namespace: namespace,
 	}
 
 	if err := c.setup(); err != nil {
 		c.log.Errorf("cluster failed to setup: %v", err)
-		if c.status.Phase != spec.SpacePhaseFailed {
-			c.status.SetReason(err.Error())
-			c.status.SetPhase(spec.SpacePhaseFailed)
+		if c.Status.Phase != spec.SpacePhaseFailed {
+			c.Status.SetReason(err.Error())
+			c.Status.SetPhase(spec.SpacePhaseFailed)
 			if err := c.updateCRStatus(); err != nil {
 				c.log.Errorf("failed to update space phase (%v): %v",
 					spec.SpacePhaseFailed, err)
@@ -94,29 +94,29 @@ func (c *SpaceRuntime) Delete() {
 	nsApi := c.kubeApi.CoreV1().Namespaces()
 	err := nsApi.Delete(c.spc.Name, nil)
 	if err != nil {
-		c.log.Warn("failed to delete namespace %s: ", err.Error())
+		c.log.Warnf("failed to delete namespace %s: ", err.Error())
 	}
 	err = c.updateDns(true)
 	if err != nil {
-		c.log.Warn("failed to delete dns record: %s", err)
+		c.log.Warnf("failed to delete dns record: %s", err)
 	}
 }
 
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) updateCRStatus() error {
-	if reflect.DeepEqual(c.spc.Status, c.status) {
+	if reflect.DeepEqual(c.spc.Status, c.Status) {
 		return nil
 	}
 
 	newCrg := c.spc
-	newCrg.Status = c.status
+	newCrg.Status = c.Status
 	newCrg, err := k8sutil.UpdateSpaceCustRsc(
 		c.kubeApi.CoreV1().RESTClient(),
 		c.namespace,
 		newCrg)
 	if err != nil {
-		return fmt.Errorf("failed to update spc status: %v", err)
+		return fmt.Errorf("failed to update spc Status: %v", err)
 	}
 
 	c.spc = newCrg
@@ -132,7 +132,7 @@ func (c *SpaceRuntime) setup() error {
 	}
 
 	var shouldCreateResources bool
-	switch c.status.Phase {
+	switch c.Status.Phase {
 	case spec.SpacePhaseNone:
 		shouldCreateResources = true
 	case spec.SpacePhaseCreating:
@@ -141,7 +141,7 @@ func (c *SpaceRuntime) setup() error {
 		shouldCreateResources = false
 
 	default:
-		return fmt.Errorf("unexpected spc phase: %s", c.status.Phase)
+		return fmt.Errorf("unexpected spc phase: %s", c.Status.Phase)
 	}
 
 	if shouldCreateResources {
@@ -156,7 +156,7 @@ func (c *SpaceRuntime) phaseUpdateError(op string, err error) error {
 	return fmt.Errorf(
 		"%s : failed to update spc phase (%v): %v",
 		op,
-		c.status.Phase,
+		c.Status.Phase,
 		err,
 	)
 }
@@ -164,14 +164,14 @@ func (c *SpaceRuntime) phaseUpdateError(op string, err error) error {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) create() error {
-	c.status.SetPhase(spec.SpacePhaseCreating)
+	c.Status.SetPhase(spec.SpacePhaseCreating)
 	if err := c.updateCRStatus(); err != nil {
 		return c.phaseUpdateError("spc create", err)
 	}
 	if err := c.internalCreate(); err != nil {
 		return err
 	}
-	c.status.SetPhase(spec.SpacePhaseActive)
+	c.Status.SetPhase(spec.SpacePhaseActive)
 	if err := c.updateCRStatus(); err != nil {
 		return fmt.Errorf(
 			"spc create: failed to update spc phase (%v): %v",
