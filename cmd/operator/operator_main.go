@@ -23,7 +23,6 @@ import (
 	"github.com/platform9/decco/pkg/controller"
 	"os"
 	"time"
-	"fmt"
 )
 
 func main() {

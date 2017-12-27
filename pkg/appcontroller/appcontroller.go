@@ -140,19 +140,9 @@ func (ctl *Controller) Start() {
 
 // ----------------------------------------------------------------------------
 
-/*
-func (ctl *Controller) Stop(allowDelayedAppCtrlShutdown bool) {
-	go func() {
-		if allowDelayedAppCtrlShutdown && appCtrlShutdownDelaySeconds > 0 {
-			ctl.log.Printf("delaying app controller shutdown by %d seconds",
-				appCtrlShutdownDelaySeconds)
-			t := time.Second * time.Duration(appCtrlShutdownDelaySeconds)
-			time.Sleep(t)
-		}
-		close(ctl.stopCh)
-	}()
+func (ctl *Controller) Stop() {
+	close(ctl.stopCh)
 }
-*/
 
 // ----------------------------------------------------------------------------
 

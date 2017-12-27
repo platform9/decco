@@ -33,7 +33,7 @@ func init() {
 
 // Shut down the controller if the namespace is gone
 func (ctl *Controller) shutdownWhenNamespaceGone() {
-	defer close(ctl.stopCh)
+	defer ctl.Stop()
 
 	log := ctl.log.WithField("func", "shutdownWhenNamespaceGone")
 	clustConfig := k8sutil.GetClusterConfigOrDie()
@@ -42,7 +42,6 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 	restClient := kubeApi.CoreV1().RESTClient()
 	sleepSeconds := 0
 
-	listLoop:
 	for {
 		if sleepSeconds > 0 {
 			log.Infof("retrying in %d seconds", sleepSeconds)
@@ -57,29 +56,31 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 		}
 		rv := nsList.ResourceVersion
 		log.Debugf("ns list rv: %s", rv)
-		for _, ns := range nsList.Items {
-			if ns.Name == ctl.namespace {
-				deleted, err := ctl.watchNamespaceInternal(fs, ns,
-					restClient, rv)
-				if err != nil {
-					log.Warnf("watchNamespaceInternal failed: %s")
-					continue listLoop
-				}
-				if deleted {
-					// namespace has been deleted, initiate shutdown
-					log.Infof("namespace deleted. Shutting down...")
-					return
-				}
-				log.Infof("restarting watch due to stream closure")
-				sleepSeconds = 0
-				continue listLoop
-			}
+		l := len(nsList.Items)
+		if l != 1 {
+			log.Errorf("ns list item count is unexpected: %d", l)
+			continue
 		}
+		ns := nsList.Items[0]
+		// rv = ns.ResourceVersion
+		log.Debugf("ns rv: %s", ns.ResourceVersion)
+		deleted, err := ctl.watchNamespaceInternal(fs, ns, restClient, rv)
+		if err != nil {
+			log.Errorf("watchNamespaceInternal failed: %s", err)
+			continue
+		}
+		if deleted {
+			// namespace has been deleted, initiate shutdown
+			log.Infof("namespace deleted. Shutting down...")
+			return
+		}
+		log.Infof("restarting watch due to stream closure")
+		sleepSeconds = 0
+		continue
 		log.Errorf("did not find matching ns ... shutting down")
 		return
 	}
 	log.Errorf("failed to read namespace too many times, shutting down")
-	close(ctl.stopCh)
 }
 
 // watch namespace until it is deleted

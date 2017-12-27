@@ -164,11 +164,9 @@ func (c *Controller) Run() error {
 	}
 
 	defer func() {
-		/*
-		for _, spcInfo := range c.spcInfo {
-			spcInfo.appCtrl.Stop(true)
+		for key, _ := range c.spcInfo {
+			c.unregisterSpace(key, false)
 		}
-		*/
 		c.log.Infof("waiting for app controllers to shut down ...")
 		c.waitApps.Wait()
 		c.log.Infof("all app controllers have shut down.")
@@ -267,14 +265,21 @@ func (c *Controller) processWatchResponse(
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) deleteSpace(
+func (c *Controller) unregisterSpace(
 	name string,
-	allowDelayedAppCtrlShutdown bool,
+	deleteResources bool,
 ) {
 	if spcInfo, ok := c.spcInfo[name]; ok {
-		spcInfo.spc.Delete()
-		//spcInfo.appCtrl.Stop(allowDelayedAppCtrlShutdown)
 		delete(c.spcInfo, name)
+		if deleteResources {
+			spcInfo.spc.Delete()
+			// the deletion of the namespace will cause
+			// the app controller to stop eventually
+		} else {
+			// stop the app controller with the intent of restarting it
+			// as a child of a future decco controller instance
+			spcInfo.appCtrl.Stop()
+		}
 	}
 }
 
@@ -300,7 +305,7 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 	spc := event.Object
 
 	if spc.Status.IsFailed() {
-		c.deleteSpace(spc.Name, false)
+		c.unregisterSpace(spc.Name, false)
 		if event.Type == kwatch.Deleted {
 			return ErrVersionOutdated
 		}
@@ -337,7 +342,7 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 			return fmt.Errorf("unsafe state. space (%s) was never " +
 				"created but we received event (%s)", spc.Name, event.Type)
 		}
-		c.deleteSpace(spc.Name, true)
+		c.unregisterSpace(spc.Name, true)
 		c.log.Printf("space (%s) deleted. " +
 			"There now %d spaces", spc.Name, len(c.spcInfo))
 		return ErrVersionOutdated
