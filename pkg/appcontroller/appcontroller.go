@@ -42,8 +42,6 @@ import (
 var (
 	initRetryWaitTime = 30 * time.Second
 	// appCtrlShutdownDelaySeconds = 5
-	ErrVersionOutdated = errors.New("(not a true error) watch needs to be " +
-		"restarted to refresh resource version after a DELETED event")
 	ErrTerminated = errors.New("gracefully terminated")
 )
 
@@ -127,9 +125,6 @@ func (ctl *Controller) Start() {
 				log.Infof("app controller for %s gracefully terminated",
 					ctl.namespace)
 				return
-			case ErrVersionOutdated:
-				log.Infof("restarting app controller for %s " +
-					"due to ErrVersionOutdated", ctl.namespace)
 			default:
 				log.Warnf("restarting app controller for %s due to: %v",
 					ctl.namespace, err)
@@ -362,30 +357,22 @@ func (c *InternalController) processWatchResponse(
 			ev.Object,
 		)
 
-		nextWatchVersion = ev.Object.ResourceVersion
 		logrus.Infof("next watch version: %s", nextWatchVersion)
-		if err := c.handleAppEvent(ev); err != nil {
+		isDelete, err := c.handleAppEvent(ev)
+		if err != nil {
 			c.log.Warningf("event handler returned possible error: %v", err)
 			return "", err
+		}
+		if !isDelete {
+			nextWatchVersion = ev.Object.ResourceVersion
 		}
 	}
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *InternalController) handleAppEvent(event *Event) error {
+func (c *InternalController) handleAppEvent(event *Event) (isDelete bool, err error) {
 	a := event.Object
-
-	if a.Status.IsFailed() {
-		// appsFailed.Inc()
-		if event.Type == kwatch.Deleted {
-			delete(c.appInfo, a.Name)
-			return ErrVersionOutdated
-		}
-		c.log.Errorf("ignore failed a %s. Please delete its CR",
-			a.Name)
-		return nil
-	}
 
 	// TODO: add validation to appspec update.
 	a.Spec.Cleanup()
@@ -393,7 +380,7 @@ func (c *InternalController) handleAppEvent(event *Event) error {
 	switch event.Type {
 	case kwatch.Added:
 		if _, ok := c.appInfo[a.Name]; ok {
-			return fmt.Errorf("unsafe state. a (%s) was created" +
+			return false, fmt.Errorf("unsafe state. a (%s) was created" +
 				" before but we received event (%s)", a.Name, event.Type)
 		}
 
@@ -412,7 +399,7 @@ func (c *InternalController) handleAppEvent(event *Event) error {
 
 	case kwatch.Modified:
 		if _, ok := c.appInfo[a.Name]; !ok {
-			return fmt.Errorf("unsafe state. a (%s) was never" +
+			return false, fmt.Errorf("unsafe state. a (%s) was never" +
 				" created but we received event (%s)", a.Name, event.Type)
 		}
 		c.appInfo[a.Name].app.Update(*a)
@@ -422,14 +409,14 @@ func (c *InternalController) handleAppEvent(event *Event) error {
 
 	case kwatch.Deleted:
 		if _, ok := c.appInfo[a.Name]; !ok {
-			return fmt.Errorf("unsafe state. a (%s) was never " +
+			return true, fmt.Errorf("unsafe state. a (%s) was never " +
 				"created but we received event (%s)", a.Name, event.Type)
 		}
 		c.appInfo[a.Name].app.Delete()
 		delete(c.appInfo, a.Name)
 		c.log.Printf("app (%s) deleted. There are now %d apps",
 			a.Name, len(c.appInfo))
-		return ErrVersionOutdated
+		return true, nil
 	}
-	return nil
+	return false, nil
 }

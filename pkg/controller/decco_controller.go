@@ -39,8 +39,6 @@ import (
 
 var (
 	initRetryWaitTime = 30 * time.Second
-	ErrVersionOutdated = errors.New("(not a true error) watch needs to be " +
-		"restarted to refresh resource version after a DELETED event")
 )
 
 
@@ -249,11 +247,14 @@ func (c *Controller) processWatchResponse(
 			ev.Object,
 		)
 
-		nextWatchVersion = ev.Object.ResourceVersion
 		logrus.Infof("next watch version: %s", nextWatchVersion)
-		if err := c.handleSpaceEvent(ev); err != nil {
+		isDelete, err := c.handleSpaceEvent(ev)
+		if err != nil {
 			c.log.Warningf("event handler returned possible error: %v", err)
 			return "", err
+		}
+		if !isDelete {
+			nextWatchVersion = ev.Object.ResourceVersion
 		}
 	}
 }
@@ -305,7 +306,7 @@ func (c *Controller) registerSpace(spc *spec.Space) {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) handleSpaceEvent(event *Event) error {
+func (c *Controller) handleSpaceEvent(event *Event) (isDelete bool, err error) {
 	spc := event.Object
 	// TODO: add validation to spec update.
 	spc.Spec.Cleanup()
@@ -313,7 +314,7 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 	switch event.Type {
 	case kwatch.Added:
 		if _, ok := c.spcInfo[spc.Name]; ok {
-			return fmt.Errorf("unsafe state. space (%s) was created" +
+			return false, fmt.Errorf("unsafe state. space (%s) was registered" +
 				" before but we received event (%s)", spc.Name, event.Type)
 		}
 		c.registerSpace(spc)
@@ -322,8 +323,8 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 
 	case kwatch.Modified:
 		if _, ok := c.spcInfo[spc.Name]; !ok {
-			return fmt.Errorf("unsafe state. space (%s) was never" +
-				" created but we received event (%s)", spc.Name, event.Type)
+			return false, fmt.Errorf("unsafe state. space (%s) was not" +
+				" registered but we received event (%s)", spc.Name, event.Type)
 		}
 		c.spcInfo[spc.Name].spc.Update(*spc)
 		*(c.spcInfo[spc.Name].rscVersion) = spc.ResourceVersion
@@ -332,13 +333,13 @@ func (c *Controller) handleSpaceEvent(event *Event) error {
 
 	case kwatch.Deleted:
 		if _, ok := c.spcInfo[spc.Name]; !ok {
-			return fmt.Errorf("unsafe state. space (%s) was never " +
-				"created but we received event (%s)", spc.Name, event.Type)
+			return true, fmt.Errorf("unsafe state. space (%s) was not " +
+				"registered but we received event (%s)", spc.Name, event.Type)
 		}
 		c.unregisterSpace(spc.Name, true)
 		c.log.Printf("space (%s) deleted. " +
 			"There now %d spaces", spc.Name, len(c.spcInfo))
-		return ErrVersionOutdated
+		return true, nil
 	}
-	return nil
+	return false,nil
 }

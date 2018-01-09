@@ -47,8 +47,6 @@ func main() {
 		c := controller.New(namespace)
 		err := c.Run()
 		switch err {
-		case controller.ErrVersionOutdated:
-			log.Infof("restarting controller due to ErrVersionOutdated")
 		default:
 			log.Warnf("restarting controller due to: %v", err)
 			time.Sleep(2 * time.Second)
