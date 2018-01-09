@@ -35,15 +35,26 @@ import (
 	"github.com/platform9/decco/pkg/client"
 	"github.com/platform9/decco/pkg/appcontroller"
 	"sync"
+	"os"
+	"strconv"
 )
 
 var (
 	initRetryWaitTime = 30 * time.Second
+	delayAfterWatchStreamCloseInSeconds = 2
 )
 
 
 func init() {
 	logrus.Println("controller package initialized")
+	d := os.Getenv("DELAY_AFTER_WATCH_STREAM_CLOSE_IN_SECONDS")
+	if d != "" {
+		if n, err := strconv.Atoi(d); err == nil {
+			delayAfterWatchStreamCloseInSeconds = n
+			logrus.Infof("delayAfterWatchStreamCloseInSeconds: %d",
+				delayAfterWatchStreamCloseInSeconds)
+		}
+	} 
 }
 
 type Event struct {
@@ -85,20 +96,35 @@ func New(namespace string) *Controller {
 
 // ----------------------------------------------------------------------------
 
-func (ctl *Controller) findAllSpaces() (string, error) {
-	ctl.log.Info("finding existing spaces...")
+func (ctl *Controller) reconcileSpaces() (string, error) {
+	log := ctl.log.WithField("func", "reconcileSpaces")
+	log.Info("reconciling spaces...")
 	spcList, err := k8sutil.GetSpaceList(
 		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
 	if err != nil {
 		return "", err
 	}
 
-	for i := range spcList.Items {
-		spc := spcList.Items[i]
-		spc.Spec.Cleanup()
-		ctl.registerSpace(&spc)
+	m := make(map[string]bool)
+	log.Debug("--- space reconciliation begin ---")
+	for _, spc := range spcList.Items {
+		m[spc.Name] = true
 	}
-
+	for _, spc := range ctl.spcInfo {
+		name := spc.spc.Space.Name
+		if !m[name] {
+			log.Infof("deleting space %s during reconciliation", name)
+			ctl.unregisterSpace(name, true)
+		}
+	}
+	for _, spc := range spcList.Items {
+		_, present := ctl.spcInfo[spc.Name]
+		if !present {
+			spc.Spec.Cleanup()
+			ctl.registerSpace(&spc)
+		}
+	}
+	log.Debug("--- space reconciliation end ---")
 	return spcList.ResourceVersion, nil
 }
 
@@ -114,13 +140,13 @@ func (c *Controller) initCRD() error {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) initResource() (string, error) {
+func (c *Controller) resync() (string, error) {
 	watchVersion := "0"
 	err := c.initCRD()
 	if err != nil {
 		if k8sutil.IsKubernetesResourceAlreadyExistError(err) {
 			// CRD has been initialized before. We need to recover existing spaces.
-			watchVersion, err = c.findAllSpaces()
+			watchVersion, err = c.reconcileSpaces()
 			if err != nil {
 				return "", err
 			}
@@ -145,17 +171,6 @@ func (c *Controller) Run() error {
 	if err != nil {
 		return err
 	}
-	for {
-		watchVersion, err = c.initResource()
-		if err == nil {
-			break
-		}
-		c.log.Errorf("initialization failed: %v", err)
-		c.log.Infof("retry in %v...", initRetryWaitTime)
-		time.Sleep(initRetryWaitTime)
-		// todo: add max retry?
-	}
-
 	defer func() {
 		for key, _ := range c.spcInfo {
 			c.unregisterSpace(key, false)
@@ -165,11 +180,23 @@ func (c *Controller) Run() error {
 		c.log.Infof("all app controllers have shut down.")
 	}()
 
-	c.log.Infof("controller started in namespace %s " +
-		"with %d space runtimes and initial watch version: %s",
-		c.namespace, len(c.spcInfo), watchVersion)
-	err = c.watch(watchVersion, restClnt.Client, c.collectGarbage)
-	return err
+	for {
+		watchVersion, err = c.resync()
+		if err == nil {
+			c.log.Infof("controller started in namespace %s " +
+				"with %d space runtimes and initial watch version: %s",
+				c.namespace, len(c.spcInfo), watchVersion)
+			err = c.watch(watchVersion, restClnt.Client, c.collectGarbage)
+			if err != nil {
+				return err
+			}
+			c.log.Infof("controller soft restart due to watch closure")
+		} else {
+			c.log.Errorf("resync failed: %v", err)
+			c.log.Infof("retry in %v...", initRetryWaitTime)
+			time.Sleep(initRetryWaitTime)
+		}
+	}
 }
 
 // ----------------------------------------------------------------------------
@@ -207,6 +234,10 @@ func (c *Controller) watch(
 		if err != nil {
 			return err
 		}
+		if watchVersion == "" {
+			// a watch closure after a DELETED event, requires a resync
+			return nil
+		}
 	}
 }
 
@@ -229,8 +260,10 @@ func (c *Controller) processWatchResponse(
 		ev, st, err := pollEvent(decoder)
 		if err != nil {
 			if err == io.EOF { // apiserver will close stream periodically
-				c.log.Info("apiserver closed watch stream, retrying after 2s...")
-				time.Sleep(2 * time.Second)
+				c.log.Infof("watch stream closed, retrying in %d secs...",
+					delayAfterWatchStreamCloseInSeconds)
+				time.Sleep(time.Duration(delayAfterWatchStreamCloseInSeconds) *
+					time.Second)
 				return nextWatchVersion, nil
 			}
 			c.log.Errorf("received invalid event from watch API: %v", err)
@@ -253,7 +286,14 @@ func (c *Controller) processWatchResponse(
 			c.log.Warningf("event handler returned possible error: %v", err)
 			return "", err
 		}
-		if !isDelete {
+		if isDelete {
+			// The RV on the deleted resource is out of date.
+			// We also don't know the most up to date RV to use for the next
+			// watch call if this event is the last before the current stream
+			// closes. This special value indicates that a soft restart
+			// (reconciliation) is needed
+			nextWatchVersion = ""
+		} else {
 			nextWatchVersion = ev.Object.ResourceVersion
 		}
 	}

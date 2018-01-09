@@ -43,7 +43,7 @@ type SpaceRuntime struct {
 
 	//config Config
 
-	spc spec.Space
+	Space spec.Space
 
 	// in memory state of the spaceRsc
 	// Status is the source of truth after SpaceRuntime struct is materialized.
@@ -64,7 +64,7 @@ func New(
 	c := &SpaceRuntime{
 		kubeApi:   kubeApi,
 		log:       lg,
-		spc:       spc,
+		Space:     spc,
 		Status:    spc.Status.Copy(),
 		namespace: namespace,
 	}
@@ -92,7 +92,7 @@ func (c *SpaceRuntime) Update(spc spec.Space) {
 
 func (c *SpaceRuntime) Delete() {
 	nsApi := c.kubeApi.CoreV1().Namespaces()
-	err := nsApi.Delete(c.spc.Name, nil)
+	err := nsApi.Delete(c.Space.Name, nil)
 	if err != nil {
 		c.log.Warnf("failed to delete namespace %s: ", err.Error())
 	}
@@ -105,28 +105,28 @@ func (c *SpaceRuntime) Delete() {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) updateCRStatus() error {
-	if reflect.DeepEqual(c.spc.Status, c.Status) {
+	if reflect.DeepEqual(c.Space.Status, c.Status) {
 		return nil
 	}
 
-	newCrg := c.spc
+	newCrg := c.Space
 	newCrg.Status = c.Status
 	newCrg, err := k8sutil.UpdateSpaceCustRsc(
 		c.kubeApi.CoreV1().RESTClient(),
 		c.namespace,
 		newCrg)
 	if err != nil {
-		return fmt.Errorf("failed to update spc Status: %v", err)
+		return fmt.Errorf("failed to update Space Status: %v", err)
 	}
 
-	c.spc = newCrg
+	c.Space = newCrg
 	return nil
 }
 
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) setup() error {
-	err := c.spc.Spec.Validate()
+	err := c.Space.Spec.Validate()
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func (c *SpaceRuntime) setup() error {
 		shouldCreateResources = false
 
 	default:
-		return fmt.Errorf("unexpected spc phase: %s", c.Status.Phase)
+		return fmt.Errorf("unexpected space phase: %s", c.Status.Phase)
 	}
 
 	if shouldCreateResources {
@@ -154,7 +154,7 @@ func (c *SpaceRuntime) setup() error {
 
 func (c *SpaceRuntime) phaseUpdateError(op string, err error) error {
 	return fmt.Errorf(
-		"%s : failed to update spc phase (%v): %v",
+		"%s : failed to update space phase (%v): %v",
 		op,
 		c.Status.Phase,
 		err,
@@ -166,7 +166,7 @@ func (c *SpaceRuntime) phaseUpdateError(op string, err error) error {
 func (c *SpaceRuntime) create() error {
 	c.Status.SetPhase(spec.SpacePhaseCreating)
 	if err := c.updateCRStatus(); err != nil {
-		return c.phaseUpdateError("spc create", err)
+		return c.phaseUpdateError("space create", err)
 	}
 	if err := c.internalCreate(); err != nil {
 		return err
@@ -174,7 +174,7 @@ func (c *SpaceRuntime) create() error {
 	c.Status.SetPhase(spec.SpacePhaseActive)
 	if err := c.updateCRStatus(); err != nil {
 		return fmt.Errorf(
-			"spc create: failed to update spc phase (%v): %v",
+			"space create: failed to update space phase (%v): %v",
 			spec.SpacePhaseActive,
 			err,
 		)
@@ -232,7 +232,7 @@ func (c *SpaceRuntime) internalCreate() error {
 // -----------------------------------------------------------------------------
 
 func (c * SpaceRuntime) createNetPolicy() error {
-	if c.spc.Spec.Project == "" {
+	if c.Space.Spec.Project == "" {
 		return nil
 	}
 	peers := []netv1.NetworkPolicyPeer{
@@ -246,14 +246,14 @@ func (c * SpaceRuntime) createNetPolicy() error {
 		{
 			NamespaceSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"decco-project": c.spc.Spec.Project,
+					"decco-project": c.Space.Spec.Project,
 				},
 			},
 		},
 	}
 	np := netv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: c.spc.Name,
+			Name: c.Space.Name,
 		},
 		Spec: netv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{},
@@ -264,7 +264,7 @@ func (c * SpaceRuntime) createNetPolicy() error {
 			},
 		},
 	}
-	netApi := c.kubeApi.NetworkingV1().NetworkPolicies(c.spc.Name)
+	netApi := c.kubeApi.NetworkingV1().NetworkPolicies(c.Space.Name)
 	_, err := netApi.Create(&np)
 	return err
 }
@@ -281,13 +281,13 @@ func (c * SpaceRuntime) updateDns(delete bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to get TCP ingress IP: %s", err)
 	}
-	return dns.UpdateRecord(c.spc.Spec.DomainName, c.spc.Name, ip, delete)
+	return dns.UpdateRecord(c.Space.Spec.DomainName, c.Space.Name, ip, delete)
 }
 
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) logCreation() {
-	specBytes, err := json.MarshalIndent(c.spc.Spec, "", "    ")
+	specBytes, err := json.MarshalIndent(c.Space.Spec, "", "    ")
 	if err != nil {
 		c.log.Errorf("failed to marshal cluster spec: %v", err)
 		return
@@ -305,14 +305,14 @@ func (c *SpaceRuntime) createNamespace() error {
 	nsApi := c.kubeApi.CoreV1().Namespaces()
 	ns := v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: c.spc.Name,
+			Name: c.Space.Name,
 			Labels: map[string]string {
 				"app": "decco",
 			},
 		},
 	}
-	if c.spc.Spec.Project != "" {
-		ns.ObjectMeta.Labels["decco-project"] = c.spc.Spec.Project
+	if c.Space.Spec.Project != "" {
+		ns.ObjectMeta.Labels["decco-project"] = c.Space.Spec.Project
 	}
 	_, err := nsApi.Create(&ns)
 	return err
@@ -321,16 +321,16 @@ func (c *SpaceRuntime) createNamespace() error {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) createHttpIngress() error {
-	hostName := c.spc.Name + "." + c.spc.Spec.DomainName
-	ingApi := c.kubeApi.ExtensionsV1beta1().Ingresses(c.spc.Name)
+	hostName := c.Space.Name + "." + c.Space.Spec.DomainName
+	ingApi := c.kubeApi.ExtensionsV1beta1().Ingresses(c.Space.Name)
 	annotations := map[string]string {
 		"ingress.kubernetes.io/rewrite-target": "/",
 	}
-	if c.spc.Spec.EncryptHttp {
+	if c.Space.Spec.EncryptHttp {
 		annotations["ingress.kubernetes.io/secure-backends"] = "true"
 	}
 	defaultHttpSvcPort := int32(80)
-	if c.spc.Spec.EncryptHttp {
+	if c.Space.Spec.EncryptHttp {
 		defaultHttpSvcPort = k8sutil.TlsPort
 	}
 	ing := v1beta1.Ingress{
@@ -368,7 +368,7 @@ func (c *SpaceRuntime) createHttpIngress() error {
 					Hosts: []string {
 						hostName,
 					},
-					SecretName: c.spc.Spec.HttpCertSecretName,
+					SecretName: c.Space.Spec.HttpCertSecretName,
 				},
 			},
 		},
@@ -380,7 +380,7 @@ func (c *SpaceRuntime) createHttpIngress() error {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) createDefaultHttpDeploy() error {
-	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.spc.Name)
+	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.Space.Name)
 	volumes := []v1.Volume{}
 	containers := []v1.Container {
 		{
@@ -431,11 +431,11 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 		},
 	}
 
-	if c.spc.Spec.EncryptHttp {
+	if c.Space.Spec.EncryptHttp {
 		destHostAndPort := fmt.Sprintf("%d", defaultHttpInternalPort)
 		volumes, containers = k8sutil.InsertStunnel("stunnel",
 			k8sutil.TlsPort,"no",
-			destHostAndPort, "", c.spc.Spec.HttpCertSecretName,
+			destHostAndPort, "", c.Space.Spec.HttpCertSecretName,
 			true, false, volumes,
 			containers, 0, 0)
 	} else {
@@ -478,10 +478,10 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) createDefaultHttpSvc() error {
-	svcApi := c.kubeApi.CoreV1().Services(c.spc.Name)
+	svcApi := c.kubeApi.CoreV1().Services(c.Space.Name)
 	svcPort := int32(80)
 	tgtPort := defaultHttpInternalPort
-	if c.spc.Spec.EncryptHttp {
+	if c.Space.Spec.EncryptHttp {
 		svcPort = k8sutil.TlsPort
 		tgtPort = k8sutil.TlsPort
 	}
@@ -511,39 +511,39 @@ func (c *SpaceRuntime) createDefaultHttpSvc() error {
 
 func (c *SpaceRuntime) getHttpCert() (*v1.Secret, error) {
 	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
-	return secrApi.Get(c.spc.Spec.HttpCertSecretName, metav1.GetOptions{})
+	return secrApi.Get(c.Space.Spec.HttpCertSecretName, metav1.GetOptions{})
 }
 
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) deleteHttpCert() error {
-	if !c.spc.Spec.DeleteHttpCertSecretAfterCopy {
+	if !c.Space.Spec.DeleteHttpCertSecretAfterCopy {
 		return nil
 	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
-	return secrApi.Delete(c.spc.Spec.HttpCertSecretName,
+	return secrApi.Delete(c.Space.Spec.HttpCertSecretName,
 		&metav1.DeleteOptions{})
 }
 
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) deleteTcpCertAndCa() error {
-	if !c.spc.Spec.DeleteTcpCertAndCaSecretAfterCopy {
+	if !c.Space.Spec.DeleteTcpCertAndCaSecretAfterCopy {
 		return nil
 	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
-	return secrApi.Delete(c.spc.Spec.TcpCertAndCaSecretName,
+	return secrApi.Delete(c.Space.Spec.TcpCertAndCaSecretName,
 		&metav1.DeleteOptions{})
 }
 
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) getTcpCertAndCa() (*v1.Secret, error) {
-	if c.spc.Spec.TcpCertAndCaSecretName == "" {
+	if c.Space.Spec.TcpCertAndCaSecretName == "" {
 		return nil, nil
 	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
-	return secrApi.Get(c.spc.Spec.TcpCertAndCaSecretName, metav1.GetOptions{})
+	return secrApi.Get(c.Space.Spec.TcpCertAndCaSecretName, metav1.GetOptions{})
 }
 
 // -----------------------------------------------------------------------------
@@ -556,7 +556,7 @@ func (c *SpaceRuntime) copySecret(s *v1.Secret) error {
 		Data: s.Data,
 		StringData: s.StringData,
 	}
-	secrApi := c.kubeApi.CoreV1().Secrets(c.spc.Name)
+	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Name)
 	_, err := secrApi.Create(&newCertSecret)
 	return err
 }
