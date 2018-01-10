@@ -19,8 +19,6 @@
 package controller
 
 import (
-	"io"
-	"errors"
 	"encoding/json"
 	"github.com/sirupsen/logrus"
 	"github.com/platform9/decco/pkg/k8sutil"
@@ -34,9 +32,8 @@ import (
 	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/client"
 	"github.com/platform9/decco/pkg/appcontroller"
+	"github.com/platform9/decco/pkg/watcher"
 	"sync"
-	"os"
-	"strconv"
 )
 
 var (
@@ -47,14 +44,6 @@ var (
 
 func init() {
 	logrus.Println("controller package initialized")
-	d := os.Getenv("DELAY_AFTER_WATCH_STREAM_CLOSE_IN_SECONDS")
-	if d != "" {
-		if n, err := strconv.Atoi(d); err == nil {
-			delayAfterWatchStreamCloseInSeconds = n
-			logrus.Infof("delayAfterWatchStreamCloseInSeconds: %d",
-				delayAfterWatchStreamCloseInSeconds)
-		}
-	} 
 }
 
 type Event struct {
@@ -70,11 +59,11 @@ type Controller struct {
 	spcInfo map[string] SpaceInfo
 	namespace string
 	waitApps sync.WaitGroup
+	httpClient *http.Client
 }
 
 type SpaceInfo struct {
 	spc *space.SpaceRuntime
-	rscVersion *string
 	appCtrl    *appcontroller.Controller
 }
 
@@ -140,7 +129,7 @@ func (c *Controller) initCRD() error {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) resync() (string, error) {
+func (c *Controller) Resync() (string, error) {
 	watchVersion := "0"
 	err := c.initCRD()
 	if err != nil {
@@ -161,16 +150,12 @@ func (c *Controller) resync() (string, error) {
 // ----------------------------------------------------------------------------
 
 func (c *Controller) Run() error {
-	var (
-		watchVersion string
-		err          error
-	)
-
 	restConfig := k8sutil.GetClusterConfigOrDie()
 	restClnt, _, err := client.New(restConfig)
 	if err != nil {
 		return err
 	}
+	c.httpClient = restClnt.Client
 	defer func() {
 		for key, _ := range c.spcInfo {
 			c.unregisterSpace(key, false)
@@ -180,28 +165,14 @@ func (c *Controller) Run() error {
 		c.log.Infof("all app controllers have shut down.")
 	}()
 
-	for {
-		watchVersion, err = c.resync()
-		if err == nil {
-			c.log.Infof("controller started in namespace %s " +
-				"with %d space runtimes and initial watch version: %s",
-				c.namespace, len(c.spcInfo), watchVersion)
-			err = c.watch(watchVersion, restClnt.Client, c.collectGarbage)
-			if err != nil {
-				return err
-			}
-			c.log.Infof("controller soft restart due to watch closure")
-		} else {
-			c.log.Errorf("resync failed: %v", err)
-			c.log.Infof("retry in %v...", initRetryWaitTime)
-			time.Sleep(initRetryWaitTime)
-		}
-	}
+	wl := watcher.CreateWatchLoop(fmt.Sprintf("spaces-in-%s",
+		c.namespace), c)
+	return wl.Run()
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) collectGarbage() {
+func (c *Controller) PeriodicTask() {
 	space.Collect(c.kubeApi, c.log, func(name string) bool {
 		_, ok := c.spcInfo[name]
 		return ok
@@ -210,93 +181,13 @@ func (c *Controller) collectGarbage() {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) watch(
-	watchVersion string,
-	httpClient *http.Client,
-	periodicCallback func(),
-) error {
-
-	for {
-		periodicCallback()
-		resp, err := k8sutil.WatchSpaces(
-			c.apiHost,
-			c.namespace,
-			httpClient,
-			watchVersion,
-		)
-		c.log.Infof("start watching at %v", watchVersion)
-
-		if err != nil {
-			return err
-		}
-
-		watchVersion, err = c.processWatchResponse(watchVersion, resp)
-		if err != nil {
-			return err
-		}
-		if watchVersion == "" {
-			// a watch closure after a DELETED event, requires a resync
-			return nil
-		}
-	}
-}
-
-// ----------------------------------------------------------------------------
-
-func (c *Controller) processWatchResponse(
-	initialWatchVersion string,
-	resp *http.Response) (
-		nextWatchVersion string,
-		err error) {
-
-	nextWatchVersion = initialWatchVersion
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", errors.New("invalid status code: " + resp.Status)
-	}
-
-	decoder := json.NewDecoder(resp.Body)
-	for {
-		ev, st, err := pollEvent(decoder)
-		if err != nil {
-			if err == io.EOF { // apiserver will close stream periodically
-				c.log.Infof("watch stream closed, retrying in %d secs...",
-					delayAfterWatchStreamCloseInSeconds)
-				time.Sleep(time.Duration(delayAfterWatchStreamCloseInSeconds) *
-					time.Second)
-				return nextWatchVersion, nil
-			}
-			c.log.Errorf("received invalid event from watch API: %v", err)
-			return "", err
-		}
-
-		if st != nil {
-			err = fmt.Errorf("unexpected watch error: %v", st)
-			return "", err
-		}
-
-		c.log.Debugf("space event: %v %v",
-			ev.Type,
-			ev.Object,
-		)
-
-		logrus.Infof("next watch version: %s", nextWatchVersion)
-		isDelete, err := c.handleSpaceEvent(ev)
-		if err != nil {
-			c.log.Warningf("event handler returned possible error: %v", err)
-			return "", err
-		}
-		if isDelete {
-			// The RV on the deleted resource is out of date.
-			// We also don't know the most up to date RV to use for the next
-			// watch call if this event is the last before the current stream
-			// closes. This special value indicates that a soft restart
-			// (reconciliation) is needed
-			nextWatchVersion = ""
-		} else {
-			nextWatchVersion = ev.Object.ResourceVersion
-		}
-	}
+func (c *Controller) StartWatchRequest(watchVersion string) (*http.Response, error) {
+	return k8sutil.WatchSpaces(
+		c.apiHost,
+		c.namespace,
+		c.httpClient,
+		watchVersion,
+	)
 }
 
 // ----------------------------------------------------------------------------
@@ -324,7 +215,6 @@ func (c *Controller) unregisterSpace(
 
 func (c *Controller) registerSpace(spc *spec.Space) {
 	newSpace := space.New(*spc, c.kubeApi, c.namespace)
-	initialRV := spc.ResourceVersion
 	var appCtrl *appcontroller.Controller
 	if newSpace.Status.Phase == spec.SpacePhaseActive {
 		c.log.Infof("starting app controller for %s", spc.Name)
@@ -339,23 +229,32 @@ func (c *Controller) registerSpace(spc *spec.Space) {
 	}
 	c.spcInfo[spc.Name] = SpaceInfo{
 		spc: newSpace,
-		rscVersion: &initialRV,
 		appCtrl: appCtrl,
 	}
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) handleSpaceEvent(event *Event) (isDelete bool, err error) {
+func (c *Controller) HandleEvent(e interface{}) (objVersion string, err error) {
+	event := e.(*Event)
+	c.log.Debugf("space event: %v %v", event.Type, event.Object)
+	return c.handleSpaceEvent(event)
+}
+
+// ----------------------------------------------------------------------------
+
+func (c *Controller) handleSpaceEvent(event *Event) (objVersion string, err error) {
 	spc := event.Object
+	objVersion = event.Object.ResourceVersion
 	// TODO: add validation to spec update.
 	spc.Spec.Cleanup()
 
 	switch event.Type {
 	case kwatch.Added:
 		if _, ok := c.spcInfo[spc.Name]; ok {
-			return false, fmt.Errorf("unsafe state. space (%s) was registered" +
+			err = fmt.Errorf("unsafe state. space (%s) was registered" +
 				" before but we received event (%s)", spc.Name, event.Type)
+			return
 		}
 		c.registerSpace(spc)
 		c.log.Printf("space (%s) added. " +
@@ -363,23 +262,41 @@ func (c *Controller) handleSpaceEvent(event *Event) (isDelete bool, err error) {
 
 	case kwatch.Modified:
 		if _, ok := c.spcInfo[spc.Name]; !ok {
-			return false, fmt.Errorf("unsafe state. space (%s) was not" +
+			err = fmt.Errorf("unsafe state. space (%s) was not" +
 				" registered but we received event (%s)", spc.Name, event.Type)
+			return
 		}
 		c.spcInfo[spc.Name].spc.Update(*spc)
-		*(c.spcInfo[spc.Name].rscVersion) = spc.ResourceVersion
 		c.log.Printf("space (%s) modified. " +
 			"There now %d spaces", spc.Name, len(c.spcInfo))
 
 	case kwatch.Deleted:
 		if _, ok := c.spcInfo[spc.Name]; !ok {
-			return true, fmt.Errorf("unsafe state. space (%s) was not " +
+			err = fmt.Errorf("unsafe state. space (%s) was not " +
 				"registered but we received event (%s)", spc.Name, event.Type)
+			return
 		}
 		c.unregisterSpace(spc.Name, true)
 		c.log.Printf("space (%s) deleted. " +
 			"There now %d spaces", spc.Name, len(c.spcInfo))
-		return true, nil
 	}
-	return false,nil
+	return
+}
+
+// ----------------------------------------------------------------------------
+
+func (c *Controller) UnmarshalEvent(
+	evType kwatch.EventType,
+	data []byte,
+) (interface{}, error) {
+
+	ev := &Event{
+		Type:   evType,
+		Object: &spec.Space{},
+	}
+	err := json.Unmarshal(data, ev.Object)
+	if err != nil {
+		return nil, fmt.Errorf("fail to unmarshal Space object from data (%s): %v", data, err)
+	}
+	return ev, nil
 }
