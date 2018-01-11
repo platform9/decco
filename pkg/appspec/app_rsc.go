@@ -152,7 +152,7 @@ type AppCondition struct {
 type AppConditionType string
 
 type AppStatus struct {
-	// Phase is the App running phase
+	// Phase is the app running phase
 	Phase  AppPhase `json:"phase"`
 	Reason string       `json:"reason"`
 }

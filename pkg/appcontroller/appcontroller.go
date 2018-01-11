@@ -19,8 +19,6 @@
 package appcontroller
 
 import (
-	"io"
-	"errors"
 	"encoding/json"
 	"github.com/sirupsen/logrus"
 	"github.com/platform9/decco/pkg/k8sutil"
@@ -28,36 +26,15 @@ import (
 	kwatch "k8s.io/apimachinery/pkg/watch"
 	"fmt"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"github.com/platform9/decco/pkg/app"
 	"time"
 	"net/http"
 	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/appspec"
-	"github.com/platform9/decco/pkg/client"
+	"github.com/platform9/decco/pkg/watcher"
 	"sync"
-	// "os"
-	// "strconv"
 )
-
-var (
-	initRetryWaitTime = 30 * time.Second
-	// appCtrlShutdownDelaySeconds = 5
-	ErrTerminated = errors.New("gracefully terminated")
-)
-
-/*
-func init() {
-	delayStr := os.Getenv("APP_CONTROLLER_SHUTDOWN_DELAY_SECONDS")
-	if delayStr != "" {
-		var err error
-		appCtrlShutdownDelaySeconds, err = strconv.Atoi(delayStr)
-		if err != nil {
-			logrus.Fatalf("failed to parse APP_CONTROLLER_SHUTDOWN_DELAY_SECONDS: %s", err)
-		}
-	}
-	logrus.Println("appcontroller package initialized")
-}
-*/
 
 type Event struct {
 	Type   kwatch.EventType
@@ -69,10 +46,10 @@ type InternalController struct {
 	apiHost       string
 	extensionsApi apiextensionsclient.Interface
 	kubeApi       kubernetes.Interface
-	appInfo       map[string] AppInfo
+	appInfo       map[string] *app.AppRuntime
 	namespace     string
 	spaceSpec     spec.SpaceSpec
-	stopCh chan interface{}
+	stopCh        chan interface{}
 }
 
 type Controller struct {
@@ -82,11 +59,6 @@ type Controller struct {
 	stopOnce      sync.Once
 	spaceSpec     spec.SpaceSpec
 	namespace     string
-}
-
-type AppInfo struct {
-	app *app.AppRuntime
-	rscVersion *string
 }
 
 // ----------------------------------------------------------------------------
@@ -121,7 +93,7 @@ func (ctl *Controller) Start() {
 			c := NewInternalController(ctl.namespace, ctl.spaceSpec, ctl.stopCh)
 			err := c.Run()
 			switch err {
-			case ErrTerminated:
+			case watcher.ErrTerminated:
 				log.Infof("app controller for %s gracefully terminated",
 					ctl.namespace)
 				return
@@ -163,7 +135,7 @@ func NewInternalController(
 		apiHost:       clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
 		kubeApi:       kubernetes.NewForConfigOrDie(clustConfig),
-		appInfo:       make(map[string] AppInfo),
+		appInfo:       make(map[string] *app.AppRuntime),
 		namespace:     namespace,
 		spaceSpec:     spaceSpec,
 		stopCh:        stopCh,
@@ -172,36 +144,44 @@ func NewInternalController(
 
 // ----------------------------------------------------------------------------
 
-func (ctl *InternalController) findAllApps() (string, error) {
-	ctl.log.Info("finding existing apps ...")
+func (ctl *InternalController) reconcileApps() (string, error) {
+	ctl.log.Info("reconciling apps ...")
 	appList, err := k8sutil.GetAppList(
 		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
 	if err != nil {
 		return "", err
 	}
 
-	for i := range appList.Items {
-		a := appList.Items[i]
-
-		if a.Status.IsFailed() {
-			ctl.log.Infof("ignore failed app %s." +
-				" Please delete its custom resource", a.Name)
-			continue
+	m := make(map[string]bool)
+	ctl.log.Debug("--- app reconciliation begin ---")
+	for _, a := range appList.Items {
+		m[a.Name] = true
+	}
+	for name, a := range ctl.appInfo {
+		appName := a.GetApp().Name
+		if name != appName {
+			return "", fmt.Errorf("name mismatch: %s vs %s", name, appName)
 		}
-
-		a.Spec.Cleanup()
-		initialRV := a.ResourceVersion
-		newApp, err := app.New(a, ctl.kubeApi, ctl.namespace, ctl.spaceSpec)
-		if err != nil {
-			ctl.log.Warnf("app runtime creation failed: %s", err)
-			continue
-		}
-		ctl.appInfo[a.Name] = AppInfo{
-			app: newApp,
-			rscVersion: &initialRV,
+		if !m[name] {
+			ctl.log.Infof("deleting app %s during reconciliation", name)
+			a.Delete()
+			delete(ctl.appInfo, name)
 		}
 	}
 
+	for _, a := range appList.Items {
+		_, present := ctl.appInfo[a.Name]
+		if !present {
+			a.Spec.Cleanup()
+			newApp, err := app.New(a, ctl.kubeApi, ctl.namespace, ctl.spaceSpec)
+			if err != nil {
+				ctl.log.Warnf("app runtime creation failed: %s", err)
+				continue
+			}
+			ctl.appInfo[a.Name] = newApp
+		}
+	}
+	ctl.log.Debug("--- app reconciliation end ---")
 	return appList.ResourceVersion, nil
 }
 
@@ -217,13 +197,13 @@ func (c *InternalController) initCRD() error {
 
 // ----------------------------------------------------------------------------
 
-func (c *InternalController) initResource() (string, error) {
+func (c *InternalController) Resync() (string, error) {
 	watchVersion := "0"
 	err := c.initCRD()
 	if err != nil {
 		if k8sutil.IsKubernetesResourceAlreadyExistError(err) {
 			// CRD has been initialized before. We need to recover existing apps.
-			watchVersion, err = c.findAllApps()
+			watchVersion, err = c.reconcileApps()
 			if err != nil {
 				return "", err
 			}
@@ -237,40 +217,17 @@ func (c *InternalController) initResource() (string, error) {
 // ----------------------------------------------------------------------------
 
 func (c *InternalController) Run() error {
-	var (
-		watchVersion string
-		err          error
-	)
-
-	restConfig := k8sutil.GetClusterConfigOrDie()
-	restClnt, _, err := client.New(restConfig)
-	if err != nil {
-		return err
-	}
-	for {
-		watchVersion, err = c.initResource()
-		if err == nil {
-			break
-		}
-		c.log.Errorf("initialization failed: %v", err)
-		c.log.Infof("retry in %v...", initRetryWaitTime)
-		time.Sleep(initRetryWaitTime)
-		// todo: add max retry?
-	}
-
-	c.log.Infof("app controller started in namespace %s " +
-		"with %d app runtimes and initial watch version: %s",
-		c.namespace, len(c.appInfo), watchVersion)
-	err = c.watch(watchVersion, restClnt.Client, c.collectGarbage)
-	return err
+	wl := watcher.CreateWatchLoop(fmt.Sprintf("apps-in-%s",
+		c.namespace), c, c.stopCh)
+	return wl.Run()
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *InternalController) collectGarbage() {
+func (c *InternalController) PeriodicTask() {
 	knownUrlPaths := map[string] bool {}
 	for _, info := range c.appInfo {
-		urlPath := info.app.GetApp().Spec.HttpUrlPath
+		urlPath := info.GetApp().Spec.HttpUrlPath
 		if len(urlPath) > 0 {
 			knownUrlPaths[urlPath] = true
 		}
@@ -286,93 +243,34 @@ func (c *InternalController) collectGarbage() {
 
 // ----------------------------------------------------------------------------
 
-func (c *InternalController) watch(
+func (c *InternalController) StartWatchRequest(
 	watchVersion string,
-	httpClient *http.Client,
-	periodicCallback func(),
-) error {
+) (*http.Response, error) {
 
-	for {
-		periodicCallback()
-		resp, err := k8sutil.WatchApps(
-			c.apiHost,
-			c.namespace,
-			httpClient,
-			watchVersion,
-		)
-		c.log.Infof("start watching at %v", watchVersion)
-
-		if err != nil {
-			return err
-		}
-
-		watchVersion, err = c.processWatchResponse(watchVersion, resp)
-		if err != nil {
-			return err
-		}
-	}
+	restIf := c.kubeApi.CoreV1().RESTClient()
+	httpClnt := restIf.(*rest.RESTClient).Client
+	return k8sutil.WatchApps(
+		c.apiHost,
+		c.namespace,
+		httpClnt,
+		watchVersion,
+	)
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *InternalController) processWatchResponse(
-	initialWatchVersion string,
-	resp *http.Response) (
-		nextWatchVersion string,
-		err error) {
 
-	nextWatchVersion = initialWatchVersion
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", errors.New("invalid status code: " + resp.Status)
-	}
-
-	decoder := json.NewDecoder(resp.Body)
-	for {
-		var chunk eventChunk
-		select {
-		case chunk = <- decodeOneChunk(decoder):
-			break
-		case <- c.stopCh:
-			return "", ErrTerminated
-		}
-		ev, st, err := chunk.ev, chunk.st, chunk.err
-		if err != nil {
-			if err == io.EOF { // apiserver will close stream periodically
-				c.log.Info("apiserver closed watch stream, retrying after 2s...")
-				time.Sleep(2 * time.Second)
-				return nextWatchVersion, nil
-			}
-			c.log.Errorf("received invalid event from watch API: %v", err)
-			return "", err
-		}
-
-		if st != nil {
-			err = fmt.Errorf("unexpected watch error: %v", st)
-			return "", err
-		}
-
-		c.log.Debugf("app event: %v %v",
-			ev.Type,
-			ev.Object,
-		)
-
-		logrus.Infof("next watch version: %s", nextWatchVersion)
-		isDelete, err := c.handleAppEvent(ev)
-		if err != nil {
-			c.log.Warningf("event handler returned possible error: %v", err)
-			return "", err
-		}
-		if !isDelete {
-			nextWatchVersion = ev.Object.ResourceVersion
-		}
-	}
+func (c *InternalController) HandleEvent(e interface{}) (objVersion string, err error) {
+	event := e.(*Event)
+	c.log.Debugf("app event: %v %v", event.Type, event.Object)
+	return c.handleAppEvent(event)
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *InternalController) handleAppEvent(event *Event) (isDelete bool, err error) {
+func (c *InternalController) handleAppEvent(event *Event) (objVersion string, err error) {
 	a := event.Object
+	objVersion = event.Object.ResourceVersion
 
 	// TODO: add validation to appspec update.
 	a.Spec.Cleanup()
@@ -380,43 +278,60 @@ func (c *InternalController) handleAppEvent(event *Event) (isDelete bool, err er
 	switch event.Type {
 	case kwatch.Added:
 		if _, ok := c.appInfo[a.Name]; ok {
-			return false, fmt.Errorf("unsafe state. a (%s) was created" +
+			err = fmt.Errorf("unsafe state. a (%s) was created" +
 				" before but we received event (%s)", a.Name, event.Type)
+			return
 		}
 
-		newApp, err := app.New(*a, c.kubeApi, c.namespace, c.spaceSpec)
+		var newApp *app.AppRuntime
+		newApp, err = app.New(*a, c.kubeApi, c.namespace, c.spaceSpec)
 		if err != nil {
 			c.log.Warnf("app runtime creation failed: %s", err)
-			break
+			return
 		}
-		initialRV := a.ResourceVersion
-		c.appInfo[a.Name] = AppInfo{
-			app: newApp,
-			rscVersion: &initialRV,
-		}
+		c.appInfo[a.Name] = newApp
 		c.log.Printf("app (%s) added. There are now %d apps",
 			a.Name, len(c.appInfo))
 
 	case kwatch.Modified:
 		if _, ok := c.appInfo[a.Name]; !ok {
-			return false, fmt.Errorf("unsafe state. a (%s) was never" +
+			err = fmt.Errorf("unsafe state. a (%s) was never" +
 				" created but we received event (%s)", a.Name, event.Type)
+			return
 		}
-		c.appInfo[a.Name].app.Update(*a)
-		*(c.appInfo[a.Name].rscVersion) = a.ResourceVersion
+		c.appInfo[a.Name].Update(*a)
 		c.log.Printf("app (%s) modified. There are now %d apps",
 			a.Name, len(c.appInfo))
 
 	case kwatch.Deleted:
 		if _, ok := c.appInfo[a.Name]; !ok {
-			return true, fmt.Errorf("unsafe state. a (%s) was never " +
+			err = fmt.Errorf("unsafe state. a (%s) was never " +
 				"created but we received event (%s)", a.Name, event.Type)
+			return
 		}
-		c.appInfo[a.Name].app.Delete()
+		c.appInfo[a.Name].Delete()
 		delete(c.appInfo, a.Name)
 		c.log.Printf("app (%s) deleted. There are now %d apps",
 			a.Name, len(c.appInfo))
-		return true, nil
 	}
-	return false, nil
+	return
 }
+
+// ----------------------------------------------------------------------------
+
+func (c *InternalController) UnmarshalEvent(
+	evType kwatch.EventType,
+	data []byte,
+) (interface{}, error) {
+
+	ev := &Event{
+		Type:   evType,
+		Object: &appspec.App{},
+	}
+	err := json.Unmarshal(data, ev.Object)
+	if err != nil {
+		return nil, fmt.Errorf("fail to unmarshal app object from data (%s): %v", data, err)
+	}
+	return ev, nil
+}
+

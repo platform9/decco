@@ -59,7 +59,6 @@ type Controller struct {
 	spcInfo map[string] SpaceInfo
 	namespace string
 	waitApps sync.WaitGroup
-	httpClient *http.Client
 }
 
 type SpaceInfo struct {
@@ -99,8 +98,11 @@ func (ctl *Controller) reconcileSpaces() (string, error) {
 	for _, spc := range spcList.Items {
 		m[spc.Name] = true
 	}
-	for _, spc := range ctl.spcInfo {
-		name := spc.spc.Space.Name
+	for name, spc := range ctl.spcInfo {
+		if name != spc.spc.Space.Name {
+			return "", fmt.Errorf("name mismatch: %s vs %s", name,
+				spc.spc.Space.Name)
+		}
 		if !m[name] {
 			log.Infof("deleting space %s during reconciliation", name)
 			ctl.unregisterSpace(name, true)
@@ -155,7 +157,6 @@ func (c *Controller) Run() error {
 	if err != nil {
 		return err
 	}
-	c.httpClient = restClnt.Client
 	defer func() {
 		for key, _ := range c.spcInfo {
 			c.unregisterSpace(key, false)
@@ -166,7 +167,7 @@ func (c *Controller) Run() error {
 	}()
 
 	wl := watcher.CreateWatchLoop(fmt.Sprintf("spaces-in-%s",
-		c.namespace), c)
+		c.namespace), c, make(chan interface{}))
 	return wl.Run()
 }
 
@@ -185,7 +186,7 @@ func (c *Controller) StartWatchRequest(watchVersion string) (*http.Response, err
 	return k8sutil.WatchSpaces(
 		c.apiHost,
 		c.namespace,
-		c.httpClient,
+		httpClient,
 		watchVersion,
 	)
 }

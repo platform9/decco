@@ -37,14 +37,11 @@ type appEvent struct {
 }
 
 type AppRuntime struct {
-	kubeApi kubernetes.Interface
+	kubeApi   kubernetes.Interface
 	namespace string
 	spaceSpec sspec.SpaceSpec
-	log *logrus.Entry
-
-	//config Config
-
-	app spec.App
+	log       *logrus.Entry
+	app       spec.App
 
 	// in memory state of the app
 	// status is the source of truth after AppRuntime struct is materialized.
@@ -64,10 +61,10 @@ func New(
 		).WithField("app", app.Name)
 
 	ar := &AppRuntime{
-		kubeApi:  kubeApi,
-		log:      lg,
-		app:      app,
-		status:      app.Status.Copy(),
+		kubeApi:   kubeApi,
+		log:       lg,
+		app:       app,
+		status:    app.Status.Copy(),
 		namespace: namespace,
 		spaceSpec: spaceSpec,
 	}
@@ -109,24 +106,24 @@ func (ar *AppRuntime) Delete() {
 	} else {
 		err := ar.removePathFromHttpIngress()
 		if err != nil {
-			log.Warn("failed to remove path from ingress: %s", err)
+			log.Warnf("failed to remove path from ingress: %s", err)
 		}
 		deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
 		propPolicy := metav1.DeletePropagationBackground
 		delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
 		err = deployApi.Delete(ar.app.Name, &delOpts)
 		if err != nil {
-			log.Warn("failed to delete deployment: %s", err)
+			log.Warnf("failed to delete deployment: %s", err)
 		}
 		svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
 		err = svcApi.Delete(ar.app.Name, nil)
 		if err != nil {
-			log.Warn("failed to delete service: %s", err)
+			log.Warnf("failed to delete service: %s", err)
 		}
 	}
 	err := ar.updateDns(true)
 	if err != nil {
-		log.Warn("failed to clean up DNS: %s", err)
+		log.Warnf("failed to clean up DNS: %s", err)
 	}
 	// TCP (k8sniff) ingress resources will be
 	// cleaned up by garbage collection

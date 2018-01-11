@@ -17,6 +17,7 @@ import (
 var (
 	initRetryWaitTime = 30 * time.Second
 	delayAfterWatchStreamCloseInSeconds = 2
+	ErrTerminated = errors.New("gracefully terminated")
 )
 
 type WatchConsumer interface {
@@ -34,6 +35,7 @@ type WatchLoop interface {
 type watchLoop struct {
 	log *logrus.Entry
 	cons WatchConsumer
+	stopCh chan interface{}
 }
 
 type rawEvent struct {
@@ -52,10 +54,15 @@ func init() {
 	}
 }
 
-func CreateWatchLoop(name string, c WatchConsumer) WatchLoop {
+func CreateWatchLoop(
+	name string,
+	c WatchConsumer,
+	stopCh chan interface{},
+) WatchLoop {
 	return &watchLoop{
 		log: logrus.WithField("watchname", name),
 		cons: c,
+		stopCh: stopCh,
 	}
 }
 
@@ -102,11 +109,33 @@ func (wl *watchLoop) watch(watchVersion string) error {
 	}
 }
 
+// ----------------------------------------------------------------------------
+
+type eventChunk struct {
+	isDelete bool
+	ev interface{}
+	st *metav1.Status
+	err error
+}
+
+// ----------------------------------------------------------------------------
+
+func (wl *watchLoop) decodeOneChunk(decoder *json.Decoder) <- chan eventChunk {
+	evChan := make(chan eventChunk, 1)
+	go func() {
+		isDelete, ev, st, err := wl.pollEvent(decoder)
+		evChan <- eventChunk{ isDelete,ev, st, err}
+	} ()
+	return evChan
+}
+
+// ----------------------------------------------------------------------------
+
+
 func (wl *watchLoop) processWatchResponse(
 	initialWatchVersion string,
-	resp *http.Response) (
-	nextWatchVersion string,
-	err error) {
+	resp *http.Response,
+) (nextWatchVersion string, err error) {
 
 	nextWatchVersion = initialWatchVersion
 	defer resp.Body.Close()
@@ -116,13 +145,18 @@ func (wl *watchLoop) processWatchResponse(
 
 	decoder := json.NewDecoder(resp.Body)
 	for {
-		isDelete, ev, st, err := wl.pollEvent(decoder)
+		var chunk eventChunk
+		select {
+		case chunk = <- wl.decodeOneChunk(decoder):
+			break
+		case <- wl.stopCh:
+			return "", ErrTerminated
+		}
+		isDelete, ev, st, err := chunk.isDelete, chunk.ev, chunk.st, chunk.err
 		if err != nil {
 			if err == io.EOF { // apiserver will close stream periodically
-				wl.log.Infof("watch stream closed, retrying in %d secs...",
-					delayAfterWatchStreamCloseInSeconds)
-				time.Sleep(time.Duration(delayAfterWatchStreamCloseInSeconds) *
-					time.Second)
+				wl.log.Infof("watch stream closed, retrying in %d secs...", delayAfterWatchStreamCloseInSeconds)
+				time.Sleep(time.Duration(delayAfterWatchStreamCloseInSeconds) * time.Second)
 				return nextWatchVersion, nil
 			}
 			wl.log.Errorf("received invalid event from watch API: %v", err)

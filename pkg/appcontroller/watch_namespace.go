@@ -2,6 +2,7 @@ package appcontroller
 
 import (
 	"github.com/platform9/decco/pkg/k8sutil"
+	"github.com/platform9/decco/pkg/watcher"
 	"k8s.io/client-go/kubernetes"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/api/core/v1"
@@ -65,7 +66,7 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 		// rv = ns.ResourceVersion
 		log.Debugf("ns rv: %s", ns.ResourceVersion)
 		deleted, err := ctl.watchNamespaceInternal(fs, ns, restClient, rv)
-		if err == ErrTerminated {
+		if err == watcher.ErrTerminated {
 			log.Debugf("ns watch graceful shut down")
 			return
 		} else if err != nil {
@@ -105,7 +106,7 @@ func (ctl *Controller) watchNamespaceInternal(
 	}
 	log.Infof("watching namespace at rv %s", resourceVersion)
 	for {
-		watcher, err := restClient.
+		w, err := restClient.
 			Get().
 			Resource("namespaces").
 			VersionedParams(&listOpts, scheme.ParameterCodec).
@@ -114,11 +115,11 @@ func (ctl *Controller) watchNamespaceInternal(
 		if err != nil {
 			return false, fmt.Errorf("failed to watch namespace: %s", err)
 		} else {
-			events := watcher.ResultChan()
+			events := w.ResultChan()
 			for {
 				select {
 				case <- ctl.stopCh:
-					return false, ErrTerminated
+					return false, watcher.ErrTerminated
 				case event := <- events:
 					if event.Type == "" {
 						log.Debugf("stream closed")
