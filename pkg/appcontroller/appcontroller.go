@@ -36,17 +36,11 @@ import (
 	"sync"
 )
 
-type Event struct {
-	Type   kwatch.EventType
-	Object *appspec.App
-}
-
 type InternalController struct {
 	log           *logrus.Entry
 	apiHost       string
 	extensionsApi apiextensionsclient.Interface
 	kubeApi       kubernetes.Interface
-	appInfo       map[string] *app.AppRuntime
 	namespace     string
 	spaceSpec     spec.SpaceSpec
 	stopCh        chan interface{}
@@ -135,7 +129,6 @@ func NewInternalController(
 		apiHost:       clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
 		kubeApi:       kubernetes.NewForConfigOrDie(clustConfig),
-		appInfo:       make(map[string] *app.AppRuntime),
 		namespace:     namespace,
 		spaceSpec:     spaceSpec,
 		stopCh:        stopCh,
@@ -144,74 +137,47 @@ func NewInternalController(
 
 // ----------------------------------------------------------------------------
 
-func (ctl *InternalController) reconcileApps() (string, error) {
-	ctl.log.Info("reconciling apps ...")
+type appWrapper struct {
+	app *appspec.App
+}
+
+func (aw *appWrapper) Name() string {
+	return aw.app.Name
+}
+
+func (ctl *InternalController) GetItemList() (
+	rv string, items []watcher.Item, err error,
+) {
 	appList, err := k8sutil.GetAppList(
 		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
 	if err != nil {
-		return "", err
+		return
 	}
-
-	m := make(map[string]bool)
-	ctl.log.Debug("--- app reconciliation begin ---")
-	for _, a := range appList.Items {
-		m[a.Name] = true
+	rv = appList.ResourceVersion
+	for i, _ := range appList.Items {
+		items = append(items, &appWrapper{&appList.Items[i]})
 	}
-	for name, a := range ctl.appInfo {
-		appName := a.GetApp().Name
-		if name != appName {
-			return "", fmt.Errorf("name mismatch: %s vs %s", name, appName)
-		}
-		if !m[name] {
-			ctl.log.Infof("deleting app %s during reconciliation", name)
-			a.Delete()
-			delete(ctl.appInfo, name)
-		}
-	}
-
-	for _, a := range appList.Items {
-		_, present := ctl.appInfo[a.Name]
-		if !present {
-			a.Spec.Cleanup()
-			newApp, err := app.New(a, ctl.kubeApi, ctl.namespace, ctl.spaceSpec)
-			if err != nil {
-				ctl.log.Warnf("app runtime creation failed: %s", err)
-				continue
-			}
-			ctl.appInfo[a.Name] = newApp
-		}
-	}
-	ctl.log.Debug("--- app reconciliation end ---")
-	return appList.ResourceVersion, nil
+	return
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *InternalController) initCRD() error {
+func (ctl *InternalController) InitItem(item watcher.Item) watcher.ManagedItem {
+	wrapped := item.(*appWrapper)
+	a := wrapped.app
+	a.Spec.Cleanup()
+	newApp := app.New(*a, ctl.kubeApi, ctl.namespace, ctl.spaceSpec)
+	return newApp
+}
+
+// ----------------------------------------------------------------------------
+
+func (c *InternalController) InitCRD() error {
 	err := k8sutil.CreateAppCRD(c.extensionsApi)
 	if err != nil {
 		return err
 	}
 	return k8sutil.WaitAppCRDReady(c.extensionsApi)
-}
-
-// ----------------------------------------------------------------------------
-
-func (c *InternalController) Resync() (string, error) {
-	watchVersion := "0"
-	err := c.initCRD()
-	if err != nil {
-		if k8sutil.IsKubernetesResourceAlreadyExistError(err) {
-			// CRD has been initialized before. We need to recover existing apps.
-			watchVersion, err = c.reconcileApps()
-			if err != nil {
-				return "", err
-			}
-		} else {
-			return "", fmt.Errorf("fail to create CRD: %v", err)
-		}
-	}
-	return watchVersion, nil
 }
 
 // ----------------------------------------------------------------------------
@@ -224,17 +190,18 @@ func (c *InternalController) Run() error {
 
 // ----------------------------------------------------------------------------
 
-func (c *InternalController) PeriodicTask() {
+func (c *InternalController) PeriodicTask(itemMap map[string]watcher.ManagedItem) {
 	knownUrlPaths := map[string] bool {}
-	for _, info := range c.appInfo {
-		urlPath := info.GetApp().Spec.HttpUrlPath
+	for _, item := range itemMap {
+		ar := item.(*app.AppRuntime)
+		urlPath := ar.GetApp().Spec.HttpUrlPath
 		if len(urlPath) > 0 {
 			knownUrlPaths[urlPath] = true
 		}
 	}
 
 	app.Collect(c.kubeApi, c.log, c.namespace, func(name string) bool {
-		_, ok := c.appInfo[name]
+		_, ok := itemMap[name]
 		return ok
 	}, func(urlPath string) bool {
 		return knownUrlPaths[urlPath]
@@ -259,79 +226,30 @@ func (c *InternalController) StartWatchRequest(
 
 // ----------------------------------------------------------------------------
 
-
-func (c *InternalController) HandleEvent(e interface{}) (objVersion string, err error) {
-	event := e.(*Event)
-	c.log.Debugf("app event: %v %v", event.Type, event.Object)
-	return c.handleAppEvent(event)
+func (c *InternalController) LogEvent(evType kwatch.EventType, item watcher.Item) {
+	wrapped := item.(*appWrapper)
+	a := wrapped.app
+	c.log.Debugf("app event: %v %v", evType, a)
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *InternalController) handleAppEvent(event *Event) (objVersion string, err error) {
-	a := event.Object
-	objVersion = event.Object.ResourceVersion
-
-	// TODO: add validation to appspec update.
-	a.Spec.Cleanup()
-
-	switch event.Type {
-	case kwatch.Added:
-		if _, ok := c.appInfo[a.Name]; ok {
-			err = fmt.Errorf("unsafe state. a (%s) was created" +
-				" before but we received event (%s)", a.Name, event.Type)
-			return
-		}
-
-		var newApp *app.AppRuntime
-		newApp, err = app.New(*a, c.kubeApi, c.namespace, c.spaceSpec)
-		if err != nil {
-			c.log.Warnf("app runtime creation failed: %s", err)
-			return
-		}
-		c.appInfo[a.Name] = newApp
-		c.log.Printf("app (%s) added. There are now %d apps",
-			a.Name, len(c.appInfo))
-
-	case kwatch.Modified:
-		if _, ok := c.appInfo[a.Name]; !ok {
-			err = fmt.Errorf("unsafe state. a (%s) was never" +
-				" created but we received event (%s)", a.Name, event.Type)
-			return
-		}
-		c.appInfo[a.Name].Update(*a)
-		c.log.Printf("app (%s) modified. There are now %d apps",
-			a.Name, len(c.appInfo))
-
-	case kwatch.Deleted:
-		if _, ok := c.appInfo[a.Name]; !ok {
-			err = fmt.Errorf("unsafe state. a (%s) was never " +
-				"created but we received event (%s)", a.Name, event.Type)
-			return
-		}
-		c.appInfo[a.Name].Delete()
-		delete(c.appInfo, a.Name)
-		c.log.Printf("app (%s) deleted. There are now %d apps",
-			a.Name, len(c.appInfo))
-	}
-	return
-}
-
-// ----------------------------------------------------------------------------
-
-func (c *InternalController) UnmarshalEvent(
+func (c *InternalController) UnmarshalItem(
 	evType kwatch.EventType,
 	data []byte,
-) (interface{}, error) {
+) (watcher.Item, string, error) {
 
-	ev := &Event{
-		Type:   evType,
-		Object: &appspec.App{},
-	}
-	err := json.Unmarshal(data, ev.Object)
+	a := &appspec.App{}
+	err := json.Unmarshal(data, a)
 	if err != nil {
-		return nil, fmt.Errorf("fail to unmarshal app object from data (%s): %v", data, err)
+		return nil, "", fmt.Errorf("fail to unmarshal app object from data (%s): %v", data, err)
 	}
-	return ev, nil
+	wrapped := &appWrapper{a}
+	return wrapped, a.ResourceVersion, nil
 }
 
+// ----------------------------------------------------------------------------
+
+func (c *InternalController) GetItemType() string {
+	return "app"
+}

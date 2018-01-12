@@ -12,6 +12,7 @@ import (
 	kwatch "k8s.io/apimachinery/pkg/watch"
 	"os"
 	"strconv"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 var (
@@ -21,21 +22,36 @@ var (
 )
 
 type WatchConsumer interface {
-	Resync() (watchVersion string, err error)
-	PeriodicTask()
+	PeriodicTask(itemMap map[string]ManagedItem)
 	StartWatchRequest(watchVersion string) (*http.Response, error)
-	UnmarshalEvent(evType kwatch.EventType, data []byte) (val interface{}, err error)
-	HandleEvent(interface{}) (objVersion string, err error)
+	UnmarshalItem(evType kwatch.EventType, data []byte) (item Item, rv string, err error)
+	LogEvent(evType kwatch.EventType, item Item)
+	InitCRD() error
+	GetItemList() (resourceVersion string, items []Item, err error)
+	InitItem(item Item) ManagedItem
+	GetItemType() string
 }
 
 type WatchLoop interface {
 	Run() error
 }
 
+type Item interface {
+	Name() string
+}
+
+type ManagedItem interface {
+	Item
+	Delete()
+	Update(Item)
+	Stop()
+}
+
 type watchLoop struct {
 	log *logrus.Entry
 	cons WatchConsumer
 	stopCh chan interface{}
+	itemMap map[string]ManagedItem
 }
 
 type rawEvent struct {
@@ -63,14 +79,24 @@ func CreateWatchLoop(
 		log: logrus.WithField("watchname", name),
 		cons: c,
 		stopCh: stopCh,
+		itemMap: make(map[string]ManagedItem),
 	}
 }
 
 func (wl *watchLoop) Run() error {
 	var watchVersion string
 	var err error
+
+	defer func() {
+		iType := wl.cons.GetItemType()
+		for _, item := range wl.itemMap {
+			wl.log.Infof("stopping %s '%s'", iType, item.Name())
+			item.Stop()
+		}
+	}()
+
 	for {
-		watchVersion, err = wl.cons.Resync()
+		watchVersion, err = wl.resync()
 		if err == nil {
 			wl.log.Infof("watch loop started with initial version %s ",
 				watchVersion)
@@ -90,7 +116,7 @@ func (wl *watchLoop) Run() error {
 func (wl *watchLoop) watch(watchVersion string) error {
 
 	for {
-		wl.cons.PeriodicTask()
+		wl.cons.PeriodicTask(wl.itemMap)
 		resp, err := wl.cons.StartWatchRequest(watchVersion)
 		wl.log.Infof("start watching at %v", watchVersion)
 
@@ -112,8 +138,9 @@ func (wl *watchLoop) watch(watchVersion string) error {
 // ----------------------------------------------------------------------------
 
 type eventChunk struct {
-	isDelete bool
-	ev interface{}
+	evType kwatch.EventType
+	item Item
+	rv string
 	st *metav1.Status
 	err error
 }
@@ -123,8 +150,8 @@ type eventChunk struct {
 func (wl *watchLoop) decodeOneChunk(decoder *json.Decoder) <- chan eventChunk {
 	evChan := make(chan eventChunk, 1)
 	go func() {
-		isDelete, ev, st, err := wl.pollEvent(decoder)
-		evChan <- eventChunk{ isDelete,ev, st, err}
+		evType, item, rv, st, err := wl.pollEvent(decoder)
+		evChan <- eventChunk{ evType,item, rv,st, err}
 	} ()
 	return evChan
 }
@@ -152,7 +179,7 @@ func (wl *watchLoop) processWatchResponse(
 		case <- wl.stopCh:
 			return "", ErrTerminated
 		}
-		isDelete, ev, st, err := chunk.isDelete, chunk.ev, chunk.st, chunk.err
+		evType, item, objVersion, st, err := chunk.evType, chunk.item, chunk.rv, chunk.st, chunk.err
 		if err != nil {
 			if err == io.EOF { // apiserver will close stream periodically
 				wl.log.Infof("watch stream closed, retrying in %d secs...", delayAfterWatchStreamCloseInSeconds)
@@ -169,12 +196,13 @@ func (wl *watchLoop) processWatchResponse(
 		}
 
 		//logrus.Infof("next watch version: %s", nextWatchVersion)
-		objVersion, err := wl.cons.HandleEvent(ev)
+		wl.cons.LogEvent(evType, item)
+		err = wl.handleEvent(evType, item)
 		if err != nil {
 			wl.log.Warningf("event handler returned possible error: %v", err)
 			return "", err
 		}
-		if isDelete {
+		if evType == kwatch.Deleted {
 			// The RV on the deleted resource is out of date.
 			// We also don't know the most up to date RV to use for the next
 			// watch call if this event is the last before the current stream
@@ -187,29 +215,128 @@ func (wl *watchLoop) processWatchResponse(
 	}
 }
 
-func (wl *watchLoop) pollEvent(decoder *json.Decoder) (bool, interface{}, *metav1.Status, error) {
-	re := &rawEvent{}
-	err := decoder.Decode(re)
-	if err != nil {
-		if err == io.EOF {
-			return false, nil, nil, err
+// ----------------------------------------------------------------------------
+
+func (wl *watchLoop) handleEvent(evType kwatch.EventType, item Item) error {
+	name := item.Name()
+	iType := wl.cons.GetItemType()
+	switch evType {
+	case kwatch.Added:
+		if _, ok := wl.itemMap[name]; ok {
+			return fmt.Errorf("unsafe state. %s '%s' was registered" +
+				" before but we received event %s", iType, name, evType)
 		}
-		return false, nil, nil, fmt.Errorf("fail to decode raw event from apiserver (%v)", err)
+		wl.itemMap[name] = wl.cons.InitItem(item)
+		wl.log.Printf("%s '%s' added. " +
+			"There now %d %ss", iType, name, len(wl.itemMap), iType)
+
+	case kwatch.Modified:
+		mgItem := wl.itemMap[name]
+		if mgItem == nil {
+			return fmt.Errorf("unsafe state. %s '%s' was not" +
+				" registered but we received event %s", iType, name, evType)
+		}
+		mgItem.Update(item)
+		wl.log.Printf("%s '%s' updated. " +
+			"There now %d %ss", iType, name, len(wl.itemMap), iType)
+
+	case kwatch.Deleted:
+		mgItem := wl.itemMap[name]
+		if mgItem == nil {
+			return fmt.Errorf("unsafe state. %s '%s' was not " +
+				"registered but we received event %s", iType, name, evType)
+		}
+		mgItem.Delete()
+		delete(wl.itemMap, name)
+		wl.log.Printf("%s '%s' deleted. " +
+			"There now %d %ss", iType, name, len(wl.itemMap), iType)
+	}
+	return nil
+}
+
+// ----------------------------------------------------------------------------
+
+
+func (wl *watchLoop) pollEvent(decoder *json.Decoder,
+) (evType kwatch.EventType, item Item, rv string, st *metav1.Status, err error) {
+
+	re := &rawEvent{}
+	err = decoder.Decode(re)
+	if err != nil {
+		if err != io.EOF {
+			err = fmt.Errorf("fail to decode raw event from apiserver (%v)", err)
+		}
+		return
 	}
 
+	evType = re.Type
 	if re.Type == kwatch.Error {
 		status := &metav1.Status{}
 		err = json.Unmarshal(re.Object, status)
-		if err != nil {
-			return false, nil, nil, fmt.Errorf("fail to decode (%s) into metav1.Status (%v)", re.Object, err)
-		}
-		return false, nil, status, nil
+		return
 	}
 
-	isDelete := re.Type == kwatch.Deleted
-	ev, err := wl.cons.UnmarshalEvent(re.Type, re.Object)
+	item, rv, err = wl.cons.UnmarshalItem(re.Type, re.Object)
 	if err != nil {
-		return isDelete, nil, nil, fmt.Errorf("fail to unmarshal Cluster object from data (%s): %v", re.Object, err)
+		err = fmt.Errorf(
+			"failed to unmarshal from data (%s): %v",
+			re.Object,
+			err,
+		)
 	}
-	return isDelete, ev, nil, nil
+	return
+}
+
+// ----------------------------------------------------------------------------
+
+func (wl *watchLoop) resync() (string, error) {
+	watchVersion := "0"
+	err := wl.cons.InitCRD()
+	if err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			// CRD has been initialized before. We need to recover existing spaces.
+			watchVersion, err = wl.reconcileItems()
+			if err != nil {
+				return "", err
+			}
+		} else {
+			return "", fmt.Errorf("fail to create CRD: %v", err)
+		}
+	}
+	return watchVersion, nil
+}
+
+// ----------------------------------------------------------------------------
+
+func (wl *watchLoop) reconcileItems() (string, error) {
+	log := wl.log.WithField("func", "reconcileItems")
+	rv, items, err := wl.cons.GetItemList()
+	if err != nil {
+		return "", err
+	}
+	t := wl.cons.GetItemType()
+	m := make(map[string]bool)
+	log.Debugf("--- %s reconciliation begin ---", t)
+	for _, item := range items {
+		m[item.Name()] = true
+	}
+	for name, item := range wl.itemMap {
+		if name != item.Name() {
+			return "", fmt.Errorf("name mismatch: %s vs %s", name,
+				item.Name())
+		}
+		if !m[name] {
+			log.Infof("deleting %s %s during reconciliation", t, name)
+			item.Delete()
+			delete(wl.itemMap, name)
+		}
+	}
+	for _, item := range items {
+		_, present := wl.itemMap[item.Name()]
+		if !present {
+			wl.itemMap[item.Name()] = wl.cons.InitItem(item)
+		}
+	}
+	log.Debugf("--- %s reconciliation end ---", t)
+	return rv, nil
 }

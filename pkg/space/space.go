@@ -90,16 +90,18 @@ func (c *SpaceRuntime) Update(spc spec.Space) {
 
 // -----------------------------------------------------------------------------
 
-func (c *SpaceRuntime) Delete() {
+func (c *SpaceRuntime) Delete() (nsDeleted bool) {
 	nsApi := c.kubeApi.CoreV1().Namespaces()
 	err := nsApi.Delete(c.Space.Name, nil)
 	if err != nil {
 		c.log.Warnf("failed to delete namespace %s: ", err.Error())
 	}
+	nsDeleted = (err == nil)
 	err = c.updateDns(true)
 	if err != nil {
 		c.log.Warnf("failed to delete dns record: %s", err)
 	}
+	return
 }
 
 // -----------------------------------------------------------------------------

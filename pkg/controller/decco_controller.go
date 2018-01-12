@@ -27,7 +27,6 @@ import (
 	"fmt"
 	"k8s.io/client-go/kubernetes"
 	"github.com/platform9/decco/pkg/space"
-	"time"
 	"net/http"
 	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/appcontroller"
@@ -36,19 +35,8 @@ import (
 	"sync"
 )
 
-var (
-	initRetryWaitTime = 30 * time.Second
-	delayAfterWatchStreamCloseInSeconds = 2
-)
-
-
 func init() {
 	logrus.Println("controller package initialized")
-}
-
-type Event struct {
-	Type   kwatch.EventType
-	Object *spec.Space
 }
 
 type Controller struct {
@@ -56,7 +44,6 @@ type Controller struct {
 	apiHost string
 	extensionsApi apiextensionsclient.Interface
 	kubeApi kubernetes.Interface
-	spcInfo map[string] SpaceInfo
 	namespace string
 	waitApps sync.WaitGroup
 }
@@ -64,6 +51,46 @@ type Controller struct {
 type SpaceInfo struct {
 	spc *space.SpaceRuntime
 	appCtrl    *appcontroller.Controller
+	log *logrus.Entry
+}
+
+// ----------------------------------------------------------------------------
+
+func (spcInfo *SpaceInfo) Name() string {
+	return spcInfo.spc.Space.Name
+}
+
+// ----------------------------------------------------------------------------
+
+func (spcInfo *SpaceInfo) Delete()  {
+	nsDeleted := spcInfo.spc.Delete()
+	if !nsDeleted {
+		// An active space resource might have no associated namespace if for
+		// example, a user manually deleted the namespace while decco is not
+		// running. Call Detach() to explicitly stop the app controller.
+		spcInfo.log.Debugf("ns not deleted: forcing stop of app ctrl")
+		spcInfo.Stop()
+	}
+}
+
+// ----------------------------------------------------------------------------
+
+func (spcInfo *SpaceInfo) Stop() {
+	if spcInfo.appCtrl != nil {
+		// shut down the app controller. A new app controller instance will
+		// start as a child of the future decco controller instance
+		spcInfo.appCtrl.Stop()
+	} else {
+		spcInfo.log.Debugf("Detach: no app controller to stop")
+	}
+}
+
+// ----------------------------------------------------------------------------
+
+func (spcInfo *SpaceInfo) Update(item watcher.Item)  {
+	wrapped := item.(*spaceWrapper)
+	spc := wrapped.space
+	spcInfo.spc.Update(*spc)
 }
 
 // ----------------------------------------------------------------------------
@@ -77,51 +104,13 @@ func New(namespace string) *Controller {
 		apiHost: clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
 		kubeApi: kubernetes.NewForConfigOrDie(clustConfig),
-		spcInfo: make(map[string] SpaceInfo),
 		namespace: namespace,
 	}
 }
 
 // ----------------------------------------------------------------------------
 
-func (ctl *Controller) reconcileSpaces() (string, error) {
-	log := ctl.log.WithField("func", "reconcileSpaces")
-	log.Info("reconciling spaces...")
-	spcList, err := k8sutil.GetSpaceList(
-		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
-	if err != nil {
-		return "", err
-	}
-
-	m := make(map[string]bool)
-	log.Debug("--- space reconciliation begin ---")
-	for _, spc := range spcList.Items {
-		m[spc.Name] = true
-	}
-	for name, spc := range ctl.spcInfo {
-		if name != spc.spc.Space.Name {
-			return "", fmt.Errorf("name mismatch: %s vs %s", name,
-				spc.spc.Space.Name)
-		}
-		if !m[name] {
-			log.Infof("deleting space %s during reconciliation", name)
-			ctl.unregisterSpace(name, true)
-		}
-	}
-	for _, spc := range spcList.Items {
-		_, present := ctl.spcInfo[spc.Name]
-		if !present {
-			spc.Spec.Cleanup()
-			ctl.registerSpace(&spc)
-		}
-	}
-	log.Debug("--- space reconciliation end ---")
-	return spcList.ResourceVersion, nil
-}
-
-// ----------------------------------------------------------------------------
-
-func (c *Controller) initCRD() error {
+func (c *Controller) InitCRD() error {
 	err := k8sutil.CreateCRD(c.extensionsApi)
 	if err != nil {
 		return err
@@ -131,31 +120,14 @@ func (c *Controller) initCRD() error {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) Resync() (string, error) {
-	watchVersion := "0"
-	err := c.initCRD()
-	if err != nil {
-		if k8sutil.IsKubernetesResourceAlreadyExistError(err) {
-			// CRD has been initialized before. We need to recover existing spaces.
-			watchVersion, err = c.reconcileSpaces()
-			if err != nil {
-				return "", err
-			}
-		} else {
-			return "", fmt.Errorf("fail to create CRD: %v", err)
-		}
-	}
-	return watchVersion, nil
+func (c *Controller) GetItemType() string {
+	return "space"
 }
-
 
 // ----------------------------------------------------------------------------
 
 func (c *Controller) Run() error {
 	defer func() {
-		for key, _ := range c.spcInfo {
-			c.unregisterSpace(key, false)
-		}
 		c.log.Infof("waiting for app controllers to shut down ...")
 		c.waitApps.Wait()
 		c.log.Infof("all app controllers have shut down.")
@@ -168,9 +140,9 @@ func (c *Controller) Run() error {
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) PeriodicTask() {
+func (c *Controller) PeriodicTask(itemMap map[string]watcher.ManagedItem) {
 	space.Collect(c.kubeApi, c.log, func(name string) bool {
-		_, ok := c.spcInfo[name]
+		_, ok := itemMap[name]
 		return ok
 	})
 }
@@ -190,28 +162,9 @@ func (c *Controller) StartWatchRequest(watchVersion string) (*http.Response, err
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) unregisterSpace(
-	name string,
-	deleteResources bool,
-) {
-	if spcInfo, ok := c.spcInfo[name]; ok {
-		c.log.Debugf("unregistering space %s", name)
-		delete(c.spcInfo, name)
-		if deleteResources {
-			spcInfo.spc.Delete()
-			// the app controller will eventually detect the deletion
-			// of the associated namespace resource and shut itself down
-		} else if spcInfo.appCtrl != nil {
-			// shut down the app controller. A new app controller instance will
-			// start as a child of the future decco controller instance
-			spcInfo.appCtrl.Stop()
-		}
-	}
-}
-
-// ----------------------------------------------------------------------------
-
-func (c *Controller) registerSpace(spc *spec.Space) {
+func (c *Controller) InitItem(item watcher.Item) watcher.ManagedItem {
+	wrapped := item.(*spaceWrapper)
+	spc := wrapped.space
 	newSpace := space.New(*spc, c.kubeApi, c.namespace)
 	var appCtrl *appcontroller.Controller
 	if newSpace.Status.Phase == spec.SpacePhaseActive {
@@ -225,76 +178,58 @@ func (c *Controller) registerSpace(spc *spec.Space) {
 		c.log.Warnf("not starting app controller for failed space %s",
 			spc.Name)
 	}
-	c.spcInfo[spc.Name] = SpaceInfo{
+	return &SpaceInfo{
 		spc: newSpace,
 		appCtrl: appCtrl,
+		log: c.log.WithField("spaceInfo", spc.Name),
 	}
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) HandleEvent(e interface{}) (objVersion string, err error) {
-	event := e.(*Event)
-	c.log.Debugf("space event: %v %v", event.Type, event.Object)
-	return c.handleSpaceEvent(event)
+func (c *Controller) LogEvent(evType kwatch.EventType, item watcher.Item) {
+	wrapped := item.(*spaceWrapper)
+	spc := wrapped.space
+	c.log.Debugf("space event: %v %v", evType, spc)
 }
 
 // ----------------------------------------------------------------------------
 
-func (c *Controller) handleSpaceEvent(event *Event) (objVersion string, err error) {
-	spc := event.Object
-	objVersion = event.Object.ResourceVersion
-	// TODO: add validation to spec update.
-	spc.Spec.Cleanup()
-
-	switch event.Type {
-	case kwatch.Added:
-		if _, ok := c.spcInfo[spc.Name]; ok {
-			err = fmt.Errorf("unsafe state. space (%s) was registered" +
-				" before but we received event (%s)", spc.Name, event.Type)
-			return
-		}
-		c.registerSpace(spc)
-		c.log.Printf("space (%s) added. " +
-			"There now %d spaces", spc.Name, len(c.spcInfo))
-
-	case kwatch.Modified:
-		if _, ok := c.spcInfo[spc.Name]; !ok {
-			err = fmt.Errorf("unsafe state. space (%s) was not" +
-				" registered but we received event (%s)", spc.Name, event.Type)
-			return
-		}
-		c.spcInfo[spc.Name].spc.Update(*spc)
-		c.log.Printf("space (%s) modified. " +
-			"There now %d spaces", spc.Name, len(c.spcInfo))
-
-	case kwatch.Deleted:
-		if _, ok := c.spcInfo[spc.Name]; !ok {
-			err = fmt.Errorf("unsafe state. space (%s) was not " +
-				"registered but we received event (%s)", spc.Name, event.Type)
-			return
-		}
-		c.unregisterSpace(spc.Name, true)
-		c.log.Printf("space (%s) deleted. " +
-			"There now %d spaces", spc.Name, len(c.spcInfo))
-	}
-	return
-}
-
-// ----------------------------------------------------------------------------
-
-func (c *Controller) UnmarshalEvent(
+func (c *Controller) UnmarshalItem(
 	evType kwatch.EventType,
 	data []byte,
-) (interface{}, error) {
+) (watcher.Item, string, error) {
 
-	ev := &Event{
-		Type:   evType,
-		Object: &spec.Space{},
-	}
-	err := json.Unmarshal(data, ev.Object)
+	spc := &spec.Space{}
+	err := json.Unmarshal(data, spc)
 	if err != nil {
-		return nil, fmt.Errorf("fail to unmarshal Space object from data (%s): %v", data, err)
+		return nil, "", fmt.Errorf("fail to unmarshal space object from data (%s): %v", data, err)
 	}
-	return ev, nil
+	wrapped := &spaceWrapper{spc}
+	return wrapped, spc.ResourceVersion, nil
+}
+
+// ----------------------------------------------------------------------------
+
+type spaceWrapper struct {
+	space *spec.Space
+}
+
+func (sw *spaceWrapper) Name() string {
+	return sw.space.Name
+}
+
+// ----------------------------------------------------------------------------
+
+func (ctl *Controller) GetItemList() (rv string, items []watcher.Item, err error) {
+	spcList, err := k8sutil.GetSpaceList(
+		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
+	if err != nil {
+		return
+	}
+	rv = spcList.ResourceVersion
+	for i, _ := range spcList.Items {
+		items = append(items, &spaceWrapper{space: &spcList.Items[i]})
+	}
+	return
 }

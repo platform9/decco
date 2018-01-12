@@ -18,23 +18,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"github.com/platform9/decco/pkg/dns"
+	"github.com/platform9/decco/pkg/watcher"
 )
-
-type appEventType string
 
 var (
 	errInCreatingPhase = errors.New("space already in Creating phase")
 )
-
-const (
-	eventDeleteApp appEventType = "Delete"
-	eventModifyApp appEventType = "Modify"
-)
-
-type appEvent struct {
-	typ     appEventType
-	app spec.App
-}
 
 type AppRuntime struct {
 	kubeApi   kubernetes.Interface
@@ -50,12 +39,18 @@ type AppRuntime struct {
 
 // -----------------------------------------------------------------------------
 
+func (ar *AppRuntime) Name() string {
+	return ar.app.Name
+}
+
+// -----------------------------------------------------------------------------
+
 func New(
 	app spec.App,
 	kubeApi kubernetes.Interface,
 	namespace string,
 	spaceSpec sspec.SpaceSpec,
-) (*AppRuntime, error) {
+) *AppRuntime {
 
 	lg := logrus.WithField("pkg","app",
 		).WithField("app", app.Name)
@@ -70,7 +65,7 @@ func New(
 	}
 
 	if setupErr := ar.setup(); setupErr != nil {
-		creationErr := fmt.Errorf("app failed to setup: %v", setupErr)
+		lg.Errorf("app failed to setup: %v", setupErr)
 		if ar.status.Phase != spec.AppPhaseFailed {
 			ar.status.SetReason(setupErr.Error())
 			ar.status.SetPhase(spec.AppPhaseFailed)
@@ -79,20 +74,24 @@ func New(
 					spec.AppPhaseFailed, err)
 			}
 		}
-		return nil, creationErr
 	}
-	return ar, nil
+	return ar
 }
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) Update(app spec.App) {
+func (ar *AppRuntime) Update(item watcher.Item) {
 }
 
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) GetApp() spec.App {
 	return ar.app
+}
+
+// -----------------------------------------------------------------------------
+
+func (ar *AppRuntime) Stop() {
 }
 
 // -----------------------------------------------------------------------------

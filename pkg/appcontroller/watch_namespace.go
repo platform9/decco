@@ -44,6 +44,12 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 	sleepSeconds := 0
 
 	for {
+		select {
+		case <- ctl.stopCh:
+			log.Debugf("graceful shut down detected in outer loop")
+			return
+		default:
+		}
 		if sleepSeconds > 0 {
 			log.Infof("retrying in %d seconds", sleepSeconds)
 			time.Sleep(time.Duration(sleepSeconds) * time.Second)
