@@ -30,9 +30,9 @@ import (
 	"time"
 	"net/http"
 	"github.com/platform9/decco/pkg/spec"
-	"github.com/platform9/decco/pkg/client"
 	"github.com/platform9/decco/pkg/appcontroller"
 	"github.com/platform9/decco/pkg/watcher"
+	"k8s.io/client-go/rest"
 	"sync"
 )
 
@@ -152,11 +152,6 @@ func (c *Controller) Resync() (string, error) {
 // ----------------------------------------------------------------------------
 
 func (c *Controller) Run() error {
-	restConfig := k8sutil.GetClusterConfigOrDie()
-	restClnt, _, err := client.New(restConfig)
-	if err != nil {
-		return err
-	}
 	defer func() {
 		for key, _ := range c.spcInfo {
 			c.unregisterSpace(key, false)
@@ -183,6 +178,8 @@ func (c *Controller) PeriodicTask() {
 // ----------------------------------------------------------------------------
 
 func (c *Controller) StartWatchRequest(watchVersion string) (*http.Response, error) {
+	restIf := c.kubeApi.CoreV1().RESTClient()
+	httpClient := restIf.(*rest.RESTClient).Client
 	return k8sutil.WatchSpaces(
 		c.apiHost,
 		c.namespace,
