@@ -40,7 +40,7 @@ func stunnelEnvVars(
 		},
 		{
 			Name: "STUNNEL_CERT_FILE",
-			Value: "/etc/stunnel/certs/tls.cert",
+			Value: "/etc/stunnel/certs/tls.crt",
 		},
 		{
 			Name: "STUNNEL_KEY_FILE",
