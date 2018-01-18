@@ -4,19 +4,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"github.com/sirupsen/logrus"
-	"k8s.io/api/extensions/v1beta1"
 )
 
 func Collect(kubeApi kubernetes.Interface,
 	log *logrus.Entry,
 	namespace string,
 	isKnownApp func(name string) bool,
-	isKnownUrlPath func(name string) bool,
 ) {
 	collectDeployments(kubeApi, log, namespace, isKnownApp)
 	collectServices(kubeApi, log, namespace, isKnownApp)
-	collectUrlPaths(kubeApi, log, namespace, isKnownUrlPath)
-	collectBinaryIngresses(kubeApi, log, namespace, isKnownApp)
+	collectIngresses(kubeApi, log, namespace, isKnownApp)
 }
 
 func collectDeployments(kubeApi kubernetes.Interface,
@@ -85,58 +82,12 @@ func collectServices(kubeApi kubernetes.Interface,
 	}
 }
 
-func collectUrlPaths(kubeApi kubernetes.Interface,
-	log *logrus.Entry,
-	namespace string,
-	isKnownUrlPath func(name string) bool) {
-
-	log = log.WithField("func", "collectUrlPaths")
-	ingApi := kubeApi.ExtensionsV1beta1().Ingresses(namespace)
-	ing, err := ingApi.Get("http-ingress", metav1.GetOptions{})
-	if err != nil {
-		log.Warnf("failed to get http ingress: %s", err)
-		return
-	}
-	rules := ing.Spec.Rules
-	if len(rules) != 1 {
-		log.Errorf("http-ingress has invalid number of rules: %d",
-			len(rules))
-		return	
-	}
-	paths := rules[0].IngressRuleValue.HTTP.Paths
-	if len(paths) < 1 {
-		log.Errorf("http-ingress has no paths")
-		return
-	}
-	dirty := false
-	newPaths := []v1beta1.HTTPIngressPath {}
-	for _, path := range paths {
-		if path.Path != "/"  {
-			if isKnownUrlPath(path.Path) {
-				newPaths = append(newPaths, path)
-			} else {
-				log.Warnf("deleting orphaned url path: %s", path.Path)
-				dirty = true
-			}
-		} else {
-			newPaths = append(newPaths, path)
-		}
-	}
-	if dirty {
-		rules[0].IngressRuleValue.HTTP.Paths = newPaths
-		_, err = ingApi.Update(ing)
-		if err != nil {
-			log.Errorf("failed to update http ingress: %s", err)
-		}
-	}
-}
-
-func collectBinaryIngresses(kubeApi kubernetes.Interface,
+func collectIngresses(kubeApi kubernetes.Interface,
 	log *logrus.Entry,
 	namespace string,
 	isKnownApp func(name string) bool) {
 
-	log = log.WithField("func", "collectBinaryIngresses")
+	log = log.WithField("func", "collectIngresses")
 	ingApi := kubeApi.ExtensionsV1beta1().Ingresses(namespace)
 	ingList, err := ingApi.List(
 		metav1.ListOptions{

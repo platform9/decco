@@ -324,66 +324,30 @@ func (c *SpaceRuntime) createNamespace() error {
 
 func (c *SpaceRuntime) createHttpIngress() error {
 	hostName := c.Space.Name + "." + c.Space.Spec.DomainName
-	ingApi := c.kubeApi.ExtensionsV1beta1().Ingresses(c.Space.Name)
-	annotations := map[string]string {
-		"ingress.kubernetes.io/rewrite-target": "/",
-	}
-	if c.Space.Spec.EncryptHttp {
-		annotations["ingress.kubernetes.io/secure-backends"] = "true"
-	}
 	defaultHttpSvcPort := int32(80)
 	if c.Space.Spec.EncryptHttp {
 		defaultHttpSvcPort = k8sutil.TlsPort
 	}
-	ing := v1beta1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "http-ingress",
-			Labels: map[string]string {
-				"app": "decco",
-			},
-			Annotations: annotations,
-		},
-		Spec: v1beta1.IngressSpec{
-			Rules: []v1beta1.IngressRule{
-				{
-					Host: hostName,
-					IngressRuleValue: v1beta1.IngressRuleValue {
-						HTTP: &v1beta1.HTTPIngressRuleValue{
-							Paths: []v1beta1.HTTPIngressPath {
-								{
-									Path: "/",
-									Backend: v1beta1.IngressBackend{
-										ServiceName: "default-http",
-										ServicePort: intstr.IntOrString {
-											Type: intstr.Int,
-											IntVal: defaultHttpSvcPort,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			TLS: []v1beta1.IngressTLS {
-				{
-					Hosts: []string {
-						hostName,
-					},
-					SecretName: c.Space.Spec.HttpCertSecretName,
-				},
-			},
-		},
-	}
-	_, err := ingApi.Create(&ing)
-	return err
+	return k8sutil.CreateHttpIngress(
+		c.kubeApi,
+		c.Space.Name,
+		"http-ingress",
+		map[string]string {"app": "decco"},
+		hostName,
+		"/",
+		"default-http",
+		defaultHttpSvcPort,
+		false,
+		c.Space.Spec.EncryptHttp,
+		c.Space.Spec.HttpCertSecretName,
+	)
 }
 
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.Space.Name)
-	volumes := []v1.Volume{}
+	var volumes []v1.Volume
 	containers := []v1.Container {
 		{
 			Name: "default-http",

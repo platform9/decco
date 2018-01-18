@@ -191,20 +191,9 @@ func (c *InternalController) Run() error {
 // ----------------------------------------------------------------------------
 
 func (c *InternalController) PeriodicTask(itemMap map[string]watcher.ManagedItem) {
-	knownUrlPaths := map[string] bool {}
-	for _, item := range itemMap {
-		ar := item.(*app.AppRuntime)
-		urlPath := ar.GetApp().Spec.HttpUrlPath
-		if len(urlPath) > 0 {
-			knownUrlPaths[urlPath] = true
-		}
-	}
-
 	app.Collect(c.kubeApi, c.log, c.namespace, func(name string) bool {
 		_, ok := itemMap[name]
 		return ok
-	}, func(urlPath string) bool {
-		return knownUrlPaths[urlPath]
 	})
 }
 

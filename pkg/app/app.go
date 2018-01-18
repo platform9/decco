@@ -103,9 +103,9 @@ func (ar *AppRuntime) Delete() {
 		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
 		batchApi.Delete(ar.app.Name, &metav1.DeleteOptions{})
 	} else {
-		err := ar.removePathFromHttpIngress()
+		err := ar.deleteHttpIngress()
 		if err != nil {
-			log.Warnf("failed to remove path from ingress: %s", err)
+			log.Warnf("failed to delete http ingress: %s", err)
 		}
 		deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
 		propPolicy := metav1.DeletePropagationBackground
@@ -218,8 +218,8 @@ func (ar *AppRuntime) internalCreate() error {
 	if err := ar.createDeployment(); err != nil {
 		return fmt.Errorf("failed to create deployment: %s", err)
 	}
-	if err := ar.addPathToHttpIngress(); err != nil {
-		return fmt.Errorf("failed to add path to http ingress: %s", err)
+	if err := ar.createHttpIngress(); err != nil {
+		return fmt.Errorf("failed to create http ingress: %s", err)
 	}
 	if err := ar.createTcpIngress(); err != nil {
 		return fmt.Errorf("failed to create TCP ingress: %s", err)
@@ -453,7 +453,13 @@ func createSvcInternal (svcApi cgoCoreV1.ServiceInterface,
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) addPathToHttpIngress() error {
+func (ar *AppRuntime) httpIngressName() string {
+	return ar.app.Name
+}
+
+// -----------------------------------------------------------------------------
+
+func (ar *AppRuntime) createHttpIngress() error {
 	if ar.app.Spec.RunAsJob {
 		return nil
 	}
@@ -462,74 +468,42 @@ func (ar *AppRuntime) addPathToHttpIngress() error {
 		ar.log.Debug("app does not have http path")
 		return nil
 	}
-	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
-	ing, err := ingApi.Get("http-ingress", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get http ingress: %s", err)
-	}
-	rules := ing.Spec.Rules
-	if len(rules) != 1 {
-		return fmt.Errorf("http-ingress has invalid number of rules: %d",
-			len(rules))
-	}
-	paths := rules[0].IngressRuleValue.HTTP.Paths
-	if len(paths) < 1 {
-		return fmt.Errorf("http-ingress has no paths")
-	}
 	port := spec.FirstContainerPort(ar.app.Spec.PodSpec)
 	if ar.spaceSpec.EncryptHttp {
 		port = k8sutil.TlsPort
 	}
-	paths = append(paths, v1beta1.HTTPIngressPath{
-		Path: ar.app.Spec.HttpUrlPath,
-		Backend: v1beta1.IngressBackend{
-			ServiceName: ar.app.Name,
-			ServicePort: intstr.IntOrString {
-				Type: intstr.Int,
-				IntVal: port,
-			},
-		},
-	})
-
-	ing.Spec.Rules[0].IngressRuleValue.HTTP.Paths = paths
-	ing, err = ingApi.Update(ing)
-	if err != nil {
-		return fmt.Errorf("failed to update http ingress: %s", err)
+	ingName := ar.httpIngressName()
+	hostName := fmt.Sprintf("%s.%s", ar.namespace, ar.spaceSpec.DomainName)
+	secName := ar.app.Spec.CertAndCaSecretName
+	if secName == "" {
+		secName = ar.spaceSpec.HttpCertSecretName
 	}
-	return nil
+	return k8sutil.CreateHttpIngress(
+		ar.kubeApi,
+		ar.namespace,
+		ingName,
+		map[string]string {"decco-derived-from": "app"},
+		hostName,
+		fmt.Sprintf("/%s", ar.app.Name),
+		ar.app.Name,
+		port,
+		ar.app.Spec.PreserveUri,
+		ar.spaceSpec.EncryptHttp,
+		secName,
+	)
 }
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) removePathFromHttpIngress() error {
+func (ar *AppRuntime) deleteHttpIngress() error {
 	urlPath := ar.app.Spec.HttpUrlPath
 	if urlPath == "" {
 		ar.log.Debug("app does not have http path")
 		return nil
 	}
 	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
-	ing, err := ingApi.Get("http-ingress", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get http ingress: %s", err)
-	}
-	rules := ing.Spec.Rules
-	if len(rules) != 1 {
-		return fmt.Errorf("http-ingress has invalid number of rules: %d",
-			len(rules))
-	}
-	paths := rules[0].IngressRuleValue.HTTP.Paths
-	if len(paths) < 1 {
-		return fmt.Errorf("http-ingress has no paths")
-	}
-	for i, path := range paths {
-		if path.Path == urlPath {
-			paths = append(paths[:i], paths[i+1:]...)
-			rules[0].IngressRuleValue.HTTP.Paths = paths
-			_, err = ingApi.Update(ing)
-			return err
-		}
-	}
-	return fmt.Errorf("path %s not found in http ingress", urlPath)
+	ingName := ar.httpIngressName()
+	return ingApi.Delete(ingName, &metav1.DeleteOptions{})
 }
 
 // -----------------------------------------------------------------------------
