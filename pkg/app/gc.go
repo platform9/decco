@@ -99,8 +99,12 @@ func collectIngresses(kubeApi kubernetes.Interface,
 		return
 	}
 	for _, ing := range ingList.Items {
-		if !isKnownApp(ing.Name) {
-			log.Infof("deleting orphaned ingress %s", ing.Name)
+		appName := ing.ObjectMeta.Labels["decco-app"]
+		if appName == "" {
+			log.Warnf("ingress '%s' has no decco-app label", ing.Name)
+		}
+		if appName == "" || !isKnownApp(appName) {
+			log.Infof("deleting orphaned ingress '%s'", ing.Name)
 			propPolicy := metav1.DeletePropagationBackground
 			delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
 			err = ingApi.Delete(ing.Name, &delOpts)

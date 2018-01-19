@@ -11,7 +11,10 @@ metadata:
   name: "couchdb"
 spec:
   initialReplicas: 1
-  httpUrlPath: "/couchdb"
+  endpoints:
+  - name: couchdb
+    httpPath: "/couchdb"
+    port: 5984
   pod:
     containers:
     - name: couchdb

@@ -4,8 +4,11 @@ metadata:
   name: "mysql"
 spec:
   initialReplicas: 1
-  verifyTcpClientCert: true
-  createDnsRecord: true
+  endpoints:
+  - name: mysql
+    verifyTcpClientCert: true
+    createDnsRecord: true
+    port: 3306
   pod:
     containers:
     - name: mysql

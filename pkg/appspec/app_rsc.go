@@ -26,10 +26,11 @@ const (
 )
 
 var (
-	ErrContainerInvalidPorts = errors.New("spec: pod must have at least one container port")
-	ErrInvalidUrlPath = errors.New("spec: invalid url path")
+	ErrNoEndpoints             = errors.New("spec: has no endpoints")
+	ErrInvalidPort             = errors.New("spec: endpoint has invalid port value")
+	ErrInvalidUrlPath          = errors.New("spec: invalid url path")
 	ErrBothUrlPathAndVerifyTcp = errors.New("spec: url path and verify tcp cannot both be set")
-	ErrNoTcpCert = errors.New("spec: space does not support TCP apps because cert info missing")
+	ErrNoTcpCert               = errors.New("spec: space does not support TCP apps because cert info missing")
 )
 
 // AppList is a list of apps.
@@ -89,43 +90,45 @@ type TlsEgress struct {
 }
 
 type AppSpec struct {
-	HttpUrlPath string   `json:"httpUrlPath"`
-	CreateDnsRecord bool `json:"createDnsRecord"`
-	// optional Cert and CA if don't want to use default one for the space
-	CertAndCaSecretName string `json:"certAndCaSecretName"`
-	VerifyTcpClientCert bool `json:"verifyTcpClientCert"`
 	PodSpec v1.PodSpec `json:"pod"`
 	InitialReplicas int32 `json:"initialReplicas"`
 	TlsEgresses []TlsEgress
 	RunAsJob bool `json:"runAsJob"`
-	CreateClearTextSvc bool `json:"createClearTextSvc"`
-	PreserveUri        bool `json:"preserveUri"`
+	Endpoints []EndpointSpec
 }
 
-func FirstContainerPort(pod v1.PodSpec) int32 {
-	for _, c := range pod.Containers {
-		for _, p := range c.Ports {
-			if p.ContainerPort > 0 {
-				return p.ContainerPort
-			}
-		}
-	}
-	return -1
+type EndpointSpec struct {
+	Name                string
+	Port                int32
+	// optional Cert and CA if don't want to use default one for the space
+	CertAndCaSecretName string `json:"certAndCaSecretName"`
+	CreateClearTextSvc  bool   `json:"createClearTextSvc"`
+	// The following only apply to http endpoints (httpPath not empty)
+	HttpPath             string `json:"httpPath"`
+	PreservePath         bool   `json:"preservePath"`
+	// The following only apply to tcp endpoints (httpPath empty)
+	CreateDnsRecord     bool   `json:"createDnsRecord"`
+	VerifyTcpClientCert bool   `json:"verifyTcpClientCert"`
 }
 
 func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
 
-	if !c.RunAsJob && FirstContainerPort(c.PodSpec) < 0 {
-		return ErrContainerInvalidPorts
+	if !c.RunAsJob && len(c.Endpoints) < 1 {
+		return ErrNoEndpoints
 	}
-	if c.HttpUrlPath == "/" {
-		return ErrInvalidUrlPath
-	}
-	if c.HttpUrlPath == "" && tcpCertAndCaSecretName == "" {
-		return ErrNoTcpCert
-	}
-	if c.HttpUrlPath != "" && c.VerifyTcpClientCert {
-		return ErrBothUrlPathAndVerifyTcp
+	for _, e := range c.Endpoints {
+		if e.Port == 0 {
+			return ErrInvalidPort
+		}
+		if e.HttpPath == "/" {
+			return ErrInvalidUrlPath
+		}
+		if e.HttpPath == "" && tcpCertAndCaSecretName == "" {
+			return ErrNoTcpCert
+		}
+		if e.HttpPath != "" && e.VerifyTcpClientCert {
+			return ErrBothUrlPathAndVerifyTcp
+		}
 	}
 	return nil
 }
