@@ -271,7 +271,13 @@ func (ar *AppRuntime) createStunnel(
 	containers []v1.Container,
 	volumes []v1.Volume,
 	stunnelIndex *int,
-) (outCntrs []v1.Container, outVols []v1.Volume, listenPort int32, err error) {
+) (
+	outCntrs []v1.Container,
+	outVols []v1.Volume,
+	svcPort int32,
+	tgtPort int32,
+	err error,
+) {
 
 	outCntrs = containers
 	outVols = volumes
@@ -306,17 +312,19 @@ func (ar *AppRuntime) createStunnel(
 		isNginxIngressStyleCertSecret = true
 	}
 
-	listenPort = e.Port
-	if listenPort < 1 {
+	svcPort = e.Port
+	tgtPort = e.Port
+	if tgtPort < 1 {
 		err = spec.ErrInvalidPort
 		return
 	}
 	if tlsSecretName != "" {
-		destHostAndPort := fmt.Sprintf("%d", listenPort)
-		listenPort = k8sutil.TlsPort + int32(*stunnelIndex)
+		svcPort = k8sutil.TlsPort
+		destHostAndPort := fmt.Sprintf("%d", tgtPort)
+		tgtPort = k8sutil.TlsPort + int32(*stunnelIndex)
 		containerName := fmt.Sprintf("stunnel-ingress-%d", *stunnelIndex)
 		outVols, outCntrs = k8sutil.InsertStunnel(
-			containerName, listenPort, verifyChain,
+			containerName, tgtPort, verifyChain,
 			destHostAndPort, "",
 			tlsSecretName, isNginxIngressStyleCertSecret, false,
 			outVols, outCntrs,
@@ -422,7 +430,11 @@ func (ar *AppRuntime) createDeployment(
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) createSvc(e *spec.EndpointSpec, listenPort int32) error {
+func (ar *AppRuntime) createSvc(
+	e *spec.EndpointSpec,
+	svcPort int32,
+	tgtPort int32,
+) error {
 	appName := ar.Name()
 	svcName := e.Name
 	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
@@ -437,10 +449,10 @@ func (ar *AppRuntime) createSvc(e *spec.EndpointSpec, listenPort int32) error {
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{
 				{
-					Port: k8sutil.TlsPort,
+					Port: svcPort,
 					TargetPort: intstr.IntOrString {
 						Type: intstr.Int,
-						IntVal: listenPort,
+						IntVal: tgtPort,
 					},
 				},
 			},
@@ -464,14 +476,14 @@ func (ar *AppRuntime) createEndpoints(
 	}
 	for _, e := range ar.app.Spec.Endpoints {
 		var err error
-		var listenPort int32
-		containers, volumes, listenPort, err = ar.createStunnel(&e, containers,
-			volumes, stunnelIndex);
+		var svcPort, tgtPort int32
+		containers, volumes, svcPort, tgtPort, err = ar.createStunnel(&e,
+			containers, volumes, stunnelIndex);
 		if err != nil {
 			f := "failed to create stunnel for endpoint '%s': %s"
 			return nil, nil, fmt.Errorf(f, e.Name, err)
 		}
-		if err := ar.createSvc(&e, listenPort); err != nil {
+		if err := ar.createSvc(&e, svcPort, tgtPort); err != nil {
 			f := "failed to create service for endpoint '%s': %s"
 			return nil, nil, fmt.Errorf(f, e.Name, err)
 		}
