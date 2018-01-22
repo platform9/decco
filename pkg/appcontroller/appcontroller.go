@@ -231,7 +231,9 @@ func (c *InternalController) UnmarshalItem(
 	a := &appspec.App{}
 	err := json.Unmarshal(data, a)
 	if err != nil {
-		return nil, "", fmt.Errorf("fail to unmarshal app object from data (%s): %v", data, err)
+		s := "failed to unmarshal app object from data (%v): %v"
+		c.log.Warnf(s, data, err)
+		return nil, "", fmt.Errorf(s, data, err)
 	}
 	wrapped := &appWrapper{a}
 	return wrapped, a.ResourceVersion, nil

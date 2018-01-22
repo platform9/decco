@@ -196,6 +196,13 @@ func (wl *watchLoop) processWatchResponse(
 		}
 
 		//logrus.Infof("next watch version: %s", nextWatchVersion)
+		if item == nil {
+			// Shouldn't happen in theory but has been seen once in practice.
+			// It shouldn't happen because if item were nil, then err should
+			// be non-nil, causing the function to exit earlier.
+			// For now, log the value of err and let LogEvent() panic.
+			wl.log.Errorf("watchResponse: unexpected nil item, err:% v", err)
+		}
 		wl.cons.LogEvent(evType, item)
 		err = wl.handleEvent(evType, item)
 		if err != nil {
