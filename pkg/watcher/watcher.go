@@ -151,6 +151,9 @@ func (wl *watchLoop) decodeOneChunk(decoder *json.Decoder) <- chan eventChunk {
 	evChan := make(chan eventChunk, 1)
 	go func() {
 		evType, item, rv, st, err := wl.pollEvent(decoder)
+		if err == nil && item == nil {
+			wl.log.Warnf("decodeOneChunk: both err and item are nil")
+		}
 		evChan <- eventChunk{ evType,item, rv,st, err}
 	} ()
 	return evChan
@@ -180,6 +183,9 @@ func (wl *watchLoop) processWatchResponse(
 			return "", ErrTerminated
 		}
 		evType, item, objVersion, st, err := chunk.evType, chunk.item, chunk.rv, chunk.st, chunk.err
+		if err == nil && item == nil {
+			wl.log.Warnf("processWatchResponse: both err and item are nil")
+		}
 		if err != nil {
 			if err == io.EOF { // apiserver will close stream periodically
 				wl.log.Infof("watch stream closed, retrying in %d secs...", delayAfterWatchStreamCloseInSeconds)
@@ -280,6 +286,9 @@ func (wl *watchLoop) pollEvent(decoder *json.Decoder,
 	if re.Type == kwatch.Error {
 		status := &metav1.Status{}
 		err = json.Unmarshal(re.Object, status)
+		if err == nil {
+			wl.log.Warnf("pollEvent: kwatch.Error with obj: %v", re.Object)
+		}
 		return
 	}
 
@@ -290,6 +299,9 @@ func (wl *watchLoop) pollEvent(decoder *json.Decoder,
 			re.Object,
 			err,
 		)
+	}
+	if err == nil && item == nil {
+		wl.log.Warnf("pollEvent: both err and item are nil")
 	}
 	return
 }

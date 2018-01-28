@@ -87,6 +87,7 @@ type TlsEgress struct {
 	LocalPort int32            `json:"localPort"`   // local listening port
 	CertAndCaSecretName string `json:"certAndCaSecretName"`
 	SpringBoardDelaySeconds int32 `json:"springBoardDelaySeconds"`
+	DisableServerCertVerification bool `json:"disableServerCertVerification"`
 }
 
 type AppSpec struct {
@@ -104,8 +105,11 @@ type EndpointSpec struct {
 	CertAndCaSecretName string `json:"certAndCaSecretName"`
 	CreateClearTextSvc  bool   `json:"createClearTextSvc"`
 	// The following only apply to http endpoints (httpPath not empty)
+	// RewritePath value is interpreted as follows:
+	// empty: the path is forwarded unmodified
+	// non-empty: the specified HttpPath prefix is replaced with the value
 	HttpPath             string `json:"httpPath"`
-	PreservePath         bool   `json:"preservePath"`
+	RewritePath          string `json:"rewritePath"`
 	// The following only apply to tcp endpoints (httpPath empty)
 	CreateDnsRecord     bool   `json:"createDnsRecord"`
 	VerifyTcpClientCert bool   `json:"verifyTcpClientCert"`

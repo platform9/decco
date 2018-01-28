@@ -4,7 +4,8 @@ metadata:
   name: "keystone"
 spec:
   initialReplicas: 1
-  httpUrlPath: "/keystone"
+  httpPath: "/keystone"
+  rewritePath: "/"
   pod:
     containers:
     - name: keystone

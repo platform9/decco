@@ -374,8 +374,12 @@ func (ar *AppRuntime) createDeployment(
 			targetPort = 443
 		}
 		destHostAndPort := fmt.Sprintf("%s:%d", destHost, targetPort)
+		verifyChain := "yes"
+		if egress.DisableServerCertVerification {
+			verifyChain = "no"
+		}
 		volumes, containers = k8sutil.InsertStunnel(
-			containerName, egress.LocalPort, "yes",
+			containerName, egress.LocalPort, verifyChain,
 			destHostAndPort, destHost,
 			clientTlsSecretName, false, true,
 			volumes, containers, egress.SpringBoardDelaySeconds, stunnelIndex,
@@ -537,7 +541,7 @@ func (ar *AppRuntime) createHttpIngress(e *spec.EndpointSpec) error {
 		path,
 		e.Name,
 		port,
-		e.PreservePath,
+		e.RewritePath,
 		ar.spaceSpec.EncryptHttp,
 		secName,
 	)

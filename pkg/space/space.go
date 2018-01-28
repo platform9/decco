@@ -337,7 +337,7 @@ func (c *SpaceRuntime) createHttpIngress() error {
 		"/",
 		"default-http",
 		defaultHttpSvcPort,
-		false,
+		"",
 		c.Space.Spec.EncryptHttp,
 		c.Space.Spec.HttpCertSecretName,
 	)
