@@ -235,6 +235,10 @@ func (c *InternalController) UnmarshalItem(
 		c.log.Warnf(s, data, err)
 		return nil, "", fmt.Errorf(s, data, err)
 	}
+	if evType == kwatch.Error {
+		c.log.Warnf("UnmarshalItem: kwatch.Error with app: %v", a)
+		return nil, a.ResourceVersion, nil
+	}
 	wrapped := &appWrapper{a}
 	return wrapped, a.ResourceVersion, nil
 }

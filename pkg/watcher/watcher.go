@@ -283,16 +283,7 @@ func (wl *watchLoop) pollEvent(decoder *json.Decoder,
 	}
 
 	evType = re.Type
-	if re.Type == kwatch.Error {
-		status := &metav1.Status{}
-		err = json.Unmarshal(re.Object, status)
-		if err == nil {
-			wl.log.Warnf("pollEvent: kwatch.Error with obj: %v", re.Object)
-		}
-		return
-	}
-
-	item, rv, err = wl.cons.UnmarshalItem(re.Type, re.Object)
+	item, rv, err = wl.cons.UnmarshalItem(evType, re.Object)
 	if err != nil {
 		err = fmt.Errorf(
 			"failed to unmarshal from data (%s): %v",
