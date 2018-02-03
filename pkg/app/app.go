@@ -347,7 +347,7 @@ func (ar *AppRuntime) createDeployment(
 	initialReplicas := ar.app.Spec.InitialReplicas
 
 	// egress TLS initiation
-	for i, egress := range ar.app.Spec.TlsEgresses {
+	for i, egress := range ar.app.Spec.Egresses {
 		clientTlsSecretName := egress.CertAndCaSecretName
 		if clientTlsSecretName == "" {
 			clientTlsSecretName = ar.spaceSpec.TcpCertAndCaSecretName
@@ -358,16 +358,16 @@ func (ar *AppRuntime) createDeployment(
 		containerName := fmt.Sprintf("stunnel-egress-%d", i)
 		destHost := egress.Fqdn
 		if destHost == "" {
-			appName := egress.AppName
-			if appName == "" {
-				return fmt.Errorf("tlsEgress entry: Fqdn and AppName cannot both be empty")
+			endpoint := egress.Endpoint
+			if endpoint == "" {
+				return fmt.Errorf("tlsEgress entry: Fqdn and Endpoint cannot both be empty")
 			}
 			spaceName := egress.SpaceName
 			if spaceName == "" {
 				spaceName = ar.namespace
 			}
 			destHost = fmt.Sprintf("%s.%s.svc.cluster.local",
-				appName, spaceName)
+				endpoint, spaceName)
 		}
 		targetPort := egress.TargetPort
 		if targetPort == 0 {
