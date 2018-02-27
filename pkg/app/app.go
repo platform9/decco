@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"errors"
 	"strings"
+	"path"
 	"encoding/json"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -221,6 +222,10 @@ func (ar *AppRuntime) internalCreate() error {
 	volumes := podSpec.Volumes
 	stunnelIndex := 0
 	var err error
+	containers, volumes, err = ar.createLogCollectors(containers, volumes)
+	if err != nil {
+		return fmt.Errorf("failed to create log collectors: %s", err)
+	}
 	containers, volumes, err = ar.createEndpoints(containers, volumes, &stunnelIndex)
 	if err != nil {
 		return fmt.Errorf("failed to create endpoints: %s", err)
@@ -472,6 +477,117 @@ func (ar *AppRuntime) createSvc(
 		},
 	})
 	return err
+}
+
+// -----------------------------------------------------------------------------
+
+func (ar *AppRuntime) createLogCollectors(
+	containers []v1.Container,
+	volumes []v1.Volume,
+) ([]v1.Container, []v1.Volume, error) {
+	pair2vol := make(map[string]int)
+	volIdx := len(volumes)
+	volNameIdx := 0
+	log := ar.log.WithField("func", "createLogCollectors")
+	// add one volume per unique container:directory pair
+	for _, lf := range ar.app.Spec.LogFiles {
+		dir := path.Dir(lf.Path)
+		pairName := fmt.Sprintf("%s:%s", lf.ContainerName, dir)
+		if _, ok := pair2vol[pairName]; !ok {
+			volName := fmt.Sprintf("log-volume-%d", volNameIdx) 
+			volumes = append(volumes, v1.Volume{
+				Name: volName,
+				VolumeSource: v1.VolumeSource{
+					EmptyDir: &v1.EmptyDirVolumeSource{},
+				},
+			})
+			pair2vol[pairName] = volIdx
+			log.Debugf("added volume %s at idx %d for pair name %s",
+				volName, volIdx, pairName)
+			volIdx += 1
+			volNameIdx += 1
+		}
+	}
+	// mount volumes into containers
+	outerLoop:
+	for pairName, volIdx := range pair2vol {
+		elements := strings.Split(pairName,":")
+		cname := elements[0]
+		dir := elements[1]
+		for idx, c := range containers {
+			if c.Name == cname {
+				containers[idx].VolumeMounts = append(c.VolumeMounts,
+					v1.VolumeMount{
+						Name: volumes[volIdx].Name,
+						MountPath: dir,
+					},
+				)
+				log.Debugf("mounted volume %s at path %s in container %s",
+					volumes[volIdx].Name, dir, cname)
+				continue outerLoop
+			}
+		}
+		return nil, nil, fmt.Errorf(
+			"createLogCollectors: unknown container %s", cname)
+	}
+	// add one log collector per file
+	for idx, lf := range ar.app.Spec.LogFiles {
+		dir := path.Dir(lf.Path)
+		pairName := fmt.Sprintf("%s:%s", lf.ContainerName, dir)
+		fname := path.Base(lf.Path)
+		projName := ar.spaceSpec.Project
+		if projName == "" {
+			projName = "(none)"
+		}
+		cmd := []string {
+			"/fluent-bit/bin/fluent-bit",
+			"-i", "tail",
+			"-p", fmt.Sprintf("path=%s", lf.Path),
+			"-p", "refresh_interval=5",
+			"-F", "record_modifier",
+			"-p", fmt.Sprintf("Record=project %s", projName),
+			"-p", fmt.Sprintf("Record=app %s", ar.Name()),
+			"-p", fmt.Sprintf("Record=container %s", lf.ContainerName),
+			"-p", fmt.Sprintf("Record=file %s", fname),
+			"-p", "Record=pod ${MY_POD_NAME}",
+			"-p", "Record=space ${MY_POD_NAMESPACE}",
+			"-m", "*", "-o", "stdout",
+		}
+		cName := fmt.Sprintf("log-collector-%d", idx)
+		volName := volumes[pair2vol[pairName]].Name
+		containers = append(containers, v1.Container{
+			Name: cName,
+			Image: "fluent/fluent-bit:latest",
+			Command: cmd,
+			VolumeMounts: []v1.VolumeMount{
+				{
+					Name: volName,
+					MountPath: dir,
+				},
+			},
+			Env: []v1.EnvVar{
+				{
+					Name: "MY_POD_NAME",
+					ValueFrom: &v1.EnvVarSource{
+						FieldRef: &v1.ObjectFieldSelector{
+							FieldPath: "metadata.name",
+						},
+					},
+				},
+				{
+					Name: "MY_POD_NAMESPACE",
+					ValueFrom: &v1.EnvVarSource{
+						FieldRef: &v1.ObjectFieldSelector{
+							FieldPath: "metadata.namespace",
+						},
+					},
+				},
+			},
+		})
+		log.Debugf("added log collector %s with volume %s mounted at %s",
+			cName, volName, dir)
+	}
+	return containers, volumes, nil
 }
 
 // -----------------------------------------------------------------------------
