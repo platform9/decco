@@ -192,7 +192,7 @@ func (wl *watchLoop) processWatchResponse(
 				time.Sleep(time.Duration(delayAfterWatchStreamCloseInSeconds) * time.Second)
 				return nextWatchVersion, nil
 			}
-			wl.log.Errorf("received invalid event from watch API: %v", err)
+			wl.log.Errorf("watch API failed: %v", err)
 			return "", err
 		}
 
@@ -283,10 +283,15 @@ func (wl *watchLoop) pollEvent(decoder *json.Decoder,
 	}
 
 	evType = re.Type
+	if evType == kwatch.Error {
+		err = fmt.Errorf("pollEvent: watch error with payload: %s", re.Object)
+		return
+	}
 	item, rv, err = wl.cons.UnmarshalItem(evType, re.Object)
 	if err != nil {
 		err = fmt.Errorf(
-			"failed to unmarshal from data (%s): %v",
+			"failed to unmarshal event type %v from data (%s): %v",
+			evType,
 			re.Object,
 			err,
 		)

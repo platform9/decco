@@ -92,7 +92,7 @@ func (ctl *Controller) Start() {
 					ctl.namespace)
 				return
 			default:
-				log.Warnf("restarting app controller for %s due to: %v",
+				log.Warnf("restarting internal app controller for %s due to: %v",
 					ctl.namespace, err)
 				time.Sleep(2 * time.Second)
 			}
