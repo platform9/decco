@@ -20,6 +20,7 @@ import (
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"fmt"
 )
 
 const (
@@ -96,6 +97,13 @@ type AppSpec struct {
 	Egresses        []TlsEgress
 	RunAsJob        bool `json:"runAsJob"`
 	Endpoints       []EndpointSpec
+	LogFiles        []LogFileSpec
+}
+
+type LogFileSpec struct {
+	ContainerName string `json:"containerName"`
+	Path string `json:"path"`
+	Tag string `json:"tag"`
 }
 
 type EndpointSpec struct {
@@ -132,6 +140,20 @@ func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
 		}
 		if e.HttpPath != "" && e.VerifyTcpClientCert {
 			return ErrBothUrlPathAndVerifyTcp
+		}
+	}
+	for _, logFile := range c.LogFiles {
+		found := false
+		cname := logFile.ContainerName
+		for _, c := range c.PodSpec.Containers {
+			if c.Name == cname {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("logfile references non-existent container: %s",
+				cname)
 		}
 	}
 	return nil
