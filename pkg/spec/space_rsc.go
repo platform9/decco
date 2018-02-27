@@ -66,6 +66,13 @@ func (c Space) DeepCopyObject() runtime.Object {
 	return &c
 }
 
+type LogSpec struct {
+	Enabled bool                `json:"enabled"`
+	// ForwardingMode can be "" (stdout only), or "es" (ElasticSearch)
+	ForwardingMode string       `json:"forwardingMode"`
+	ForwardingConfig string     `json:"forwardingConfig"`
+}
+
 type SpaceSpec struct {
 	DomainName             string `json:"domainName"`
 	Project                string `json:"project"`
@@ -74,6 +81,7 @@ type SpaceSpec struct {
 	EncryptHttp            bool   `json:"encryptHttp"`
 	DeleteHttpCertSecretAfterCopy bool   `json:"deleteHttpCertSecretAfterCopy"`
 	DeleteTcpCertAndCaSecretAfterCopy bool   `json:"deleteTcpCertAndCaSecretAfterCopy"`
+	Logging                LogSpec   `json:"logging"`
 }
 
 func (c *SpaceSpec) Validate() error {

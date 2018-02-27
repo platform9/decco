@@ -220,17 +220,19 @@ func (ar *AppRuntime) internalCreate() error {
 	podSpec := ar.app.Spec.PodSpec
 	containers := podSpec.Containers
 	volumes := podSpec.Volumes
-	stunnelIndex := 0
+	egresses := ar.app.Spec.Egresses
+	stunnIdx := 0
 	var err error
-	containers, volumes, err = ar.createLogCollectors(containers, volumes)
+	containers, volumes, egresses, err = ar.createLogCollectors(containers,
+		volumes, egresses)
 	if err != nil {
 		return fmt.Errorf("failed to create log collectors: %s", err)
 	}
-	containers, volumes, err = ar.createEndpoints(containers, volumes, &stunnelIndex)
+	containers, volumes, err = ar.createEndpoints(containers, volumes, &stunnIdx)
 	if err != nil {
 		return fmt.Errorf("failed to create endpoints: %s", err)
 	}
-	err = ar.createDeployment(podSpec, containers, volumes, stunnelIndex)
+	err = ar.createDeployment(podSpec, containers, volumes, egresses, stunnIdx)
 	if  err != nil {
 		return fmt.Errorf("failed to create deployment: %s", err)
 	}
@@ -352,13 +354,14 @@ func (ar *AppRuntime) createDeployment(
 	podSpec v1.PodSpec,
 	containers []v1.Container,
 	volumes []v1.Volume,
+	egresses []spec.TlsEgress,
 	stunnelIndex int,
 ) error {
 
 	initialReplicas := ar.app.Spec.InitialReplicas
 
 	// egress TLS initiation
-	for i, egress := range ar.app.Spec.Egresses {
+	for i, egress := range egresses {
 		clientTlsSecretName := egress.CertAndCaSecretName
 		if clientTlsSecretName == "" {
 			clientTlsSecretName = ar.spaceSpec.TcpCertAndCaSecretName
@@ -484,7 +487,9 @@ func (ar *AppRuntime) createSvc(
 func (ar *AppRuntime) createLogCollectors(
 	containers []v1.Container,
 	volumes []v1.Volume,
-) ([]v1.Container, []v1.Volume, error) {
+	egresses []spec.TlsEgress,
+) ([]v1.Container, []v1.Volume, []spec.TlsEgress, error) {
+	needsEgress := false
 	pair2vol := make(map[string]int)
 	volIdx := len(volumes)
 	volNameIdx := 0
@@ -527,7 +532,7 @@ func (ar *AppRuntime) createLogCollectors(
 				continue outerLoop
 			}
 		}
-		return nil, nil, fmt.Errorf(
+		return nil, nil, nil, fmt.Errorf(
 			"createLogCollectors: unknown container %s", cname)
 	}
 	// add one log collector per file
@@ -538,6 +543,10 @@ func (ar *AppRuntime) createLogCollectors(
 		projName := ar.spaceSpec.Project
 		if projName == "" {
 			projName = "(none)"
+		}
+		outputMode := "stdout"
+		if ar.spaceSpec.Logging.Enabled {
+			outputMode = "forward"
 		}
 		cmd := []string {
 			"/fluent-bit/bin/fluent-bit",
@@ -551,7 +560,7 @@ func (ar *AppRuntime) createLogCollectors(
 			"-p", fmt.Sprintf("Record=file %s", fname),
 			"-p", "Record=pod ${MY_POD_NAME}",
 			"-p", "Record=space ${MY_POD_NAMESPACE}",
-			"-m", "*", "-o", "stdout",
+			"-m", "*", "-o", outputMode,
 		}
 		cName := fmt.Sprintf("log-collector-%d", idx)
 		volName := volumes[pair2vol[pairName]].Name
@@ -584,10 +593,17 @@ func (ar *AppRuntime) createLogCollectors(
 				},
 			},
 		})
+		needsEgress = true
 		log.Debugf("added log collector %s with volume %s mounted at %s",
 			cName, volName, dir)
 	}
-	return containers, volumes, nil
+	if needsEgress {
+		egresses = append(egresses, spec.TlsEgress{
+			Endpoint: "logs",
+			LocalPort: 24224,
+		})
+	}
+	return containers, volumes, egresses, nil
 }
 
 // -----------------------------------------------------------------------------

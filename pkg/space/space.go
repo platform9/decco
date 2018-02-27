@@ -132,6 +132,9 @@ func (c *SpaceRuntime) setup() error {
 	if err != nil {
 		return err
 	}
+	if c.Space.Spec.Logging.Enabled {
+		c.log.Debugf("logging is enabled for this space")
+	}
 
 	var shouldCreateResources bool
 	switch c.Status.Phase {
