@@ -4,7 +4,6 @@ metadata:
   name: "consul"
 spec:
   initialReplicas: 1
-  verifyTcpClientCert: true
   pod:
     containers:
     - name: consul

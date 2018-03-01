@@ -6,7 +6,6 @@ spec:
   initialReplicas: 1
   endpoints:
   - name: mysql
-    verifyTcpClientCert: true
     createDnsRecord: true
     port: 3306
   pod:

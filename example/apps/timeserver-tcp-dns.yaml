@@ -4,7 +4,6 @@ metadata:
   name: "timeserver-tcp-dns"
 spec:
   initialReplicas: 1
-  verifyTcpClientCert: true
   createDnsRecord: true
   pod:
     containers:

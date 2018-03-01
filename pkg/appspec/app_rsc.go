@@ -29,7 +29,7 @@ var (
 	ErrNoEndpoints             = errors.New("spec: has no endpoints")
 	ErrInvalidPort             = errors.New("spec: endpoint has invalid port value")
 	ErrInvalidUrlPath          = errors.New("spec: invalid url path")
-	ErrBothUrlPathAndVerifyTcp = errors.New("spec: url path and verify tcp cannot both be set")
+	ErrBothUrlPathAndDisableTcpVerify = errors.New("spec: url path and disable tcp verify cannot both be set")
 	ErrNoTcpCert               = errors.New("spec: space does not support TCP apps because cert info missing")
 )
 
@@ -112,7 +112,7 @@ type EndpointSpec struct {
 	RewritePath          string `json:"rewritePath"`
 	// The following only apply to tcp endpoints (httpPath empty)
 	CreateDnsRecord     bool   `json:"createDnsRecord"`
-	VerifyTcpClientCert bool   `json:"verifyTcpClientCert"`
+	DisableTcpClientTlsVerification bool   `json:"disableTcpClientTlsVerification"`
 }
 
 func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
@@ -130,8 +130,8 @@ func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
 		if e.HttpPath == "" && tcpCertAndCaSecretName == "" {
 			return ErrNoTcpCert
 		}
-		if e.HttpPath != "" && e.VerifyTcpClientCert {
-			return ErrBothUrlPathAndVerifyTcp
+		if e.HttpPath != "" && e.DisableTcpClientTlsVerification {
+			return ErrBothUrlPathAndDisableTcpVerify
 		}
 	}
 	return nil

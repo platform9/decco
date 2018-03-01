@@ -281,7 +281,7 @@ func (ar *AppRuntime) createStunnel(
 
 	outCntrs = containers
 	outVols = volumes
-	verifyChain := "no"
+	verifyChain := "yes"
 	tlsSecretName := ""
 	isNginxIngressStyleCertSecret := false
 
@@ -296,8 +296,8 @@ func (ar *AppRuntime) createStunnel(
 				return
 			}
 		}
-		if e.VerifyTcpClientCert {
-			verifyChain = "yes"
+		if e.DisableTcpClientTlsVerification {
+			verifyChain = "no"
 		}
 	} else if ar.spaceSpec.EncryptHttp {
 		// This is an encrypted HTTP service.
