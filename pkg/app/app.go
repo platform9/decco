@@ -308,6 +308,12 @@ func (ar *AppRuntime) createStunnel(
 				err = fmt.Errorf("space does not have cert for HTTP service")
 				return
 			}
+			// for now, we don't verify clients when using the space default
+			// cert because it was most likely designed for web browser clients
+			// which typically don't send a client cert.
+			// FIXME: use default TCP cert instead with mutual authentication
+			//        for connections b/w ingress controller and service
+			verifyChain = "no"
 		}
 		isNginxIngressStyleCertSecret = true
 	}
