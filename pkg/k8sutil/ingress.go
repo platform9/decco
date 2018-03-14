@@ -25,13 +25,13 @@ func CreateHttpIngress(
 	annotations := make(map[string]string)
 
 	// temporary hack to work around nginx-to-stunnel timeouts during heavy load
-	annotations["ingress.kubernetes.io/proxy-connect-timeout"] = "15"
+	annotations["nginx.ingress.kubernetes.io/proxy-connect-timeout"] = "15"
 
 	if rewritePath != "" {
-		annotations["ingress.kubernetes.io/rewrite-target"] = rewritePath
+		annotations["nginx.ingress.kubernetes.io/rewrite-target"] = rewritePath
 	}
 	if encryptHttp {
-		annotations["ingress.kubernetes.io/secure-backends"] = "true"
+		annotations["nginx.ingress.kubernetes.io/secure-backends"] = "true"
 	}
 	ing := v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
