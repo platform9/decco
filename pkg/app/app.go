@@ -499,7 +499,7 @@ func (ar *AppRuntime) createLogCollectors(
 		dir := path.Dir(lf.Path)
 		pairName := fmt.Sprintf("%s:%s", lf.ContainerName, dir)
 		if _, ok := pair2vol[pairName]; !ok {
-			volName := fmt.Sprintf("log-volume-%d", volNameIdx) 
+			volName := fmt.Sprintf("log-volume-%d", volNameIdx)
 			volumes = append(volumes, v1.Volume{
 				Name: volName,
 				VolumeSource: v1.VolumeSource{
