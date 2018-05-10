@@ -29,7 +29,8 @@ func Enabled() bool {
 	return dnsProvider != nil
 }
 
-func UpdateRecord(domainName string, name string, ip string, delete bool) error {
+func UpdateRecord(domainName string, name string, ipOrHostname string,
+	isHostname bool, delete bool) error {
 	if dnsProvider == nil {
 		return fmt.Errorf("DNS provider not enabled")
 	}
@@ -61,7 +62,11 @@ func UpdateRecord(domainName string, name string, ip string, delete bool) error 
 					changeSet.Remove(rrSetList[0])
 				}
 			} else {
-				rrSet := rrSets.New(rrName, []string{ip}, 180, rrstype.A)
+				rscType := rrstype.A
+				if isHostname {
+					rscType = rrstype.CNAME
+				}
+				rrSet := rrSets.New(rrName, []string{ipOrHostname},180, rscType)
 				if len(rrSetList) == 0 {
 					action = "creation"
 				} else {
@@ -75,8 +80,8 @@ func UpdateRecord(domainName string, name string, ip string, delete bool) error 
 				return fmt.Errorf("%s of record set %s failed: %s",
 					action, rrName, err)
 			}
-			log.Infof("%s of record set %s with ip %s succeeded",
-				action, rrName, ip)
+			log.Infof("%s of record set %s with %s succeeded",
+				action, rrName, ipOrHostname)
 			return nil
 		}
 	}

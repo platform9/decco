@@ -279,11 +279,12 @@ func (c * SpaceRuntime) updateDns(delete bool) error {
 		return nil
 	}
 
-	ip, err := k8sutil.GetTcpIngressIp(c.kubeApi)
+	ipOrHostname, isHostname, err := k8sutil.GetTcpIngressIpOrHostname(c.kubeApi)
 	if err != nil {
-		return fmt.Errorf("failed to get TCP ingress IP: %s", err)
+		return fmt.Errorf("failed to get TCP ingress ipOrHostname: %s", err)
 	}
-	return dns.UpdateRecord(c.Space.Spec.DomainName, c.Space.Name, ip, delete)
+	return dns.UpdateRecord(c.Space.Spec.DomainName, c.Space.Name,
+		ipOrHostname, isHostname, delete)
 }
 
 // -----------------------------------------------------------------------------

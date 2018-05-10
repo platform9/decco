@@ -26,7 +26,6 @@ const (
 )
 
 var (
-	ErrNoEndpoints             = errors.New("spec: has no endpoints")
 	ErrInvalidPort             = errors.New("spec: endpoint has invalid port value")
 	ErrInvalidUrlPath          = errors.New("spec: invalid url path")
 	ErrBothUrlPathAndDisableTcpVerify = errors.New("spec: url path and disable tcp verify cannot both be set")
@@ -113,13 +112,11 @@ type EndpointSpec struct {
 	// The following only apply to tcp endpoints (httpPath empty)
 	CreateDnsRecord     bool   `json:"createDnsRecord"`
 	DisableTcpClientTlsVerification bool   `json:"disableTcpClientTlsVerification"`
+	SniHostname string   `json:"sniHostname"` // optional SNI hostname override
 }
 
 func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
 
-	if !c.RunAsJob && len(c.Endpoints) < 1 {
-		return ErrNoEndpoints
-	}
 	for _, e := range c.Endpoints {
 		if e.Port == 0 {
 			return ErrInvalidPort

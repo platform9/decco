@@ -241,12 +241,13 @@ func (ar *AppRuntime) updateDns(e *spec.EndpointSpec, delete bool) error {
 	if !dns.Enabled() {
 		return fmt.Errorf("CreateDnsRecord set but no DNS provider exists")
 	}
-	ip, err := k8sutil.GetTcpIngressIp(ar.kubeApi)
+	ipOrHostname, isHostname, err := k8sutil.GetTcpIngressIpOrHostname(ar.kubeApi)
 	if err != nil {
-		return fmt.Errorf("failed to get TCP ingress IP: %s", err)
+		return fmt.Errorf("failed to get TCP ingress IP or hostname: %s", err)
 	}
 	name := fmt.Sprintf("%s.%s", e.Name, ar.namespace)
-	return dns.UpdateRecord(ar.spaceSpec.DomainName, name, ip, delete)
+	return dns.UpdateRecord(ar.spaceSpec.DomainName, name,
+		ipOrHostname, isHostname, delete)
 }
 
 // -----------------------------------------------------------------------------
@@ -568,7 +569,10 @@ func (ar *AppRuntime) createTcpIngress(e *spec.EndpointSpec) error {
 	if path != "" {
 		return nil
 	}
-	hostName := e.Name + "." + ar.namespace + "." + ar.spaceSpec.DomainName
+	hostName := e.SniHostname
+	if hostName == "" {
+		hostName = e.Name + "." + ar.namespace + "." + ar.spaceSpec.DomainName
+	}
 	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
 	ing := v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
