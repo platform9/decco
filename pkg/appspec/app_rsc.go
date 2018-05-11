@@ -111,6 +111,7 @@ type EndpointSpec struct {
 	RewritePath          string `json:"rewritePath"`
 	// The following only apply to tcp endpoints (httpPath empty)
 	CreateDnsRecord     bool   `json:"createDnsRecord"`
+	DisableTlsTermination bool `json:"disableTlsTermination"`
 	DisableTcpClientTlsVerification bool   `json:"disableTcpClientTlsVerification"`
 	SniHostname string   `json:"sniHostname"` // optional SNI hostname override
 }

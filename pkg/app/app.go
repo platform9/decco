@@ -289,16 +289,20 @@ func (ar *AppRuntime) createStunnel(
 	// Determine if we need ingress TLS termination
 	if e.HttpPath == "" {
 		// This is a TCP service.
-		tlsSecretName = e.CertAndCaSecretName
-		if tlsSecretName == "" {
-			tlsSecretName = ar.spaceSpec.TcpCertAndCaSecretName
+		if e.DisableTlsTermination {
+			// No stunnel needed
+		} else {
+			tlsSecretName = e.CertAndCaSecretName
 			if tlsSecretName == "" {
-				err = fmt.Errorf("space does not have cert for TCP service")
-				return
+				tlsSecretName = ar.spaceSpec.TcpCertAndCaSecretName
+				if tlsSecretName == "" {
+					err = fmt.Errorf("space does not have cert for TCP service")
+					return
+				}
 			}
-		}
-		if e.DisableTcpClientTlsVerification {
-			verifyChain = "no"
+			if e.DisableTcpClientTlsVerification {
+				verifyChain = "no"
+			}
 		}
 	} else if ar.spaceSpec.EncryptHttp {
 		// This is an encrypted HTTP service.
