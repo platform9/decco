@@ -22,9 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-const (
-)
-
 var (
 	ErrInvalidPort             = errors.New("spec: endpoint has invalid port value")
 	ErrInvalidUrlPath          = errors.New("spec: invalid url path")
@@ -66,6 +63,12 @@ func (c *App) AsOwner() metav1.OwnerReference {
 func (c App) DeepCopyObject() runtime.Object {
 	return &c
 }
+
+/*
+func (c App) GetObjectKind() schema.ObjectKind {
+	return &c.TypeMeta
+}
+*/
 
 // Specifies the stunnel client configuration for connecting to another app
 // The following destination specifications are allowed:
@@ -115,6 +118,8 @@ type EndpointSpec struct {
 	DisableTcpClientTlsVerification bool   `json:"disableTcpClientTlsVerification"`
 	SniHostname string   `json:"sniHostname"` // optional SNI hostname override
 }
+
+// -----------------------------------------------------------------------------
 
 func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
 

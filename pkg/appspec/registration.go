@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 )
 
 const (
@@ -29,8 +30,9 @@ const (
 
 var (
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
-	AddToScheme   = SchemeBuilder.AddToScheme
-
+	Scheme = runtime.NewScheme()
+	Codecs = serializer.NewCodecFactory(Scheme)
+	// AddToScheme   = SchemeBuilder.AddToScheme
 	SchemeGroupVersion = schema.GroupVersion{Group: groupName, Version: "v1beta2"}
 	CRDName            = CRDResourcePlural + "." + groupName
 )
@@ -42,4 +44,8 @@ func addKnownTypes(s *runtime.Scheme) error {
 	s.AddKnownTypes(SchemeGroupVersion, &a, &al)
 	metav1.AddToGroupVersion(s, SchemeGroupVersion)
 	return nil
+}
+
+func init() {
+	SchemeBuilder.AddToScheme(Scheme)
 }

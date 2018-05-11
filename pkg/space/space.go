@@ -5,6 +5,7 @@ import (
 	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/dns"
+	"github.com/platform9/decco/pkg/appspec"
 	"reflect"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/api/core/v1"
@@ -17,24 +18,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/rest"
+	rbacv1 "k8s.io/api/rbac/v1"
 )
-
-type spaceRscEventType string
 
 var (
 	errInCreatingPhase = errors.New("space already in Creating phase")
 )
 
 const (
-	eventDeleteSpace spaceRscEventType = "Delete"
-	eventModifySpace spaceRscEventType = "Modify"
 	defaultHttpInternalPort int32 = 8081
 )
-
-type spaceRscEvent struct {
-	typ     spaceRscEventType
-	spaceRsc spec.Space
-}
 
 type SpaceRuntime struct {
 	kubeApi kubernetes.Interface
@@ -96,7 +92,7 @@ func (c *SpaceRuntime) Delete() (nsDeleted bool) {
 	if err != nil {
 		c.log.Warnf("failed to delete namespace %s: ", err.Error())
 	}
-	nsDeleted = (err == nil)
+	nsDeleted = err == nil
 	err = c.updateDns(true)
 	if err != nil {
 		c.log.Warnf("failed to delete dns record: %s", err)
@@ -224,6 +220,9 @@ func (c *SpaceRuntime) internalCreate() error {
 	}
 	if err = c.createDefaultHttpSvc(); err != nil {
 		return fmt.Errorf("failed to create default http svc: %s", err)
+	}
+	if err = c.createPrivateIngressController(); err != nil {
+		return fmt.Errorf("failed to create private ingress controller: %s", err)
 	}
 	if err = c.updateDns(false); err != nil {
 		return fmt.Errorf("failed to update DNS: %s", err)
@@ -439,6 +438,148 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 			},
 		},
 	})
+	return err
+}
+
+// -----------------------------------------------------------------------------
+
+func (c *SpaceRuntime) createPrivateIngressController() error {
+	if c.Space.Spec.DisablePrivateIngressController {
+		return nil
+	}
+	svcAcctApi := c.kubeApi.CoreV1().ServiceAccounts(c.Space.Name)
+	_, err := svcAcctApi.Create(&v1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "nginx-ingress",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create nginx-ingress svc acct: %s",
+			err)
+	}
+	rolesApi := c.kubeApi.RbacV1().Roles(c.Space.Name)
+	_, err = rolesApi.Create(&rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "ingress-controller",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string {"*"},
+				Resources: []string {"events"},
+				Verbs: []string {"create"},
+			},
+			{
+				APIGroups: []string {"*"},
+				Resources: []string {"configmaps"},
+				Verbs: []string {"create", "update", "get", "watch", "list"},
+			},
+			{
+				APIGroups: []string {"*"},
+				Resources: []string {"ingresses", "ingresses/status"},
+				Verbs: []string {"update", "get", "watch", "list"},
+			},
+			{
+				APIGroups: []string {"*"},
+				Resources: []string {"pods", "services", "secrets",
+					"namespaces", "endpoints"},
+				Verbs: []string {"get", "watch", "list"},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create nginx-controller role: %s",
+			err)
+	}
+	rbApi := c.kubeApi.RbacV1().RoleBindings(c.Space.Name)
+	_, err = rbApi.Create(&rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "nginx-ingress",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind: "ServiceAccount",
+				Name: "nginx-ingress",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind: "Role",
+			Name: "ingress-controller",
+		},
+	})
+
+	hostName := c.Space.Name + "." + c.Space.Spec.DomainName
+	config := k8sutil.GetClusterConfigOrDie()
+	config.GroupVersion = &appspec.SchemeGroupVersion
+	config.APIPath = "/apis"
+	config.NegotiatedSerializer = serializer.DirectCodecFactory{
+		CodecFactory: appspec.Codecs,
+	}
+	restCli, err := rest.RESTClientFor(config)
+	if err != nil {
+		return fmt.Errorf("failed to create app rest client: %s", err)
+	}
+
+	watchNsStr := fmt.Sprintf("--watch-namespace=%s", c.Space.Name)
+	app := appspec.App{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "nginx-ingress",
+		},
+		Spec: appspec.AppSpec {
+			InitialReplicas: 1,
+			PodSpec: v1.PodSpec{
+				ServiceAccountName: "nginx-ingress",
+				Containers: []v1.Container{
+					{
+						Name: "nginx-ingress",
+						Args: []string{
+							"/nginx-ingress-controller",
+							"--default-backend-service=$(POD_NAMESPACE)/default-http",
+							watchNsStr,
+						},
+						Env: []v1.EnvVar{
+							{
+								Name: "POD_NAME",
+								ValueFrom: &v1.EnvVarSource{
+									FieldRef: &v1.ObjectFieldSelector{
+										APIVersion: "v1",
+										FieldPath: "metadata.name",
+									},
+								},
+							},
+							{
+								Name: "POD_NAMESPACE",
+								ValueFrom: &v1.EnvVarSource{
+									FieldRef: &v1.ObjectFieldSelector{
+										APIVersion: "v1",
+										FieldPath: "metadata.namespace",
+									},
+								},
+							},
+						},
+						Image: "quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.11.0",
+						Ports: []v1.ContainerPort{
+							{
+								ContainerPort: int32(443),
+							},
+						},
+					},
+				},
+			},
+			Endpoints: []appspec.EndpointSpec{
+				{
+					Name: "nginx-ingress",
+					Port: 443,
+					DisableTlsTermination: true,
+					SniHostname: hostName,
+				},
+			},
+		},
+	}
+	var rtObj runtime.Object
+	rtObj = &app
+	err = restCli.Post().Namespace(c.Space.Name).
+		Resource(appspec.CRDResourcePlural).
+		Body(rtObj).Do().Into(nil)
 	return err
 }
 

@@ -1,0 +1,31 @@
+apiVersion: v1
+data:
+  local.ini: "[httpd]\nbind_address = 127.0.0.1\n"
+kind: ConfigMap
+metadata:
+  name: couchdb-localconfig
+---
+apiVersion: "decco.platform9.com/v1beta2"
+kind: "App"
+metadata:
+  name: "couchdb"
+spec:
+  initialReplicas: 1
+  endpoints:
+  - name: couchdb
+    httpPath: "/couchdb"
+    rewritePath: "/"
+    port: 5984
+  pod:
+    containers:
+    - name: couchdb
+      image: couchdb
+      ports:
+      - containerPort: 5984
+      volumeMounts:
+      - name: couchdb-localconfig
+        mountPath: /opt/couchdb/etc/local.d
+    volumes:
+    - name: couchdb-localconfig
+      configMap:
+        name: couchdb-localconfig
