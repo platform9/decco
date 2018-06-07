@@ -534,6 +534,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 						Args: []string{
 							"/nginx-ingress-controller",
 							"--default-backend-service=$(POD_NAMESPACE)/default-http",
+							"--v=5",
 							watchNsStr,
 						},
 						Env: []v1.EnvVar{
