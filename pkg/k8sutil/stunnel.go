@@ -115,7 +115,7 @@ func InsertStunnel(
 	})
 	containers = append(containers, v1.Container{
 		Name: containerName,
-		Image: "platform9systems/stunnel-with-springboard",
+		Image: "platform9systems/stunnel-with-springboard:instrumented-3",
 		Ports: []v1.ContainerPort{
 			{
 				ContainerPort: listenPort,
