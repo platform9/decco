@@ -6,6 +6,8 @@ import (
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/appspec"
+	"github.com/platform9/decco/pkg/slack"
+	"github.com/platform9/decco/pkg/misc"
 	"reflect"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/api/core/v1"
@@ -22,6 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/rest"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"github.com/cenkalti/backoff"
+	"os"
 )
 
 var (
@@ -282,8 +286,32 @@ func (c * SpaceRuntime) updateDns(delete bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to get TCP ingress ipOrHostname: %s", err)
 	}
-	return dns.UpdateRecord(c.Space.Spec.DomainName, c.Space.Name,
-		ipOrHostname, isHostname, delete)
+	expBackoff := misc.DefaultBackoff()
+	url := os.Getenv("SLACK_WEBHOOK_FOR_DNS_UPDATE_FAILURE")
+	attempt := 0
+	verb := "create"
+	if (delete) {
+		verb = "delete"
+	}
+	updateFn := func () error {
+		attempt += 1
+		err := dns.UpdateRecord(c.Space.Spec.DomainName, c.Space.Name,
+			ipOrHostname, isHostname, delete)
+		if err != nil {
+			msg := fmt.Sprintf("attempt %d to %s DNS for %s failed: %s",
+				attempt, verb, c.Space.Name, err)
+			c.log.Warnf(msg)
+			if url != "" {
+				slack.PostBestEffort(url, msg, c.log)
+			}
+		} else if url != "" && attempt >= 2 {
+			msg := fmt.Sprintf("DNS %s for %s succeeded after %d attempts",
+				verb, c.Space.Name, attempt)
+			slack.PostBestEffort(url, msg, c.log)
+		}
+		return err
+	}
+	return backoff.RetryNotify(updateFn, expBackoff, nil)
 }
 
 // -----------------------------------------------------------------------------

@@ -36,6 +36,9 @@ import (
 )
 
 func init() {
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+	})
 	logrus.Println("controller package initialized")
 }
 

@@ -41,6 +41,8 @@ imports:
   - service/elb
   - service/route53
   - service/sts
+- name: github.com/cenkalti/backoff
+  version: 2ea60e5f094469f9e65adb9cd103795b73ae743e
 - name: github.com/coreos/etcd-operator
   version: ba44539dcea6c52eae443871a8a93f7f51e94fdf
   subpackages:
