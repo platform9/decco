@@ -5,6 +5,7 @@ BIN_DIR=$(BUILD_DIR)/bin
 BUILD_SRC_DIR=$(BUILD_DIR)/src/github.com/platform9
 DECCO_SRC_DIR=$(BUILD_SRC_DIR)/decco
 OPERATOR_EXE=$(BIN_DIR)/decco-operator
+LOCAL_OPERATOR_EXE=$(GOPATH)/bin/decco-operator
 DEFAULT_HTTP_EXE=$(BIN_DIR)/decco-default-http
 
 # Override with your own Docker registry tag(s)
@@ -31,8 +32,10 @@ deps: $(DECCO_SRC_DIR)
 local-deps:
 	cd $(SRC_DIR)/cmd/operator && go get -d
 
-local-operator:
-	cd $(SRC_DIR)/cmd/operator && go build -o $${GOPATH}/bin/decco-operator
+$(LOCAL_OPERATOR_EXE):
+	cd $(SRC_DIR)/cmd/operator && go build -o $(LOCAL_OPERATOR_EXE)
+
+local-operator: $(LOCAL_OPERATOR_EXE)
 
 local-operator-dbg:
 	cd $(SRC_DIR)/cmd/operator && go build -gcflags='-N -l' -o $${GOPATH}/bin/decco-operator-dbg
@@ -72,6 +75,11 @@ default-http-clean:
 	rm -f $(DEFAULT_HTTP_EXE)
 
 operator-image: $(OPERATOR_EXE)
+	docker build --tag $(OPERATOR_IMAGE_TAG) -f support/operator/Dockerfile .
+	docker push $(OPERATOR_IMAGE_TAG)
+
+operator-push: $(LOCAL_OPERATOR_EXE)
+	cp -f $(LOCAL_OPERATOR_EXE) $(BIN_DIR)
 	docker build --tag $(OPERATOR_IMAGE_TAG) -f support/operator/Dockerfile .
 	docker push $(OPERATOR_IMAGE_TAG)
 

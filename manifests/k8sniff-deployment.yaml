@@ -17,7 +17,7 @@ spec:
     spec:
       serviceAccountName: k8sniff
       containers:
-      - image: platform9systems/k8sniff:103
+      - image: platform9systems/k8sniff:104
         name: k8sniff
         imagePullPolicy: Always
         command:
@@ -28,10 +28,12 @@ spec:
         ports:
         - name: https
           containerPort: 8443
+        - name: metrics
+          containerPort: 9091
         resources:
           requests:
-             cpu: 900m
-             memory: 512Mi
+             cpu: 750m
+             memory: 256Mi
         volumeMounts:
         - name: k8sniff-config
           mountPath: /etc/config

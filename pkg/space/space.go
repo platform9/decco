@@ -229,7 +229,7 @@ func (c *SpaceRuntime) internalCreate() error {
 		return fmt.Errorf("failed to create private ingress controller: %s", err)
 	}
 	if err = c.updateDns(false); err != nil {
-		return fmt.Errorf("failed to update DNS: %s", err)
+		return fmt.Errorf("failed to update DNS for space: %s", err)
 	}
 	return nil
 }
@@ -301,6 +301,7 @@ func (c * SpaceRuntime) updateDns(delete bool) error {
 			msg := fmt.Sprintf("attempt %d to %s DNS for %s failed: %s",
 				attempt, verb, c.Space.Name, err)
 			c.log.Warnf(msg)
+			err = fmt.Errorf("%s", msg)
 			if url != "" {
 				slack.PostBestEffort(url, msg, c.log)
 			}
@@ -548,6 +549,15 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 	}
 
 	watchNsStr := fmt.Sprintf("--watch-namespace=%s", c.Space.Name)
+	args := []string{
+		"/nginx-ingress-controller",
+		"--default-backend-service=$(POD_NAMESPACE)/default-http",
+		watchNsStr,
+	}
+	if c.Space.Spec.VerboseIngressControllerLogging ||
+		os.Getenv("VERBOSE_INGRESS_CONTROLLER_LOGGING") != "" {
+		args = append(args, "--v=5")
+	}
 	app := appspec.App{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "nginx-ingress",
@@ -559,12 +569,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 				Containers: []v1.Container{
 					{
 						Name: "nginx-ingress",
-						Args: []string{
-							"/nginx-ingress-controller",
-							"--default-backend-service=$(POD_NAMESPACE)/default-http",
-							"--v=5",
-							watchNsStr,
-						},
+						Args: args,
 						Env: []v1.EnvVar{
 							{
 								Name: "POD_NAME",
@@ -585,10 +590,16 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 								},
 							},
 						},
-						Image: "quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.11.0",
+						Image: "quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.19.0",
 						Ports: []v1.ContainerPort{
 							{
 								ContainerPort: int32(443),
+							},
+						},
+						Resources: v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								"cpu": resource.MustParse("100m"),
+								"memory": resource.MustParse("32Mi"),
 							},
 						},
 					},
