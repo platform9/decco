@@ -98,11 +98,13 @@ type AppSpec struct {
 	Egresses        []TlsEgress
 	RunAsJob        bool `json:"runAsJob"`
 	Endpoints       []EndpointSpec
+	FirstEndpointListenPort int32
 }
 
 type EndpointSpec struct {
 	Name                string
 	Port                int32
+	TlsListenPort       int32 // optional, defaults to 443 + endpoint index
 	// optional Cert and CA if don't want to use default one for the space
 	CertAndCaSecretName string `json:"certAndCaSecretName"`
 	CreateClearTextSvc  bool   `json:"createClearTextSvc"`
@@ -112,6 +114,7 @@ type EndpointSpec struct {
 	// non-empty: the specified HttpPath prefix is replaced with the value
 	HttpPath             string `json:"httpPath"`
 	RewritePath          string `json:"rewritePath"`
+	HttpLocalhostOnly bool `json:"httpLocalhostOnly"`
 	// The following only apply to tcp endpoints (httpPath empty)
 	CreateDnsRecord     bool   `json:"createDnsRecord"`
 	DisableTlsTermination bool `json:"disableTlsTermination"`

@@ -369,6 +369,7 @@ func (c *SpaceRuntime) createHttpIngress() error {
 		"",
 		c.Space.Spec.EncryptHttp,
 		c.Space.Spec.HttpCertSecretName,
+		false,
 	)
 }
 
@@ -558,6 +559,24 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		os.Getenv("VERBOSE_INGRESS_CONTROLLER_LOGGING") != "" {
 		args = append(args, "--v=5")
 	}
+	baseTlsListenPort := int32(k8sutil.TlsPort)
+	endpoints := []appspec.EndpointSpec{
+		{
+			Name: "nginx-ingress",
+			Port: baseTlsListenPort,     // nginx itself terminates TLS
+			DisableTlsTermination: true, // no stunnel side-car
+			SniHostname: hostName,
+		},
+	}
+	for _, epName := range c.Space.Spec.PrivateIngressControllerTcpEndpoints {
+		baseTlsListenPort += 1
+		endpoints = append(endpoints, appspec.EndpointSpec{
+			Name: "nginx-ingress-sni-" + epName,
+			Port: 80,
+			TlsListenPort: baseTlsListenPort,   // use stunnel beginning at 444
+			SniHostname: epName + "." + hostName,
+		})
+	}
 	app := appspec.App{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "nginx-ingress",
@@ -605,14 +624,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 					},
 				},
 			},
-			Endpoints: []appspec.EndpointSpec{
-				{
-					Name: "nginx-ingress",
-					Port: 443,
-					DisableTlsTermination: true,
-					SniHostname: hostName,
-				},
-			},
+			Endpoints: endpoints,
 		},
 	}
 	var rtObj runtime.Object

@@ -332,7 +332,10 @@ func (ar *AppRuntime) createStunnel(
 	if tlsSecretName != "" {
 		svcPort = k8sutil.TlsPort
 		destHostAndPort := fmt.Sprintf("%d", tgtPort)
-		tgtPort = k8sutil.TlsPort + int32(*stunnelIndex)
+		tgtPort = e.TlsListenPort
+		if tgtPort == 0 {
+			tgtPort = k8sutil.TlsPort + int32(*stunnelIndex)
+		}
 		containerName := fmt.Sprintf("stunnel-ingress-%d", *stunnelIndex)
 		outVols, outCntrs = k8sutil.InsertStunnel(
 			containerName, tgtPort, verifyChain,
@@ -555,6 +558,7 @@ func (ar *AppRuntime) createHttpIngress(e *spec.EndpointSpec) error {
 		e.RewritePath,
 		ar.spaceSpec.EncryptHttp,
 		secName,
+		e.HttpLocalhostOnly,
 	)
 }
 

@@ -76,6 +76,7 @@ type SpaceSpec struct {
 	DeleteTcpCertAndCaSecretAfterCopy bool   `json:"deleteTcpCertAndCaSecretAfterCopy"`
 	DisablePrivateIngressController bool `json:"disablePrivateIngressController"`
 	VerboseIngressControllerLogging bool `json:"verboseIngressControllerLogging"`
+	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints"`
 }
 
 func (c *SpaceSpec) Validate() error {

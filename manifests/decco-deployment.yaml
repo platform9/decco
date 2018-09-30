@@ -1,0 +1,40 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: decco-operator
+  namespace: decco
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: decco-operator
+    spec:
+      serviceAccountName: decco-operator
+      containers:
+      - name: decco-operator
+        image: platform9systems/decco-operator
+        env:
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: DNS_PROVIDER_NAME
+          value: aws-route53
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: decco-operator-secret
+              fieldPath: awsAccessKeyId
+        - name: AWS_SECRET_ACCESS_KEY
+            secretKeyRef:
+              name: decco-operator-secret
+              fieldPath: awsSecretAccessKey
+        - name: SLACK_WEBHOOK_FOR_DNS_UPDATE_FAILURE
+            secretKeyRef:
+              name: decco-operator-secret
+              fieldPath: slackWebhookForDnsUpdateFailure
