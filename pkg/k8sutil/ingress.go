@@ -27,6 +27,8 @@ func CreateHttpIngress(
 
 	// temporary hack to work around nginx-to-stunnel timeouts during heavy load
 	annotations["nginx.ingress.kubernetes.io/proxy-connect-timeout"] = "15"
+	// some services like caproxy sometimes take longer than a minute to respond
+	annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"] = "600"
 	annotations["nginx.ingress.kubernetes.io/ssl-redirect"] = "false"
 
 	if rewritePath != "" {

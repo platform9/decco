@@ -553,11 +553,15 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 	args := []string{
 		"/nginx-ingress-controller",
 		"--default-backend-service=$(POD_NAMESPACE)/default-http",
+		"--http-only-ipv4-bindaddress-prefix=127.0.0.1:",
+		"--enable-ssl-chain-completion=false",
 		watchNsStr,
 	}
 	if c.Space.Spec.VerboseIngressControllerLogging ||
 		os.Getenv("VERBOSE_INGRESS_CONTROLLER_LOGGING") != "" {
 		args = append(args, "--v=5")
+	} else {
+		args = append(args, "--v=1")
 	}
 	baseTlsListenPort := int32(k8sutil.TlsPort)
 	endpoints := []appspec.EndpointSpec{
@@ -609,7 +613,8 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 								},
 							},
 						},
-						Image: "quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.19.0",
+						//Image: "quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.19.0",
+						Image: "platform9systems/nginx-ingress-controller:106",
 						Ports: []v1.ContainerPort{
 							{
 								ContainerPort: int32(443),
