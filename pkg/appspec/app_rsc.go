@@ -104,6 +104,7 @@ type AppSpec struct {
 type EndpointSpec struct {
 	Name                string
 	Port                int32
+	IsMetricsEndpoint   bool  // optional, TCP only, no SNI / TLS / stunnel
 	TlsListenPort       int32 // optional, defaults to 443 + endpoint index
 	// optional Cert and CA if don't want to use default one for the space
 	CertAndCaSecretName string `json:"certAndCaSecretName"`

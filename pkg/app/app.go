@@ -286,8 +286,19 @@ func (ar *AppRuntime) createStunnel(
 	tlsSecretName := ""
 	isNginxIngressStyleCertSecret := false
 
+	svcPort = e.Port
+	tgtPort = e.Port
+	if tgtPort < 1 {
+		err = spec.ErrInvalidPort
+		return
+	}
+
 	// Determine if we need ingress TLS termination
-	if e.HttpPath == "" {
+	if e.IsMetricsEndpoint {
+		// Metrics endpoint. No TLS for now until I figure out how
+		// to configure Prometheus to scrape using https -leb
+		return
+	} else if e.HttpPath == "" {
 		// This is a TCP service.
 		if e.DisableTlsTermination {
 			// No stunnel needed
@@ -323,12 +334,6 @@ func (ar *AppRuntime) createStunnel(
 		isNginxIngressStyleCertSecret = true
 	}
 
-	svcPort = e.Port
-	tgtPort = e.Port
-	if tgtPort < 1 {
-		err = spec.ErrInvalidPort
-		return
-	}
 	if tlsSecretName != "" {
 		svcPort = k8sutil.TlsPort
 		destHostAndPort := fmt.Sprintf("%d", tgtPort)
@@ -455,19 +460,26 @@ func (ar *AppRuntime) createSvc(
 ) error {
 	appName := ar.Name()
 	svcName := e.Name
+	portName := svcName
 	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
+	labels := map[string]string {
+		"decco-derived-from": "app",
+		"decco-app": appName,
+	}
+	if e.IsMetricsEndpoint {
+		labels["monitoring-group"] = "decco"
+		portName = "metrics"
+	}
 	_, err := svcApi.Create(&v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: svcName,
-			Labels: map[string]string {
-				"decco-derived-from": "app",
-				"decco-app": appName,
-			},
+			Labels: labels,
 		},
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{
 				{
 					Port: svcPort,
+					Name: portName,
 					TargetPort: intstr.IntOrString {
 						Type: intstr.Int,
 						IntVal: tgtPort,
@@ -530,7 +542,6 @@ func (ar *AppRuntime) createHttpIngress(e *spec.EndpointSpec) error {
 	}
 	path := e.HttpPath
 	if path == "" {
-		ar.log.Debug("endpoint does not have http path")
 		return nil
 	}
 	port := e.Port
@@ -573,6 +584,9 @@ func (ar *AppRuntime) deleteIngress(e *spec.EndpointSpec) error {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) createTcpIngress(e *spec.EndpointSpec) error {
+	if e.IsMetricsEndpoint {
+		return nil
+	}
 	path := e.HttpPath
 	if path != "" {
 		return nil

@@ -571,6 +571,11 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 			DisableTlsTermination: true, // no stunnel side-car
 			SniHostname: hostName,
 		},
+		{
+			Name: "nginx-ingress-metrics",
+			Port: 10254,
+			IsMetricsEndpoint: true,
+		},
 	}
 	for _, epName := range c.Space.Spec.PrivateIngressControllerTcpEndpoints {
 		baseTlsListenPort += 1
