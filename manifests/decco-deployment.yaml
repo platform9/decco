@@ -29,12 +29,14 @@ spec:
           valueFrom:
             secretKeyRef:
               name: decco-operator-secret
-              fieldPath: awsAccessKeyId
+              key: awsAccessKeyId
         - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
             secretKeyRef:
               name: decco-operator-secret
-              fieldPath: awsSecretAccessKey
+              key: awsSecretAccessKey
         - name: SLACK_WEBHOOK_FOR_DNS_UPDATE_FAILURE
+          valueFrom:
             secretKeyRef:
               name: decco-operator-secret
-              fieldPath: slackWebhookForDnsUpdateFailure
+              key: slackWebhookForDnsUpdateFailure
