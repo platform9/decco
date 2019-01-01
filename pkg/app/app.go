@@ -521,7 +521,7 @@ func (ar *AppRuntime) createEndpoints(
 			f := "failed to create http ingress for endpoint '%s': %s"
 			return nil, nil, fmt.Errorf(f, e.Name, err)
 		}
-		if err := ar.createTcpIngress(&e); err != nil {
+		if err := ar.createTcpIngress(&e, svcPort); err != nil {
 			f := "failed to create tcp ingress for endpoint '%s': %s"
 			return nil, nil, fmt.Errorf(f, e.Name, err)
 		}
@@ -583,7 +583,10 @@ func (ar *AppRuntime) deleteIngress(e *spec.EndpointSpec) error {
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) createTcpIngress(e *spec.EndpointSpec) error {
+func (ar *AppRuntime) createTcpIngress(
+	e *spec.EndpointSpec,
+	svcPort int32,
+) error {
 	if e.IsMetricsEndpoint {
 		return nil
 	}
@@ -619,7 +622,7 @@ func (ar *AppRuntime) createTcpIngress(e *spec.EndpointSpec) error {
 										ServiceName: e.Name,
 										ServicePort: intstr.IntOrString {
 											Type: intstr.Int,
-											IntVal: k8sutil.TlsPort,
+											IntVal: svcPort,
 										},
 									},
 								},

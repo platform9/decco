@@ -1,4 +1,4 @@
-
+SHELL := bash
 SRC_DIR=$(shell pwd)
 BUILD_DIR=$(SRC_DIR)/build
 BIN_DIR=$(BUILD_DIR)/bin
