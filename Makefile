@@ -34,7 +34,7 @@ local-dns-test:
 	cd $(SRC_DIR)/cmd/dns-test && go build -o $${GOPATH}/bin/dns-test
 
 
-$(OPERATOR_EXE): | $(VENDOR_DIR) $(OPERATOR_STAGE_DIR)
+$(OPERATOR_EXE): $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(VENDOR_DIR) $(OPERATOR_STAGE_DIR)
 	cd $(SRC_DIR)/cmd/operator && \
 	go build -o $(OPERATOR_EXE)
 
