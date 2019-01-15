@@ -9,6 +9,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	"fmt"
 	"errors"
@@ -129,6 +130,7 @@ func (ar *AppRuntime) Delete() {
 	if err != nil {
 		log.Warnf("failed to delete deployment: %s", err)
 	}
+	ar.teardownPermissions()
 	// TCP (k8sniff) ingress resources will be
 	// cleaned up by garbage collection
 }
@@ -220,7 +222,10 @@ func (ar *AppRuntime) internalCreate() error {
 	containers := podSpec.Containers
 	volumes := podSpec.Volumes
 	stunnelIndex := 0
-	var err error
+	err := ar.setupPermissions(&podSpec)
+	if err != nil {
+		return fmt.Errorf("failed to set up permissions: %s", err)
+	}
 	containers, volumes, err = ar.createEndpoints(containers, volumes, &stunnelIndex)
 	if err != nil {
 		return fmt.Errorf("failed to create endpoints: %s", err)
@@ -230,6 +235,97 @@ func (ar *AppRuntime) internalCreate() error {
 		return fmt.Errorf("failed to create deployment: %s", err)
 	}
 	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (ar *AppRuntime) insertDomainEnvVar(containers []v1.Container) {
+	if ar.app.Spec.DomainEnvVarName == "" {
+		return
+	}
+	for _, c := range containers {
+		c.Env = append(c.Env, v1.EnvVar{
+			Name: ar.app.Spec.DomainEnvVarName,
+			Value: ar.spaceSpec.DomainName,
+		})
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
+	sp := ar.app.Spec
+	rules := sp.Permissions
+	if rules == nil || len(rules) == 0 {
+		return nil
+	}
+	sa := v1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: ar.app.Name,
+		},
+	}
+	saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
+	_, err := saApi.Create(&sa)
+	if err != nil {
+		return fmt.Errorf("failed to create svcaccount: %s", err)
+	}
+	role := rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{Name: ar.app.Name},
+		Rules: rules,
+	}
+	rolesApi := ar.kubeApi.RbacV1().Roles(ar.namespace)
+	_, err = rolesApi.Create(&role)
+	if err != nil {
+		return fmt.Errorf("failed to create role: %s", err)
+	}
+	rb := rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: ar.app.Name},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind: "ServiceAccount",
+				Name: ar.app.Name,
+				Namespace: ar.namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind: "Role",
+			Name: ar.app.Name,
+		},
+	}
+	rbApi := ar.kubeApi.RbacV1().RoleBindings(ar.namespace)
+	_, err = rbApi.Create(&rb)
+	if err != nil {
+		return fmt.Errorf("failed to create role binding: %s", err)
+	}
+	podSpec.ServiceAccountName = ar.app.Name
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (ar *AppRuntime) teardownPermissions() {
+	sp := ar.app.Spec
+	rules := sp.Permissions
+	if rules == nil || len(rules) == 0 {
+		return
+	}
+	log := ar.log.WithField("func", "teardownPermissions")
+	rbApi := ar.kubeApi.RbacV1().RoleBindings(ar.namespace)
+	err := rbApi.Delete(ar.app.Name, nil)
+	if err != nil {
+		log.Warnf("failed to delete role binding: %s", err)
+	}
+	rolesApi := ar.kubeApi.RbacV1().Roles(ar.namespace)
+	err = rolesApi.Delete(ar.app.Name, nil)
+	if err != nil {
+		log.Warnf("failed to delete role: %s", err)
+	}
+	saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
+	err = saApi.Delete(ar.app.Name, nil)
+	if err != nil {
+		log.Warnf("failed to delete svc account: %s", err)
+	}
 }
 
 // -----------------------------------------------------------------------------

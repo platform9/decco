@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -99,6 +100,8 @@ type AppSpec struct {
 	RunAsJob        bool `json:"runAsJob"`
 	Endpoints       []EndpointSpec
 	FirstEndpointListenPort int32
+	Permissions     []rbacv1.PolicyRule
+	DomainEnvVarName string `json:"domainEnvVarName"`
 }
 
 type EndpointSpec struct {
