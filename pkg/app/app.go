@@ -222,6 +222,7 @@ func (ar *AppRuntime) internalCreate() error {
 	containers := podSpec.Containers
 	volumes := podSpec.Volumes
 	stunnelIndex := 0
+	ar.insertDomainEnvVar(containers)
 	err := ar.setupPermissions(&podSpec)
 	if err != nil {
 		return fmt.Errorf("failed to set up permissions: %s", err)
@@ -243,8 +244,8 @@ func (ar *AppRuntime) insertDomainEnvVar(containers []v1.Container) {
 	if ar.app.Spec.DomainEnvVarName == "" {
 		return
 	}
-	for _, c := range containers {
-		c.Env = append(c.Env, v1.EnvVar{
+	for i, _ := range containers {
+		containers[i].Env = append(containers[i].Env, v1.EnvVar{
 			Name: ar.app.Spec.DomainEnvVarName,
 			Value: ar.spaceSpec.DomainName,
 		})
