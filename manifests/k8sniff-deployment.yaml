@@ -17,7 +17,7 @@ spec:
     spec:
       serviceAccountName: k8sniff
       containers:
-      - image: platform9systems/k8sniff:104
+      - image: platform9systems/k8sniff:106
         name: k8sniff
         imagePullPolicy: Always
         command:
