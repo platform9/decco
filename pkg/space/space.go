@@ -202,6 +202,9 @@ func (c *SpaceRuntime) internalCreate() error {
 	if err = c.createNetPolicy(); err != nil {
 		return fmt.Errorf("failed to create network policy: %s", err)
 	}
+	if err = c.createPermissions(); err != nil {
+		return fmt.Errorf("failed to create permissions: %s", err)
+	}
 	if err = c.copySecret(httpCert); err != nil {
 		return fmt.Errorf("failed to copy http cert: %s", err)
 	}
@@ -230,6 +233,41 @@ func (c *SpaceRuntime) internalCreate() error {
 	}
 	if err = c.updateDns(false); err != nil {
 		return fmt.Errorf("failed to update DNS for space: %s", err)
+	}
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+func (c * SpaceRuntime) createPermissions() error {
+	perms := c.Space.Spec.Permissions
+	if perms == nil {
+		return nil
+	}
+	rolesApi := c.kubeApi.RbacV1().Roles(c.Space.Name)
+	role := rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{Name: "space-creator"},
+		Rules: perms.Rules,
+	}
+	_, err := rolesApi.Create(&role)
+	if err != nil {
+		return fmt.Errorf("failed to create space-creator role: %s", err)
+	}
+	rb := rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "space-creator"},
+		Subjects: []rbacv1.Subject{
+			perms.Subject,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind: "Role",
+			Name: "space-creator",
+		},
+	}
+	rbApi := c.kubeApi.RbacV1().RoleBindings(c.Space.Name)
+	_, err = rbApi.Create(&rb)
+	if err != nil {
+		return fmt.Errorf("failed to create space-creator role binding: %s", err)
 	}
 	return nil
 }

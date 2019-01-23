@@ -19,6 +19,7 @@ import (
 	"errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 const (
@@ -66,6 +67,11 @@ func (c Space) DeepCopyObject() runtime.Object {
 	return &c
 }
 
+type SpacePermissions struct {
+	Subject rbacv1.Subject
+	Rules   []rbacv1.PolicyRule
+}
+
 type SpaceSpec struct {
 	DomainName             string `json:"domainName"`
 	Project                string `json:"project"`
@@ -77,6 +83,7 @@ type SpaceSpec struct {
 	DisablePrivateIngressController bool `json:"disablePrivateIngressController"`
 	VerboseIngressControllerLogging bool `json:"verboseIngressControllerLogging"`
 	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints"`
+	Permissions *SpacePermissions `json:permissions`
 }
 
 func (c *SpaceSpec) Validate() error {
