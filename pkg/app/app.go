@@ -260,38 +260,43 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 	if rules == nil || len(rules) == 0 {
 		return nil
 	}
-	sa := v1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: ar.app.Name,
-		},
+	saName := podSpec.ServiceAccountName
+	if saName == "" {
+		saName = ar.app.Name
+		sa := v1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: saName,
+			},
+		}
+		saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
+		_, err := saApi.Create(&sa)
+		if err != nil {
+			return fmt.Errorf("failed to create svcaccount: %s", err)
+		}
 	}
-	saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
-	_, err := saApi.Create(&sa)
-	if err != nil {
-		return fmt.Errorf("failed to create svcaccount: %s", err)
-	}
+
 	role := rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{Name: ar.app.Name},
+		ObjectMeta: metav1.ObjectMeta{Name: saName},
 		Rules: rules,
 	}
 	rolesApi := ar.kubeApi.RbacV1().Roles(ar.namespace)
-	_, err = rolesApi.Create(&role)
+	_, err := rolesApi.Create(&role)
 	if err != nil {
 		return fmt.Errorf("failed to create role: %s", err)
 	}
 	rb := rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: ar.app.Name},
+		ObjectMeta: metav1.ObjectMeta{Name: saName},
 		Subjects: []rbacv1.Subject{
 			{
 				Kind: "ServiceAccount",
-				Name: ar.app.Name,
+				Name: saName,
 				Namespace: ar.namespace,
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind: "Role",
-			Name: ar.app.Name,
+			Name: saName,
 		},
 	}
 	rbApi := ar.kubeApi.RbacV1().RoleBindings(ar.namespace)
@@ -299,7 +304,7 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 	if err != nil {
 		return fmt.Errorf("failed to create role binding: %s", err)
 	}
-	podSpec.ServiceAccountName = ar.app.Name
+	podSpec.ServiceAccountName = saName
 	return nil
 }
 
@@ -321,6 +326,10 @@ func (ar *AppRuntime) teardownPermissions() {
 	err = rolesApi.Delete(ar.app.Name, nil)
 	if err != nil {
 		log.Warnf("failed to delete role: %s", err)
+	}
+	if ar.app.Spec.PodSpec.ServiceAccountName != "" {
+		// service account already existed, we didn't create it
+		return
 	}
 	saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
 	err = saApi.Delete(ar.app.Name, nil)
