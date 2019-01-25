@@ -13,7 +13,8 @@ spec:
       serviceAccountName: decco-operator
       containers:
       - name: decco-operator
-        image: platform9systems/decco-operator
+        image: platform9/decco-operator
+        imagePullPolicy: Always
         env:
         - name: MY_POD_NAMESPACE
           valueFrom:
