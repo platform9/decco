@@ -99,9 +99,11 @@ func (ar *AppRuntime) Stop() {
 
 func (ar *AppRuntime) Delete() {
 	log := ar.log.WithField("func", "Delete")
+	propPolicy := metav1.DeletePropagationBackground
+	delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
 	if ar.app.Spec.RunAsJob {
 		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
-		err := batchApi.Delete(ar.app.Name, &metav1.DeleteOptions{})
+		err := batchApi.Delete(ar.app.Name, &delOpts)
 		if err != nil {
 			log.Warnf("failed to delete job: %s", err)
 		}
@@ -124,8 +126,6 @@ func (ar *AppRuntime) Delete() {
 		}
 	}
 	deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-	propPolicy := metav1.DeletePropagationBackground
-	delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
 	err := deployApi.Delete(ar.app.Name, &delOpts)
 	if err != nil {
 		log.Warnf("failed to delete deployment: %s", err)
