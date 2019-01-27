@@ -19,9 +19,13 @@ package main
 
 import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/client-go/kubernetes"
 	log "github.com/sirupsen/logrus"
 	"github.com/platform9/decco/pkg/controller"
+	"github.com/platform9/decco/pkg/k8sutil"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -42,15 +46,44 @@ func main() {
 		log.Fatalf("failed to parse log level: %s", err)
 	}
 	log.SetLevel(logLevel)
-
-	for {
-		c := controller.New(namespace)
-		err := c.Run()
-		switch err {
-		default:
-			log.Warnf("restarting controller due to: %v", err)
-			time.Sleep(2 * time.Second)
-		}
+	clustConfig := k8sutil.GetClusterConfigOrDie()
+	kubeApi := kubernetes.NewForConfigOrDie(clustConfig)
+	nsApi := kubeApi.CoreV1().Namespaces()
+	nses, err := nsApi.List(
+		meta_v1.ListOptions{
+			LabelSelector: "contains-decco-spaces=true",
+		},
+	)
+	if err != nil {
+		log.Fatalf("list namespaces failed: %s", err.Error())
+		return
 	}
+	if len(nses.Items) == 0 {
+		log.Fatalf("there are no namesapces containing spaces")
+		return
+	}
+	log.Infof("there are %d namespaces containing spaces",
+		len(nses.Items))
+
+	wg := sync.WaitGroup{}
+	for _, ns := range nses.Items {
+		wg.Add(1)
+		log.Infof("spawning thread for %s", ns.Name)
+		go func(namespace string) {
+			for {
+				c := controller.New(namespace, clustConfig, kubeApi)
+				err := c.Run()
+				switch err {
+				default:
+					log.Warnf("restarting controller for %s due to: %v",
+						namespace, err)
+					time.Sleep(2 * time.Second)
+				}
+			}
+			log.Infof("thread for %s finished", namespace)
+		} (ns.Name)
+	}
+	wg.Wait()
+	log.Infof("all done")
 }
 

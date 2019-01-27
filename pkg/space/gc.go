@@ -1,13 +1,14 @@
 package space
 
 import (
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 func Collect(kubeApi kubernetes.Interface,
+	nsOfSpaceRsc string,
 	log *logrus.Entry,
 	isKnownSpace func(name string) bool) {
 
@@ -15,7 +16,7 @@ func Collect(kubeApi kubernetes.Interface,
 	nsApi := kubeApi.CoreV1().Namespaces()
 	nses, err := nsApi.List(
 		meta_v1.ListOptions{
-			LabelSelector: "app=decco",
+			LabelSelector: "app=decco,decco-space-rsc-ns=" + nsOfSpaceRsc,
 		},
 	)
 	if err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/platform9/decco/pkg/k8sutil"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	restclient "k8s.io/client-go/rest"
 	kwatch "k8s.io/apimachinery/pkg/watch"
 	"fmt"
 	"k8s.io/client-go/kubernetes"
@@ -49,6 +50,7 @@ type Controller struct {
 	kubeApi kubernetes.Interface
 	namespace string
 	waitApps sync.WaitGroup
+	garbageCollectNamespaces bool
 }
 
 type SpaceInfo struct {
@@ -98,15 +100,18 @@ func (spcInfo *SpaceInfo) Update(item watcher.Item)  {
 
 // ----------------------------------------------------------------------------
 
-func New(namespace string) *Controller {
-	clustConfig := k8sutil.GetClusterConfigOrDie()
+func New(
+	namespace string,
+	clustConfig *restclient.Config,
+	kubeApi *kubernetes.Clientset,
+) *Controller {
 	logger := logrus.WithField("pkg", "controller")
 	logger.Logger.SetLevel(logrus.DebugLevel)
 	return &Controller{
 		log: logger,
 		apiHost: clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
-		kubeApi: kubernetes.NewForConfigOrDie(clustConfig),
+		kubeApi: kubeApi,
 		namespace: namespace,
 	}
 }
@@ -144,7 +149,13 @@ func (c *Controller) Run() error {
 // ----------------------------------------------------------------------------
 
 func (c *Controller) PeriodicTask(itemMap map[string]watcher.ManagedItem) {
-	space.Collect(c.kubeApi, c.log, func(name string) bool {
+	if !c.garbageCollectNamespaces {
+		return
+	}
+	// Dangerous. Don't enable garbageCollectNamespaces unless you know what
+	// you're doing. Can lead to accidental namespace deletion if more than
+	// one decco controller is running.
+	space.Collect(c.kubeApi, c.namespace, c.log, func(name string) bool {
 		_, ok := itemMap[name]
 		return ok
 	})

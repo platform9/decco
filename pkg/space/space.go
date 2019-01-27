@@ -377,6 +377,7 @@ func (c *SpaceRuntime) createNamespace() error {
 			Name: c.Space.Name,
 			Labels: map[string]string {
 				"app": "decco",
+				"decco-space-rsc-ns": c.namespace,
 			},
 		},
 	}
