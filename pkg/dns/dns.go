@@ -2,9 +2,9 @@ package dns
 
 import (
 	"github.com/sirupsen/logrus"
-	_ "k8s.io/kubernetes/federation/pkg/dnsprovider/providers/aws/route53"
-	"k8s.io/kubernetes/federation/pkg/dnsprovider"
-	"k8s.io/kubernetes/federation/pkg/dnsprovider/rrstype"
+	_ "k8s.io/federation/pkg/dnsprovider/providers/aws/route53"
+	"k8s.io/federation/pkg/dnsprovider"
+	"k8s.io/federation/pkg/dnsprovider/rrstype"
 	"os"
 	"fmt"
 )

@@ -1,22 +1,55 @@
+
 SHELL := bash
 SRC_DIR=$(shell pwd)
 BUILD_DIR=$(SRC_DIR)/build
-VENDOR_DIR=$(SRC_DIR)/vendor
+GODEP=$(GOPATH)/bin/godep
+CLIENTGO=$(GOPATH)/src/k8s.io/client-go
+GOSRC=$(GOPATH)/src
+CLIENTGO_VERSION ?= v9.0.0
 OPERATOR_STAGE_DIR=$(BUILD_DIR)/operator
 DEFAULT_HTTP_STAGE_DIR=$(BUILD_DIR)/default-http
+GO_ENV_TARBALL=$(BUILD_DIR)/decco-go-env.tgz
 OPERATOR_EXE=$(OPERATOR_STAGE_DIR)/decco-operator
 OPERATOR_IMAGE_MARKER=$(OPERATOR_STAGE_DIR)/image-marker
 DEFAULT_HTTP_EXE=$(DEFAULT_HTTP_STAGE_DIR)/decco-default-http
+
+GO_DEPS := $(GOSRC)/github.com/coreos/etcd-operator/pkg/util/retryutil \
+           $(GOSRC)/github.com/cenkalti/backoff \
+           $(GOSRC)/github.com/sirupsen/logrus \
+           $(GOSRC)/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1 \
+           $(GOSRC)/k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset \
+           $(GOSRC)/k8s.io/federation/pkg/dnsprovider
 
 # Override with your own Docker registry tag(s)
 OPERATOR_IMAGE_TAG ?= platform9/decco-operator:latest
 DEFAULT_HTTP_IMAGE_TAG ?= platform9systems/decco-default-http
 
-$(BUILD_DIR):
+.PHONY: gopath
+
+gopath:
+ifndef GOPATH
+	$(error GOPATH is undefined)
+endif
+
+$(BUILD_DIR): gopath
 	mkdir -p $@
 
-$(VENDOR_DIR):
-	glide install -v
+$(GODEP):
+	go get github.com/tools/godep
+
+$(CLIENTGO): | $(GODEP)
+	go get k8s.io/client-go/...
+	cd $(CLIENTGO) && git checkout $(CLIENTGO_VERSION) && $(GODEP) restore ./...
+
+godep: $(GODEP)
+
+clientgo: | $(CLIENTGO)
+
+$(GO_DEPS):
+	go get $(subst $(GOSRC)/,,$@)
+	rm -rf $(GOSRC)/k8s.io/apiextensions-apiserver/vendor
+
+godeps: | $(GO_DEPS)
 
 $(OPERATOR_STAGE_DIR):
 	mkdir -p $@
@@ -33,10 +66,16 @@ local-default-http:
 local-dns-test:
 	cd $(SRC_DIR)/cmd/dns-test && go build -o $${GOPATH}/bin/dns-test
 
-
-$(OPERATOR_EXE): $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(VENDOR_DIR) $(OPERATOR_STAGE_DIR)
+$(OPERATOR_EXE): $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(CLIENTGO) $(OPERATOR_STAGE_DIR) $(GO_DEPS)
 	cd $(SRC_DIR)/cmd/operator && \
 	go build -o $(OPERATOR_EXE)
+
+$(GO_ENV_TARBALL): $(OPERATOR_EXE)
+	export TMP_TARBALL=$(shell mktemp --tmpdir gopath.XXX.tgz) && \
+	tar cvfz $${TMP_TARBALL} -C $(GOPATH) . && \
+	mv $${TMP_TARBALL} $@
+
+tarball: $(GO_ENV_TARBALL)
 
 $(DEFAULT_HTTP_EXE): | $(DEFAULT_HTTP_STAGE_DIR)
 	cd $(SRC_DIR)/cmd/default-http && \
