@@ -47,7 +47,6 @@ clientgo: | $(CLIENTGO)
 
 $(GO_DEPS):
 	go get $(subst $(GOSRC)/,,$@)
-	rm -rf $(GOSRC)/k8s.io/apiextensions-apiserver/vendor
 
 godeps: | $(GO_DEPS)
 
@@ -67,12 +66,13 @@ local-dns-test:
 	cd $(SRC_DIR)/cmd/dns-test && go build -o $${GOPATH}/bin/dns-test
 
 $(OPERATOR_EXE): $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(CLIENTGO) $(OPERATOR_STAGE_DIR) $(GO_DEPS)
+	rm -rf $(GOSRC)/k8s.io/apiextensions-apiserver/vendor
 	cd $(SRC_DIR)/cmd/operator && \
 	go build -o $(OPERATOR_EXE)
 
 $(GO_ENV_TARBALL): $(OPERATOR_EXE)
 	export TMP_TARBALL=$(shell mktemp --tmpdir gopath.XXX.tgz) && \
-	tar cvfz $${TMP_TARBALL} -C $(GOPATH) . && \
+	tar cfz $${TMP_TARBALL} -C $(GOPATH) . && \
 	mv $${TMP_TARBALL} $@
 
 tarball: $(GO_ENV_TARBALL)
