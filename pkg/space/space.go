@@ -1,31 +1,30 @@
 package space
 
 import (
-	"github.com/sirupsen/logrus"
-	"github.com/platform9/decco/pkg/spec"
-	"github.com/platform9/decco/pkg/k8sutil"
-	"github.com/platform9/decco/pkg/dns"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/cenkalti/backoff"
 	"github.com/platform9/decco/pkg/appspec"
-	"github.com/platform9/decco/pkg/slack"
+	"github.com/platform9/decco/pkg/client"
+	"github.com/platform9/decco/pkg/dns"
+	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/misc"
-	"reflect"
-	"k8s.io/client-go/kubernetes"
+	"github.com/platform9/decco/pkg/slack"
+	"github.com/platform9/decco/pkg/spec"
+	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
-	"fmt"
-	"errors"
-	"strings"
-	"encoding/json"
 	netv1 "k8s.io/api/networking/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/client-go/rest"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"github.com/cenkalti/backoff"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 	"os"
+	"reflect"
+	"strings"
 )
 
 var (
@@ -578,16 +577,10 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 
 	hostName := c.Space.Name + "." + c.Space.Spec.DomainName
 	config := k8sutil.GetClusterConfigOrDie()
-	config.GroupVersion = &appspec.SchemeGroupVersion
-	config.APIPath = "/apis"
-	config.NegotiatedSerializer = serializer.DirectCodecFactory{
-		CodecFactory: appspec.Codecs,
-	}
-	restCli, err := rest.RESTClientFor(config)
+	restCli, err := client.NewAppClient(config)
 	if err != nil {
-		return fmt.Errorf("failed to create app rest client: %s", err)
+		return fmt.Errorf("failed to get app rest client: %s", err)
 	}
-
 	watchNsStr := fmt.Sprintf("--watch-namespace=%s", c.Space.Name)
 	args := []string{
 		"/nginx-ingress-controller",

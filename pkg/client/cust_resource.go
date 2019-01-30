@@ -1,9 +1,11 @@
 package client
 
 import (
+	"fmt"
 	"k8s.io/client-go/rest"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"github.com/platform9/decco/pkg/spec"
+	"github.com/platform9/decco/pkg/appspec"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -27,4 +29,18 @@ func New(cfg *rest.Config) (*rest.RESTClient, *runtime.Scheme, error) {
 	}
 
 	return client, crScheme, nil
+}
+
+func NewAppClient(cfg *rest.Config) (*rest.RESTClient, error) {
+	config := *cfg
+	config.GroupVersion = &appspec.SchemeGroupVersion
+	config.APIPath = "/apis"
+	config.NegotiatedSerializer = serializer.DirectCodecFactory{
+		CodecFactory: appspec.Codecs,
+	}
+	restCli, err := rest.RESTClientFor(&config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create app rest client: %s", err)
+	}
+	return restCli, nil
 }
