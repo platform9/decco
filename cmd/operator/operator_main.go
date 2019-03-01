@@ -21,7 +21,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/kubernetes"
 	log "github.com/sirupsen/logrus"
-	"github.com/platform9/decco/pkg/controller"
+	"github.com/platform9/decco/pkg/spacecontroller"
 	"github.com/platform9/decco/pkg/k8sutil"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"os"
@@ -71,7 +71,7 @@ func main() {
 		log.Infof("spawning thread for %s", ns.Name)
 		go func(namespace string) {
 			for {
-				c := controller.New(namespace, clustConfig, kubeApi)
+				c := spacecontroller.New(namespace, clustConfig, kubeApi)
 				err := c.Run()
 				switch err {
 				default:

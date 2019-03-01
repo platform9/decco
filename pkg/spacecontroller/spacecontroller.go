@@ -1,8 +1,4 @@
 // Copyright 2017 The decco Authors
-// Copyright 2016 The etcd-operator Authors
-//
-// This file was adapted from
-// https://github.com/coreos/etcd-operator/blob/master/pkg/controller/controller.go
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package controller
+package spacecontroller
 
 import (
 	"encoding/json"
@@ -40,7 +36,7 @@ func init() {
 	logrus.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp: true,
 	})
-	logrus.Println("controller package initialized")
+	logrus.Println("spacecontroller package initialized")
 }
 
 type Controller struct {
@@ -72,7 +68,7 @@ func (spcInfo *SpaceInfo) Delete()  {
 	if !nsDeleted {
 		// An active space resource might have no associated namespace if for
 		// example, a user manually deleted the namespace while decco is not
-		// running. Call Detach() to explicitly stop the app controller.
+		// running. Call Stop() to explicitly stop the app controller.
 		spcInfo.log.Debugf("ns not deleted: forcing stop of app ctrl")
 		spcInfo.Stop()
 	}
@@ -86,7 +82,7 @@ func (spcInfo *SpaceInfo) Stop() {
 		// start as a child of the future decco controller instance
 		spcInfo.appCtrl.Stop()
 	} else {
-		spcInfo.log.Debugf("Detach: no app controller to stop")
+		spcInfo.log.Debugf("Stop(): no app controller to stop")
 	}
 }
 
@@ -105,7 +101,7 @@ func New(
 	clustConfig *restclient.Config,
 	kubeApi *kubernetes.Clientset,
 ) *Controller {
-	logger := logrus.WithField("pkg", "controller")
+	logger := logrus.WithField("pkg", "spacecontroller")
 	logger.Logger.SetLevel(logrus.DebugLevel)
 	return &Controller{
 		log: logger,
@@ -154,7 +150,7 @@ func (c *Controller) PeriodicTask(itemMap map[string]watcher.ManagedItem) {
 	}
 	// Dangerous. Don't enable garbageCollectNamespaces unless you know what
 	// you're doing. Can lead to accidental namespace deletion if more than
-	// one decco controller is running.
+	// one space controller is running.
 	space.Collect(c.kubeApi, c.namespace, c.log, func(name string) bool {
 		_, ok := itemMap[name]
 		return ok
@@ -179,9 +175,9 @@ func (c *Controller) StartWatchRequest(watchVersion string) (*http.Response, err
 func (c *Controller) InitItem(item watcher.Item) watcher.ManagedItem {
 	wrapped := item.(*spaceWrapper)
 	spc := wrapped.space
-	newSpace := space.New(*spc, c.kubeApi, c.namespace)
+	newSpaceRt := space.New(*spc, c.kubeApi, c.namespace)
 	var appCtrl *appcontroller.Controller
-	if newSpace.Status.Phase == spec.SpacePhaseActive {
+	if newSpaceRt.Status.Phase == spec.SpacePhaseActive {
 		c.log.Infof("starting app controller for %s", spc.Name)
 		appCtrl = appcontroller.New(
 			c.log, spc.Name,
@@ -193,7 +189,7 @@ func (c *Controller) InitItem(item watcher.Item) watcher.ManagedItem {
 			spc.Name)
 	}
 	return &SpaceInfo{
-		spc: newSpace,
+		spc: newSpaceRt,
 		appCtrl: appCtrl,
 		log: c.log.WithField("spaceInfo", spc.Name),
 	}

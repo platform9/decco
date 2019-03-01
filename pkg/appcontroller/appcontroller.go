@@ -1,8 +1,4 @@
 // Copyright 2017 The decco Authors
-// Copyright 2016 The etcd-operator Authors
-//
-// This file was adapted from
-// https://github.com/coreos/etcd-operator/blob/master/pkg/controller/controller.go
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
