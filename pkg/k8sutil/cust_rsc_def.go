@@ -29,15 +29,14 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-func WatchSpaces(host string, ns string, httpClient *http.Client, resourceVersion string) (*http.Response, error) {
-	return httpClient.Get(fmt.Sprintf("%s/apis/%s/namespaces/%s/%s?watch=true&resourceVersion=%s",
-		host, spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, resourceVersion))
+func WatchSpaces(host string, httpClient *http.Client, resourceVersion string) (*http.Response, error) {
+	return httpClient.Get(fmt.Sprintf("%s/apis/%s/%s?watch=true&resourceVersion=%s",
+		host, spec.SchemeGroupVersion.String(), spec.CRDResourcePlural, resourceVersion))
 }
 
-func GetSpaceList(restcli rest.Interface,
-	ns string) (*spec.SpaceList, error) {
+func GetSpaceList(restcli rest.Interface) (*spec.SpaceList, error) {
 
-	b, err := restcli.Get().RequestURI(listSpacesURI(ns)).DoRaw()
+	b, err := restcli.Get().RequestURI(listSpacesURI()).DoRaw()
 	if err != nil {
 		return nil, err
 	}
@@ -49,22 +48,19 @@ func GetSpaceList(restcli rest.Interface,
 	return spaces, nil
 }
 
-func listSpacesURI(ns string) string {
-	return fmt.Sprintf("/apis/%s/namespaces/%s/%s",
+func listSpacesURI() string {
+	return fmt.Sprintf("/apis/%s/%s",
 		spec.SchemeGroupVersion.String(),
-		ns,
 		spec.CRDResourcePlural)
 }
 
 func UpdateSpaceCustRsc(
 	restcli rest.Interface,
-	ns string,
 	c spec.Space,
 ) (spec.Space, error) {
-
 	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s",
 		spec.SchemeGroupVersion.String(),
-		ns,
+		c.Namespace,
 		spec.CRDResourcePlural,
 		c.Name)
 	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw()

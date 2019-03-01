@@ -37,7 +37,6 @@ const (
 
 type SpaceRuntime struct {
 	kubeApi kubernetes.Interface
-	namespace string
 	log *logrus.Entry
 
 	//config Config
@@ -54,7 +53,6 @@ type SpaceRuntime struct {
 func New(
 	spc spec.Space,
 	kubeApi kubernetes.Interface,
-	namespace string,
 ) *SpaceRuntime {
 
 	lg := logrus.WithField("pkg","space",
@@ -65,7 +63,6 @@ func New(
 		log:       lg,
 		Space:     spc,
 		Status:    spc.Status.Copy(),
-		namespace: namespace,
 	}
 
 	if err := c.setup(); err != nil {
@@ -114,7 +111,6 @@ func (c *SpaceRuntime) updateCRStatus() error {
 	newCrg.Status = c.Status
 	newCrg, err := k8sutil.UpdateSpaceCustRsc(
 		c.kubeApi.CoreV1().RESTClient(),
-		c.namespace,
 		newCrg)
 	if err != nil {
 		return fmt.Errorf("failed to update Space Status: %v", err)
@@ -376,7 +372,7 @@ func (c *SpaceRuntime) createNamespace() error {
 			Name: c.Space.Name,
 			Labels: map[string]string {
 				"app": "decco",
-				"decco-space-rsc-ns": c.namespace,
+				"decco-space-rsc-ns": c.Space.Namespace,
 			},
 		},
 	}
@@ -712,7 +708,7 @@ func (c *SpaceRuntime) createDefaultHttpSvc() error {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) getHttpCert() (*v1.Secret, error) {
-	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
+	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Namespace)
 	return secrApi.Get(c.Space.Spec.HttpCertSecretName, metav1.GetOptions{})
 }
 
@@ -722,7 +718,7 @@ func (c *SpaceRuntime) deleteHttpCert() error {
 	if !c.Space.Spec.DeleteHttpCertSecretAfterCopy {
 		return nil
 	}
-	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
+	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Namespace)
 	return secrApi.Delete(c.Space.Spec.HttpCertSecretName,
 		&metav1.DeleteOptions{})
 }
@@ -733,7 +729,7 @@ func (c *SpaceRuntime) deleteTcpCertAndCa() error {
 	if !c.Space.Spec.DeleteTcpCertAndCaSecretAfterCopy {
 		return nil
 	}
-	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
+	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Namespace)
 	return secrApi.Delete(c.Space.Spec.TcpCertAndCaSecretName,
 		&metav1.DeleteOptions{})
 }
@@ -744,7 +740,7 @@ func (c *SpaceRuntime) getTcpCertAndCa() (*v1.Secret, error) {
 	if c.Space.Spec.TcpCertAndCaSecretName == "" {
 		return nil, nil
 	}
-	secrApi := c.kubeApi.CoreV1().Secrets(c.namespace)
+	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Namespace)
 	return secrApi.Get(c.Space.Spec.TcpCertAndCaSecretName, metav1.GetOptions{})
 }
 

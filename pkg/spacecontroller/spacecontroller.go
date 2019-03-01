@@ -44,7 +44,6 @@ type Controller struct {
 	apiHost string
 	extensionsApi apiextensionsclient.Interface
 	kubeApi kubernetes.Interface
-	namespace string
 	waitApps sync.WaitGroup
 	garbageCollectNamespaces bool
 }
@@ -97,7 +96,6 @@ func (spcInfo *SpaceInfo) Update(item watcher.Item)  {
 // ----------------------------------------------------------------------------
 
 func New(
-	namespace string,
 	clustConfig *restclient.Config,
 	kubeApi *kubernetes.Clientset,
 ) *Controller {
@@ -108,7 +106,6 @@ func New(
 		apiHost: clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
 		kubeApi: kubeApi,
-		namespace: namespace,
 	}
 }
 
@@ -138,7 +135,7 @@ func (c *Controller) Run() error {
 	}()
 
 	wl := watcher.CreateWatchLoop(fmt.Sprintf("spaces-in-%s",
-		c.namespace), c, make(chan interface{}))
+		"all-namespaces"), c, make(chan interface{}))
 	return wl.Run()
 }
 
@@ -151,7 +148,7 @@ func (c *Controller) PeriodicTask(itemMap map[string]watcher.ManagedItem) {
 	// Dangerous. Don't enable garbageCollectNamespaces unless you know what
 	// you're doing. Can lead to accidental namespace deletion if more than
 	// one space controller is running.
-	space.Collect(c.kubeApi, c.namespace, c.log, func(name string) bool {
+	space.Collect(c.kubeApi, c.log, func(name string) bool {
 		_, ok := itemMap[name]
 		return ok
 	})
@@ -164,7 +161,6 @@ func (c *Controller) StartWatchRequest(watchVersion string) (*http.Response, err
 	httpClient := restIf.(*rest.RESTClient).Client
 	return k8sutil.WatchSpaces(
 		c.apiHost,
-		c.namespace,
 		httpClient,
 		watchVersion,
 	)
@@ -175,7 +171,7 @@ func (c *Controller) StartWatchRequest(watchVersion string) (*http.Response, err
 func (c *Controller) InitItem(item watcher.Item) watcher.ManagedItem {
 	wrapped := item.(*spaceWrapper)
 	spc := wrapped.space
-	newSpaceRt := space.New(*spc, c.kubeApi, c.namespace)
+	newSpaceRt := space.New(*spc, c.kubeApi)
 	var appCtrl *appcontroller.Controller
 	if newSpaceRt.Status.Phase == spec.SpacePhaseActive {
 		c.log.Infof("starting app controller for %s", spc.Name)
@@ -232,8 +228,7 @@ func (sw *spaceWrapper) Name() string {
 // ----------------------------------------------------------------------------
 
 func (ctl *Controller) GetItemList() (rv string, items []watcher.Item, err error) {
-	spcList, err := k8sutil.GetSpaceList(
-		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
+	spcList, err := k8sutil.GetSpaceList(ctl.kubeApi.CoreV1().RESTClient())
 	if err != nil {
 		return
 	}

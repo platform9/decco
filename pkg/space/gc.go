@@ -8,7 +8,6 @@ import (
 )
 
 func Collect(kubeApi kubernetes.Interface,
-	nsOfSpaceRsc string,
 	log *logrus.Entry,
 	isKnownSpace func(name string) bool) {
 
@@ -16,7 +15,7 @@ func Collect(kubeApi kubernetes.Interface,
 	nsApi := kubeApi.CoreV1().Namespaces()
 	nses, err := nsApi.List(
 		meta_v1.ListOptions{
-			LabelSelector: "app=decco,decco-space-rsc-ns=" + nsOfSpaceRsc,
+			LabelSelector: "app=decco",
 		},
 	)
 	if err != nil {
