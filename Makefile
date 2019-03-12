@@ -15,6 +15,7 @@ DEFAULT_HTTP_EXE=$(DEFAULT_HTTP_STAGE_DIR)/decco-default-http
 
 GO_DEPS := $(GOSRC)/github.com/coreos/etcd-operator/pkg/util/retryutil \
 	$(GOSRC)/github.com/aws/aws-sdk-go \
+	$(GOSRC)/github.com/golang/glog \
 	$(GOSRC)/github.com/pborman/uuid \
 	$(GOSRC)/github.com/cenkalti/backoff \
 	$(GOSRC)/github.com/sirupsen/logrus \
