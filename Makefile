@@ -21,7 +21,8 @@ GO_DEPS := $(GOSRC)/github.com/coreos/etcd-operator/pkg/util/retryutil \
 	$(GOSRC)/github.com/sirupsen/logrus \
 	$(GOSRC)/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1 \
 	$(GOSRC)/k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset \
-	$(GOSRC)/k8s.io/federation/pkg/dnsprovider
+	$(GOSRC)/k8s.io/federation/pkg/dnsprovider \
+	$(GOSRC)/github.com/gogo/protobuf/proto
 
 # Override with your own Docker registry tag(s)
 OPERATOR_IMAGE_TAG ?= platform9/decco-operator:latest
