@@ -2,6 +2,7 @@ apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
   name: decco-operator
+  namespace: decco
 spec:
   replicas: 1
   template:
