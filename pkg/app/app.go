@@ -123,7 +123,6 @@ func (ar *AppRuntime) Delete() {
 		if err != nil {
 			log.Warnf("failed to delete job: %s", err)
 		}
-		return
 	} else {
 		deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
 		err := deployApi.Delete(ar.app.Name, &delOpts)
