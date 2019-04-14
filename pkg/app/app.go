@@ -101,14 +101,6 @@ func (ar *AppRuntime) Delete() {
 	log := ar.log.WithField("func", "Delete")
 	propPolicy := metav1.DeletePropagationBackground
 	delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
-	if ar.app.Spec.RunAsJob {
-		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
-		err := batchApi.Delete(ar.app.Name, &delOpts)
-		if err != nil {
-			log.Warnf("failed to delete job: %s", err)
-		}
-		return
-	}
 	for _, e := range ar.app.Spec.Endpoints {
 		svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
 		err := svcApi.Delete(e.Name, nil)
@@ -125,10 +117,19 @@ func (ar *AppRuntime) Delete() {
 				e.Name, err)
 		}
 	}
-	deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-	err := deployApi.Delete(ar.app.Name, &delOpts)
-	if err != nil {
-		log.Warnf("failed to delete deployment: %s", err)
+	if ar.app.Spec.RunAsJob {
+		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
+		err := batchApi.Delete(ar.app.Name, &delOpts)
+		if err != nil {
+			log.Warnf("failed to delete job: %s", err)
+		}
+		return
+	} else {
+		deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
+		err := deployApi.Delete(ar.app.Name, &delOpts)
+		if err != nil {
+			log.Warnf("failed to delete deployment: %s", err)
+		}
 	}
 	ar.teardownPermissions()
 	// TCP (k8sniff) ingress resources will be
