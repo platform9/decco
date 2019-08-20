@@ -33,6 +33,7 @@ var (
 
 const (
 	defaultHttpInternalPort int32 = 8081
+	metricsPort int32 = 10254
 )
 
 type SpaceRuntime struct {
@@ -601,7 +602,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		},
 		{
 			Name: "nginx-ingress-metrics",
-			Port: 10254,
+			Port: metricsPort,
 			IsMetricsEndpoint: true,
 		},
 	}
@@ -651,6 +652,10 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 						Ports: []v1.ContainerPort{
 							{
 								ContainerPort: int32(443),
+							},
+							{
+								Name: "metrics",
+								ContainerPort: metricsPort,
 							},
 						},
 						Resources: v1.ResourceRequirements{
