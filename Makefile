@@ -6,7 +6,7 @@ GOPATH_DIR=$(BUILD_DIR)/gopath
 CLIENTGO=$(GOPATH_DIR)/src/k8s.io/client-go
 GOSRC=$(GOPATH_DIR)/src
 PF9_DIR=$(GOSRC)/github.com/platform9
-DECCO_SYMLINK=$(PF9_DIR)/decco
+DECCO_SYMLINKS=$(PF9_DIR)/decco
 OPERATOR_STAGE_DIR=$(BUILD_DIR)/operator
 DEFAULT_HTTP_STAGE_DIR=$(BUILD_DIR)/default-http
 GO_ENV_TARBALL=$(BUILD_DIR)/decco-go-env.tgz
@@ -45,8 +45,9 @@ $(PF9_DIR):| $(BUILD_DIR)
 $(GODEP):
 	go get github.com/tools/godep
 
-$(DECCO_SYMLINK):| $(PF9_DIR)
-	ln -s $(SRC_DIR) $@
+$(DECCO_SYMLINKS):| $(PF9_DIR)
+	for x in `find pkg -type f` ; do d=`dirname $$x`; f=`basename $$x`; \
+	mkdir -p $@/$$d; ln -s $(SRC_DIR)/$$x $@/$$x ; done
 
 $(KLOG): | $(GOPATH_DIR)
 	go get k8s.io/klog
@@ -54,6 +55,8 @@ $(KLOG): | $(GOPATH_DIR)
 
 $(CLIENTGO): | $(GODEP) $(GOPATH_DIR) $(KLOG)
 	go get k8s.io/client-go/...
+
+symlinks: | $(DECCO_SYMLINKS)
 
 clientgo: | $(CLIENTGO)
 
@@ -77,7 +80,7 @@ local-default-http:
 local-dns-test:
 	cd $(SRC_DIR)/cmd/dns-test && go build -o $${GOPATH}/bin/dns-test
 
-$(OPERATOR_EXE): $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(CLIENTGO) $(OPERATOR_STAGE_DIR) $(GO_DEPS) $(DECCO_SYMLINK)
+$(OPERATOR_EXE): $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(CLIENTGO) $(OPERATOR_STAGE_DIR) $(GO_DEPS) $(DECCO_SYMLINKS)
 	cd $(SRC_DIR)/cmd/operator && \
 	go build -o $(OPERATOR_EXE)
 
