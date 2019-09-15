@@ -3,7 +3,7 @@ package client
 import (
 	"fmt"
 	"k8s.io/client-go/rest"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/kubernetes/scheme"
 	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/appspec"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -21,7 +21,7 @@ func New(cfg *rest.Config) (*rest.RESTClient, *runtime.Scheme, error) {
 	config.GroupVersion = &spec.SchemeGroupVersion
 	config.APIPath = "/apis"
 	config.ContentType = runtime.ContentTypeJSON
-	config.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: serializer.NewCodecFactory(crScheme)}
+	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 
 	client, err := rest.RESTClientFor(&config)
 	if err != nil {
@@ -35,9 +35,7 @@ func NewAppClient(cfg *rest.Config) (*rest.RESTClient, error) {
 	config := *cfg
 	config.GroupVersion = &appspec.SchemeGroupVersion
 	config.APIPath = "/apis"
-	config.NegotiatedSerializer = serializer.DirectCodecFactory{
-		CodecFactory: appspec.Codecs,
-	}
+	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 	restCli, err := rest.RESTClientFor(&config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create app rest client: %s", err)

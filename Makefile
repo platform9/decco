@@ -2,10 +2,11 @@
 SHELL := bash
 SRC_DIR=$(shell pwd)
 BUILD_DIR=$(SRC_DIR)/build
-GODEP=$(GOPATH)/bin/godep
-CLIENTGO=$(GOPATH)/src/k8s.io/client-go
-GOSRC=$(GOPATH)/src
-CLIENTGO_VERSION ?= v12.0.0
+GOPATH_DIR=$(BUILD_DIR)/gopath
+CLIENTGO=$(GOPATH_DIR)/src/k8s.io/client-go
+GOSRC=$(GOPATH_DIR)/src
+PF9_DIR=$(GOSRC)/github.com/platform9
+DECCO_SYMLINK=$(PF9_DIR)/decco
 OPERATOR_STAGE_DIR=$(BUILD_DIR)/operator
 DEFAULT_HTTP_STAGE_DIR=$(BUILD_DIR)/default-http
 GO_ENV_TARBALL=$(BUILD_DIR)/decco-go-env.tgz
@@ -13,42 +14,50 @@ OPERATOR_EXE=$(OPERATOR_STAGE_DIR)/decco-operator
 OPERATOR_IMAGE_MARKER=$(OPERATOR_STAGE_DIR)/image-marker
 DEFAULT_HTTP_EXE=$(DEFAULT_HTTP_STAGE_DIR)/decco-default-http
 
-GO_DEPS := $(GOSRC)/github.com/coreos/etcd-operator/pkg/util/retryutil \
+KLOG := $(GOSRC)/k8s.io/klog
+
+GO_DEPS := \
+	$(GOSRC)/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1 \
+	$(GOSRC)/k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset \
+	$(GOSRC)/github.com/coreos/etcd-operator/pkg/util/retryutil \
 	$(GOSRC)/github.com/aws/aws-sdk-go \
 	$(GOSRC)/github.com/golang/glog \
 	$(GOSRC)/github.com/pborman/uuid \
 	$(GOSRC)/github.com/cenkalti/backoff \
 	$(GOSRC)/github.com/sirupsen/logrus \
-	$(GOSRC)/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1 \
-	$(GOSRC)/k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset \
 	$(GOSRC)/k8s.io/federation/pkg/dnsprovider
 
 # Override with your own Docker registry tag(s)
 OPERATOR_IMAGE_TAG ?= platform9/decco-operator:latest
 DEFAULT_HTTP_IMAGE_TAG ?= platform9systems/decco-default-http
 
-.PHONY: gopath
+export GOPATH:=$(GOPATH_DIR)
 
-gopath:
-ifndef GOPATH
-	$(error GOPATH is undefined)
-endif
+$(BUILD_DIR):
+	mkdir -p $@
 
-$(BUILD_DIR): gopath
+$(GOPATH_DIR):| $(BUILD_DIR)
+	mkdir -p $@
+
+$(PF9_DIR):| $(BUILD_DIR)
 	mkdir -p $@
 
 $(GODEP):
 	go get github.com/tools/godep
 
-$(CLIENTGO): | $(GODEP)
-	go get k8s.io/client-go/...
-	cd $(CLIENTGO) && git checkout $(CLIENTGO_VERSION) && $(GODEP) restore ./...
+$(DECCO_SYMLINK):| $(PF9_DIR)
+	ln -s $(SRC_DIR) $@
 
-godep: $(GODEP)
+$(KLOG): | $(GOPATH_DIR)
+	go get k8s.io/klog
+	cd $@ && git checkout v0.4.0
+
+$(CLIENTGO): | $(GODEP) $(GOPATH_DIR) $(KLOG)
+	go get k8s.io/client-go/...
 
 clientgo: | $(CLIENTGO)
 
-$(GO_DEPS):
+$(GO_DEPS): $(GOPATH_DIR)
 	go get $(subst $(GOSRC)/,,$@)
 
 godeps: | $(GO_DEPS)
@@ -68,9 +77,7 @@ local-default-http:
 local-dns-test:
 	cd $(SRC_DIR)/cmd/dns-test && go build -o $${GOPATH}/bin/dns-test
 
-$(OPERATOR_EXE): $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(CLIENTGO) $(OPERATOR_STAGE_DIR) $(GO_DEPS)
-	rm -rf $(GOSRC)/k8s.io/apiextensions-apiserver/vendor
-	rm -rf $(GOSRC)/k8s.io/federation/vendor
+$(OPERATOR_EXE): $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(CLIENTGO) $(OPERATOR_STAGE_DIR) $(GO_DEPS) $(DECCO_SYMLINK)
 	cd $(SRC_DIR)/cmd/operator && \
 	go build -o $(OPERATOR_EXE)
 
