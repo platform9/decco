@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 )
 
 const (
@@ -32,7 +33,7 @@ var (
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
 	Scheme = runtime.NewScheme()
 	Codecs = serializer.NewCodecFactory(Scheme)
-	// AddToScheme   = SchemeBuilder.AddToScheme
+//	AddToScheme   = SchemeBuilder.AddToScheme
 	SchemeGroupVersion = schema.GroupVersion{Group: groupName, Version: "v1beta2"}
 	CRDName            = CRDResourcePlural + "." + groupName
 )
@@ -47,5 +48,5 @@ func addKnownTypes(s *runtime.Scheme) error {
 }
 
 func init() {
-	SchemeBuilder.AddToScheme(Scheme)
+	utilruntime.Must(SchemeBuilder.AddToScheme(Scheme))
 }
