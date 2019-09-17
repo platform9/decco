@@ -33,7 +33,6 @@ var (
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
 	Scheme = runtime.NewScheme()
 	Codecs = serializer.NewCodecFactory(Scheme)
-//	AddToScheme   = SchemeBuilder.AddToScheme
 	SchemeGroupVersion = schema.GroupVersion{Group: groupName, Version: "v1beta2"}
 	CRDName            = CRDResourcePlural + "." + groupName
 )
