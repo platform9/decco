@@ -86,7 +86,8 @@ $(OPERATOR_EXE): $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(CLIENTGO
 
 $(GO_ENV_TARBALL): $(OPERATOR_EXE)
 	export TMP_TARBALL=$(shell mktemp --tmpdir gopath.XXX.tgz) && \
-	tar cfz $${TMP_TARBALL} -C $(GOPATH) . && \
+	# include symlink targets in tarball, this can fail on some files, ignore errors \
+	tar cfz $${TMP_TARBALL} -h --ignore-failed-read -C $(GOPATH) . &> /dev/null || true && \
 	mv $${TMP_TARBALL} $@
 
 tarball: $(GO_ENV_TARBALL)
