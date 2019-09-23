@@ -1,0 +1,13 @@
+version: "2"
+domain: platform9.com
+repo: github.com/platform9/decco-operator
+resources:
+- group: decco
+  version: v1beta3
+  kind: Space
+- group: decco
+  version: v1beta3
+  kind: Manifest
+- group: decco
+  version: v1beta3
+  kind: App

@@ -1,0 +1,8 @@
+apiVersion: decco.platform9.com/v1beta3
+kind: Space
+metadata:
+  name: space-sample
+spec:
+  manifest:
+  - name: pf9-qbert
+    release: v3.10.0

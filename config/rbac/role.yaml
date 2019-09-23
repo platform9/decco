@@ -1,0 +1,68 @@
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - decco.platform9.com
+  resources:
+  - apps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - decco.platform9.com
+  resources:
+  - apps/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - decco.platform9.com
+  resources:
+  - manifests
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - decco.platform9.com
+  resources:
+  - manifests/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - decco.platform9.com
+  resources:
+  - spaces
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - decco.platform9.com
+  resources:
+  - spaces/status
+  verbs:
+  - get
+  - update
+  - patch

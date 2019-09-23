@@ -1,0 +1,7 @@
+apiVersion: decco.platform9.com/v1beta3
+kind: Manifest
+metadata:
+  name: manifest-sample
+spec:
+  apps:
+  - name: pf9-qbert

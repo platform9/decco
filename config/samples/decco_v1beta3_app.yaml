@@ -1,0 +1,18 @@
+apiVersion: decco.platform9.com/v1beta3
+kind: App
+metadata:
+  name: app-sample
+spec:
+  name: pf9-derp
+  virtualServiceSpec:
+    hosts:
+    - mongo.prod.svc.cluster.local
+    tcp:
+    - match:
+      - port: 27017
+      route:
+      - weight: 100
+        destination:
+          host: mongo.backup.svc.cluster.local
+          port:
+            number: 5555
