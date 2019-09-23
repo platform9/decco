@@ -18,3 +18,6 @@
 
 build/
 vendor/
+
+# Josh's dev environment stuff
+.aliases
