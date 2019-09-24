@@ -24,7 +24,7 @@ import (
 	// Imports lifted from cluster-api
 	"sigs.k8s.io/cluster-api/util/patch"
 
-	deccov1beta3 "github.com/platform9/decco-operator/api/v1beta3"
+	deccov1beta3 "github.com/platform9/decco/api/v1beta3"
 )
 
 // ManifestReconciler reconciles a Manifest object
@@ -36,6 +36,7 @@ type ManifestReconciler struct {
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=manifests,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=manifests/status,verbs=get;update;patch
 
+// Reconcile for this CRD may be removed cuz I'm not sure Manifest is necessary
 func (r *ManifestReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 	log := r.Log.WithValues("manifest", req.NamespacedName)

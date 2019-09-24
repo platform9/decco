@@ -26,7 +26,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"sigs.k8s.io/cluster-api/util/patch"
 
-	deccov1beta3 "github.com/platform9/decco-operator/api/v1beta3"
+	deccov1beta3 "github.com/platform9/decco/api/v1beta3"
 )
 
 // SpaceReconciler reconciles a Space object
@@ -38,6 +38,7 @@ type SpaceReconciler struct {
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=spaces,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=spaces/status,verbs=get;update;patch
 
+// Reconcile handles all Space events
 func (r *SpaceReconciler) Reconcile(req ctrl.Request) (_ ctrl.Result, reconcileError error) {
 	// func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()

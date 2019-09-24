@@ -1,4 +1,4 @@
-module github.com/platform9/decco-operator
+module github.com/platform9/decco
 
 go 1.12
 

@@ -16,6 +16,7 @@ limitations under the License.
 package v1beta3
 
 import (
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	istioKnative "knative.dev/pkg/apis/istio/v1alpha3"
 )
@@ -27,11 +28,13 @@ import (
 type AppSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	Name string `json:"name"`
 
-	// https://github.com/istio/istio/blob/cda495f5093cc917d80f25686c2a16dffcbe85dd/pilot/pkg/networking/core/v1alpha3/gateway_test.go#L844
+	// PodSpec is the spec for a Pod.
+	PodSpec *v1.PodSpec `json:"podSpec"`
+
 	// VirtualService in Istio. Certain fields will be ignored since some of the fields will be deterimined by what Space
 	// the App is being deployed into.
+	// https://github.com/istio/istio/blob/cda495f5093cc917d80f25686c2a16dffcbe85dd/pilot/pkg/networking/core/v1alpha3/gateway_test.go#L844
 	VirtualServiceSpec *istioKnative.VirtualServiceSpec `json:"virtualServiceSpec"`
 }
 

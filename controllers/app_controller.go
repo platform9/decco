@@ -24,7 +24,7 @@ import (
 	// Imports lifted from cluster-api
 	_ "sigs.k8s.io/cluster-api/util/patch"
 
-	deccov1beta3 "github.com/platform9/decco-operator/api/v1beta3"
+	deccov1beta3 "github.com/platform9/decco/api/v1beta3"
 )
 
 // AppReconciler reconciles a App object
@@ -36,6 +36,7 @@ type AppReconciler struct {
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=apps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=apps/status,verbs=get;update;patch
 
+// Reconcile handles all App events
 func (r *AppReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 	log := r.Log.WithValues("app", req.NamespacedName)

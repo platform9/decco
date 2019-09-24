@@ -19,8 +19,8 @@ import (
 	"flag"
 	"os"
 
-	deccov1beta3 "github.com/platform9/decco-operator/api/v1beta3"
-	"github.com/platform9/decco-operator/controllers"
+	deccov1beta3 "github.com/platform9/decco/api/v1beta3"
+	"github.com/platform9/decco/controllers"
 	"k8s.io/apimachinery/pkg/runtime"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"

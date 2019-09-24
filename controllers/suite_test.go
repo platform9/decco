@@ -22,7 +22,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	deccov1beta3 "github.com/platform9/decco-operator/api/v1beta3"
+	deccov1beta3 "github.com/platform9/decco/api/v1beta3"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
