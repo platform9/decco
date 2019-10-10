@@ -603,7 +603,6 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		{
 			Name: "nginx-ingress-metrics",
 			Port: metricsPort,
-			IsMetricsEndpoint: true,
 		},
 	}
 	for _, epName := range c.Space.Spec.PrivateIngressControllerTcpEndpoints {
