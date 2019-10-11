@@ -603,15 +603,12 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		{
 			Name: "nginx-ingress-metrics",
 			Port: metricsPort,
-			IsMetricsEndpoint: true,
 		},
 	}
 	for _, epName := range c.Space.Spec.PrivateIngressControllerTcpEndpoints {
-		baseTlsListenPort += 1
 		endpoints = append(endpoints, appspec.EndpointSpec{
 			Name: "nginx-ingress-sni-" + epName,
 			Port: 80,
-			TlsListenPort: baseTlsListenPort,   // use stunnel beginning at 444
 			SniHostname: epName + "." + hostName,
 		})
 	}
@@ -621,6 +618,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		},
 		Spec: appspec.AppSpec {
 			InitialReplicas: 1,
+			FirstEndpointListenPort: baseTlsListenPort + 1, // 'cause nginx itself uses 443
 			PodSpec: v1.PodSpec{
 				ServiceAccountName: "nginx-ingress",
 				Containers: []v1.Container{

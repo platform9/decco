@@ -445,7 +445,11 @@ func (ar *AppRuntime) createStunnel(
 		destHostAndPort := fmt.Sprintf("%d", tgtPort)
 		tgtPort = e.TlsListenPort
 		if tgtPort == 0 {
-			tgtPort = k8sutil.TlsPort + int32(*stunnelIndex)
+			basePort := ar.app.Spec.FirstEndpointListenPort
+			if basePort == 0 {
+				basePort = k8sutil.TlsPort
+			}
+			tgtPort = basePort + int32(*stunnelIndex)
 		}
 		containerName := fmt.Sprintf("stunnel-ingress-%d", *stunnelIndex)
 		outVols, outCntrs = k8sutil.InsertStunnel(
