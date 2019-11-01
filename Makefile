@@ -27,8 +27,17 @@ GO_DEPS := \
 	$(GOSRC)/github.com/sirupsen/logrus \
 	$(GOSRC)/k8s.io/federation/pkg/dnsprovider
 
+IMAGE_NAME := decco-operator
+
 # Override with your own Docker registry tag(s)
-OPERATOR_IMAGE_TAG ?= platform9/decco-operator:latest
+REPO_TAG ?= platform9/$(IMAGE_NAME)
+VERSION ?= 1.0.0
+BUILD_NUMBER ?= 000
+BUILD_ID := $(BUILD_NUMBER)
+IMAGE_TAG ?= $(VERSION)-$(BUILD_ID)
+FULL_TAG := $(REPO_TAG):$(IMAGE_TAG)
+TAG_FILE := $(BUILD_DIR)/container-full-tag
+
 DEFAULT_HTTP_IMAGE_TAG ?= platform9systems/decco-default-http
 
 export GOPATH:=$(GOPATH_DIR)
@@ -117,14 +126,24 @@ operator-image: $(OPERATOR_IMAGE_MARKER)
 
 $(OPERATOR_IMAGE_MARKER): $(OPERATOR_EXE)
 	cp -f support/operator/Dockerfile $(OPERATOR_STAGE_DIR)
-	docker build --tag $(OPERATOR_IMAGE_TAG) $(OPERATOR_STAGE_DIR)
+	docker build --tag $(FULL_TAG) $(OPERATOR_STAGE_DIR)
 	touch $@
 
 operator-push: $(OPERATOR_IMAGE_MARKER)
-	docker push $(OPERATOR_IMAGE_TAG) && \
-	docker rmi $(OPERATOR_IMAGE_TAG) && \
+	(docker push $(FULL_TAG) || \
+		(echo -n $${DOCKER_PASSWORD} | docker login --password-stdin -u $${DOCKER_USERNAME} && \
+		docker push $(FULL_TAG) && docker logout))
+	docker rmi $(FULL_TAG)
 	rm -f $(OPERATOR_IMAGE_MARKER)
 
 default-http-image: $(DEFAULT_HTTP_EXE)
 	docker build --tag $(DEFAULT_HTTP_IMAGE_TAG) -f support/default-http/Dockerfile .
 	docker push $(DEFAULT_HTTP_IMAGE_TAG)
+
+$(TAG_FILE): operator-push
+	echo -n $(FULL_TAG) > $@
+
+container-full-tag: $(TAG_FILE)
+
+clean-tag-file:
+	rm -f $(TAG_FILE)
