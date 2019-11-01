@@ -17,9 +17,9 @@ spec:
     spec:
       serviceAccountName: k8sniff
       containers:
-      - image: platform9systems/k8sniff:106
+      - image: ${K8SNIFF_IMAGE_TAG}
         name: k8sniff
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         command:
           - /bin/sh
           - -c

@@ -12,8 +12,8 @@ spec:
       serviceAccountName: decco-operator
       containers:
       - name: decco-operator
-        image: platform9/decco-operator
-        imagePullPolicy: Always
+        image: ${DECCO_OPERATOR_IMAGE_TAG}
+        imagePullPolicy: IfNotPresent
         env:
         - name: MY_POD_NAMESPACE
           valueFrom:
