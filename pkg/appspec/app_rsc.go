@@ -134,9 +134,6 @@ func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
 		if e.Port == 0 {
 			return ErrInvalidPort
 		}
-		if e.HttpPath == "/" {
-			return ErrInvalidUrlPath
-		}
 		if e.HttpPath == "" && tcpCertAndCaSecretName == "" {
 			return ErrNoTcpCert
 		}
