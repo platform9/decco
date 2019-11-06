@@ -215,11 +215,13 @@ func (c *SpaceRuntime) internalCreate() error {
 			return fmt.Errorf("failed to delete tcp cert and CA: %s", err)
 		}
 	}
-	if err = c.createHttpIngress(); err != nil {
-		return fmt.Errorf("failed to create http ingress: %s", err)
-	}
-	if err = c.createDefaultHttpDeploy(); err != nil {
-		return fmt.Errorf("failed to create default http dep: %s", err)
+	if c.Space.Spec.CreateDefaultHttpDeploymentAndIngress {
+		if err = c.createHttpIngress(); err != nil {
+			return fmt.Errorf("failed to create http ingress: %s", err)
+		}
+		if err = c.createDefaultHttpDeploy(); err != nil {
+			return fmt.Errorf("failed to create default http dep: %s", err)
+		}
 	}
 	if err = c.createDefaultHttpSvc(); err != nil {
 		return fmt.Errorf("failed to create default http svc: %s", err)

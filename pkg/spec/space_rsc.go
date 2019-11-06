@@ -84,6 +84,7 @@ type SpaceSpec struct {
 	VerboseIngressControllerLogging bool `json:"verboseIngressControllerLogging"`
 	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints"`
 	Permissions *SpacePermissions `json:permissions`
+	CreateDefaultHttpDeploymentAndIngress bool `json:createDefaultHttpDeploymentAndIngress`
 }
 
 func (c *SpaceSpec) Validate() error {
