@@ -13,6 +13,10 @@ GO_ENV_TARBALL=$(BUILD_DIR)/decco-go-env.tgz
 OPERATOR_EXE=$(OPERATOR_STAGE_DIR)/decco-operator
 OPERATOR_IMAGE_MARKER=$(OPERATOR_STAGE_DIR)/image-marker
 DEFAULT_HTTP_EXE=$(DEFAULT_HTTP_STAGE_DIR)/decco-default-http
+SPRINGBOARD_STAGE_DIR=$(BUILD_DIR)/springboard-stunnel
+SPRINGBOARD_EXE=$(SPRINGBOARD_STAGE_DIR)/springboard
+SPRINGBOARD_IMAGE_NAME := springboard-stunnel
+SPRINGBOARD_IMAGE_MARKER=$(SPRINGBOARD_STAGE_DIR)/image-marker
 
 KLOG := $(GOSRC)/k8s.io/klog
 
@@ -37,6 +41,9 @@ BUILD_ID := $(BUILD_NUMBER)
 IMAGE_TAG ?= $(VERSION)-$(BUILD_ID)
 FULL_TAG := $(REPO_TAG):$(IMAGE_TAG)
 TAG_FILE := $(BUILD_DIR)/container-full-tag
+
+SPRINGBOARD_REPO_TAG ?= platform9/$(SPRINGBOARD_IMAGE_NAME)
+SPRINGBOARD_FULL_TAG := $(SPRINGBOARD_REPO_TAG):$(IMAGE_TAG)
 
 DEFAULT_HTTP_IMAGE_TAG ?= platform9systems/decco-default-http
 
@@ -79,6 +86,26 @@ $(OPERATOR_STAGE_DIR):
 
 $(DEFAULT_HTTP_STAGE_DIR):
 	mkdir -p $@
+
+$(SPRINGBOARD_STAGE_DIR):
+	mkdir -p $@
+
+$(SPRINGBOARD_EXE): | $(SPRINGBOARD_STAGE_DIR)
+	cd $(SRC_DIR)/cmd/springboard && go build -o $@
+
+$(SPRINGBOARD_IMAGE_MARKER): $(SPRINGBOARD_EXE)
+	cp -f $(SRC_DIR)/support/stunnel-instrumented-with-springboard/* $(SPRINGBOARD_STAGE_DIR)
+	docker build --tag $(SPRINGBOARD_FULL_TAG) $(SPRINGBOARD_STAGE_DIR)
+	touch $@
+
+springboard-image: $(SPRINGBOARD_IMAGE_MARKER)
+
+springboard-push: $(SPRINGBOARD_IMAGE_MARKER)
+	(docker push $(SPRINGBOARD_FULL_TAG) || \
+		(echo -n $${DOCKER_PASSWORD} | docker login --password-stdin -u $${DOCKER_USERNAME} && \
+		docker push $(SPRINGBOARD_FULL_TAG) && docker logout))
+	docker rmi $(SPRINGBOARD_FULL_TAG)
+	rm -f $(SPRINGBOARD_IMAGE_MARKER)
 
 springboard:
 	cd $(SRC_DIR)/cmd/springboard && go build -o $(SRC_DIR)/support/stunnel-with-springboard/springboard
