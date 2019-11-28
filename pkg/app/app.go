@@ -680,6 +680,7 @@ func (ar *AppRuntime) createHttpIngress(e *spec.EndpointSpec) error {
 		ar.spaceSpec.EncryptHttp,
 		secName,
 		e.HttpLocalhostOnly,
+		e.AdditionalIngressAnnotations,
 	)
 }
 
@@ -708,6 +709,12 @@ func (ar *AppRuntime) createTcpIngress(
 	if hostName == "" {
 		hostName = e.Name + "." + ar.namespace + "." + ar.spaceSpec.DomainName
 	}
+	anno := make(map[string]string)
+	// Copy additional annotations. Note: this works if the source map is nil
+	for key, val := range e.AdditionalIngressAnnotations {
+		anno[key] = val
+	}
+	anno["kubernetes.io/ingress.class"] = "k8sniff"
 	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
 	ing := v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -716,9 +723,7 @@ func (ar *AppRuntime) createTcpIngress(
 				"decco-derived-from": "app",
 				"decco-app": ar.Name(),
 			},
-			Annotations: map[string]string {
-				"kubernetes.io/ingress.class": "k8sniff",
-			},
+			Annotations: anno,
 		},
 		Spec: v1beta1.IngressSpec{
 			Rules: []v1beta1.IngressRule{

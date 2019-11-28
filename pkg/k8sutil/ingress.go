@@ -21,10 +21,15 @@ func CreateHttpIngress(
 	encryptHttp bool,
 	secretName string,
 	localhostOnly bool,
+	additionalAnnotations map[string]string,
 ) error {
 	ingApi := kubeApi.ExtensionsV1beta1().Ingresses(ns)
 	annotations := make(map[string]string)
-
+	// Copy over additional annotations.
+	// Note: this works even if additionalAnnotations is nil
+	for key, val := range additionalAnnotations{
+		annotations[key] = val
+	}
 	// temporary hack to work around nginx-to-stunnel timeouts during heavy load
 	annotations["nginx.ingress.kubernetes.io/proxy-connect-timeout"] = "15"
 	// some services like caproxy sometimes take longer than a minute to respond
