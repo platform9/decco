@@ -407,6 +407,7 @@ func (c *SpaceRuntime) createHttpIngress() error {
 		c.Space.Spec.EncryptHttp,
 		c.Space.Spec.HttpCertSecretName,
 		false,
+		nil,
 	)
 }
 

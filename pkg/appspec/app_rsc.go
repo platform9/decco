@@ -124,6 +124,8 @@ type EndpointSpec struct {
 	DisableTlsTermination bool `json:"disableTlsTermination"`
 	DisableTcpClientTlsVerification bool   `json:"disableTcpClientTlsVerification"`
 	SniHostname string   `json:"sniHostname"` // optional SNI hostname override
+	// Optional ingress resource annotations
+	AdditionalIngressAnnotations map[string]string `json:"additionalIngressAnnotations,omitempty"`
 }
 
 // -----------------------------------------------------------------------------
