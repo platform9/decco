@@ -3,6 +3,7 @@ package k8sutil
 import (
 	"fmt"
 	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const TlsPort = 443
@@ -127,6 +128,16 @@ func InsertStunnel(
 				Name: volumeName,
 				ReadOnly: true,
 				MountPath: "/etc/stunnel/certs",
+			},
+		},
+		// stunnel has been observed to consume between 3 and 6 MB, so
+		// set request to 5 and limit to 10
+		Resources: v1.ResourceRequirements{
+			Requests: v1.ResourceList{
+				"memory": resource.MustParse("5Mi"),
+			},
+			Limits: v1.ResourceList{
+				"memory": resource.MustParse("10Mi"),
 			},
 		},
 	})
