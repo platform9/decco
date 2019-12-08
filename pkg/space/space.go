@@ -662,7 +662,10 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 						Resources: v1.ResourceRequirements{
 							Requests: v1.ResourceList{
 								"cpu": resource.MustParse("100m"),
-								"memory": resource.MustParse("32Mi"),
+								"memory": resource.MustParse("110Mi"),
+							},
+							Limits: v1.ResourceList{
+								"memory": resource.MustParse("150Mi"),
 							},
 						},
 					},
