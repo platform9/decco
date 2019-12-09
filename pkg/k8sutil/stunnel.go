@@ -131,12 +131,15 @@ func InsertStunnel(
 			},
 		},
 		// stunnel has been observed to consume between 3 and 6 MB, so
-		// set request to 5 and limit to 10
+		// set memory request to 5 and limit to 10.
+		// Also limit cpu usage to 1 whole CPU
 		Resources: v1.ResourceRequirements{
 			Requests: v1.ResourceList{
+				"cpu": resource.MustParse("15m"),
 				"memory": resource.MustParse("5Mi"),
 			},
 			Limits: v1.ResourceList{
+				"cpu": resource.MustParse("1000m"),
 				"memory": resource.MustParse("10Mi"),
 			},
 		},

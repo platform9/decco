@@ -665,6 +665,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 								"memory": resource.MustParse("110Mi"),
 							},
 							Limits: v1.ResourceList{
+								"cpu": resource.MustParse("1000m"),
 								"memory": resource.MustParse("150Mi"),
 							},
 						},
