@@ -135,7 +135,7 @@ func InsertStunnel(
 		// Also limit cpu usage to 1 whole CPU
 		Resources: v1.ResourceRequirements{
 			Requests: v1.ResourceList{
-				"cpu": resource.MustParse("15m"),
+				"cpu": resource.MustParse("5m"),
 				"memory": resource.MustParse("5Mi"),
 			},
 			Limits: v1.ResourceList{
