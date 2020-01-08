@@ -377,6 +377,12 @@ func (c *SpaceRuntime) createNamespace() error {
 	ns := v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: c.Space.Name,
+			Annotations: map[string]string {
+				// https://linkerd.io/2/features/protocol-detection/#configuring-protocol-detection
+				// Skip linkerd proxy when making outbound connections to mysql
+				// Annotating the space just in case someone forgets it in their deployment while manually testing :)
+				"config.linkerd.io/skip-outbound-ports": "3306",
+			},
 			Labels: map[string]string {
 				"app": "decco",
 				"decco-space-rsc-ns": c.Space.Namespace,
@@ -393,6 +399,7 @@ func (c *SpaceRuntime) createNamespace() error {
 
 // -----------------------------------------------------------------------------
 
+// TODO: Remove
 func (c *SpaceRuntime) createHttpIngress() error {
 	hostName := c.Space.Name + "." + c.Space.Spec.DomainName
 	defaultHttpSvcPort := int32(80)
@@ -418,6 +425,7 @@ func (c *SpaceRuntime) createHttpIngress() error {
 
 // -----------------------------------------------------------------------------
 
+// TODO: Remove
 func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.Space.Name)
 	var volumes []v1.Volume
@@ -516,6 +524,7 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 
 // -----------------------------------------------------------------------------
 
+// TODO: Remove
 func (c *SpaceRuntime) createPrivateIngressController() error {
 	if c.Space.Spec.DisablePrivateIngressController {
 		return nil
@@ -698,6 +707,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 
 // -----------------------------------------------------------------------------
 
+// TODO: Remove
 func (c *SpaceRuntime) createDefaultHttpSvc() error {
 	svcApi := c.kubeApi.CoreV1().Services(c.Space.Name)
 	svcPort := int32(80)
