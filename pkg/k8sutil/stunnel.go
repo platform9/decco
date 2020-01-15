@@ -136,7 +136,7 @@ func InsertStunnel(
 		Resources: v1.ResourceRequirements{
 			Requests: v1.ResourceList{
 				"cpu": resource.MustParse("5m"),
-				"memory": resource.MustParse("5Mi"),
+				"memory": resource.MustParse("10Mi"),
 			},
 			Limits: v1.ResourceList{
 				"cpu": resource.MustParse("1000m"),
