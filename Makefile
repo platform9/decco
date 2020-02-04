@@ -76,7 +76,7 @@ $(KLOG): | $(GOPATH_DIR)
 $(CLIENTGO): | $(GODEP) $(GOPATH_DIR) $(KLOG) $(OPENAPIV2_SYMLINK)
 	go get k8s.io/client-go/...
 
-$(OPENAPIV2_SYMLINK):
+$(OPENAPIV2_SYMLINK): $(GO_DEPS)
 	cd $(GOSRC)/github.com/googleapis/gnostic && ln -s openapiv2 OpenAPIv2
 
 openapi_symlink: $(OPENAPIV2_SYMLINK)
