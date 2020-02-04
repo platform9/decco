@@ -1,6 +1,7 @@
 package appcontroller
 
 import (
+	"context"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/watcher"
 	"k8s.io/client-go/kubernetes"
@@ -112,11 +113,12 @@ func (ctl *Controller) watchNamespaceInternal(
 	}
 	log.Infof("watching namespace at rv %s", resourceVersion)
 	for {
+		ctx := context.Background()
 		w, err := restClient.
 			Get().
 			Resource("namespaces").
 			VersionedParams(&listOpts, scheme.ParameterCodec).
-			Watch()
+			Watch(ctx)
 
 		if err != nil {
 			return false, fmt.Errorf("failed to watch namespace: %s", err)

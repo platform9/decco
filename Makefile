@@ -29,7 +29,10 @@ GO_DEPS := \
 	$(GOSRC)/github.com/pborman/uuid \
 	$(GOSRC)/github.com/cenkalti/backoff \
 	$(GOSRC)/github.com/sirupsen/logrus \
+	$(GOSRC)/github.com/googleapis/gnostic \
 	$(GOSRC)/k8s.io/federation/pkg/dnsprovider
+
+OPENAPIV2_SYMLINK := $(GOSRC)/github.com/googleapis/gnostic/OpenAPIv2
 
 IMAGE_NAME := decco-operator
 
@@ -69,8 +72,14 @@ $(KLOG): | $(GOPATH_DIR)
 	go get k8s.io/klog
 	cd $@ && git checkout v0.4.0
 
-$(CLIENTGO): | $(GODEP) $(GOPATH_DIR) $(KLOG)
+
+$(CLIENTGO): | $(GODEP) $(GOPATH_DIR) $(KLOG) $(OPENAPIV2_SYMLINK)
 	go get k8s.io/client-go/...
+
+$(OPENAPIV2_SYMLINK):
+	cd $(GOSRC)/github.com/googleapis/gnostic && ln -s openapiv2 OpenAPIv2
+
+openapi_symlink: $(OPENAPIV2_SYMLINK)
 
 symlinks: | $(DECCO_SYMLINKS)
 
@@ -80,6 +89,8 @@ $(GO_DEPS): $(GOPATH_DIR)
 	go get $(subst $(GOSRC)/,,$@)
 
 godeps: | $(GO_DEPS)
+
+klog: | $(KLOG)
 
 $(OPERATOR_STAGE_DIR):
 	mkdir -p $@

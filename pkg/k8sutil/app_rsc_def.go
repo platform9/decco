@@ -15,6 +15,7 @@
 package k8sutil
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -36,8 +37,8 @@ func WatchApps(host string, ns string, httpClient *http.Client, resourceVersion 
 
 func GetAppList(restcli rest.Interface,
 	ns string) (*spec.AppList, error) {
-
-	b, err := restcli.Get().RequestURI(listAppsURI(ns)).DoRaw()
+	ctx := context.Background()
+	b, err := restcli.Get().RequestURI(listAppsURI(ns)).DoRaw(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +68,8 @@ func UpdateAppCustRsc(
 		ns,
 		spec.CRDResourcePlural,
 		c.Name)
-	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw()
+	ctx := context.Background()
+	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw(ctx)
 	if err != nil {
 		return spec.App{}, err
 	}

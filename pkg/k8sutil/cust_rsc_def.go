@@ -15,6 +15,7 @@
 package k8sutil
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -35,8 +36,8 @@ func WatchSpaces(host string, httpClient *http.Client, resourceVersion string) (
 }
 
 func GetSpaceList(restcli rest.Interface) (*spec.SpaceList, error) {
-
-	b, err := restcli.Get().RequestURI(listSpacesURI()).DoRaw()
+	ctx := context.Background()
+	b, err := restcli.Get().RequestURI(listSpacesURI()).DoRaw(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +64,8 @@ func UpdateSpaceCustRsc(
 		c.Namespace,
 		spec.CRDResourcePlural,
 		c.Name)
-	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw()
+	ctx := context.Background()
+	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw(ctx)
 	if err != nil {
 		return spec.Space{}, err
 	}

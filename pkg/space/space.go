@@ -1,6 +1,7 @@
 package space
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -677,9 +678,10 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 	}
 	var rtObj runtime.Object
 	rtObj = &app
+	ctx := context.Background()
 	err = restCli.Post().Namespace(c.Space.Name).
 		Resource(appspec.CRDResourcePlural).
-		Body(rtObj).Do().Into(nil)
+		Body(rtObj).Do(ctx).Into(nil)
 	return err
 }
 
