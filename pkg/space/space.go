@@ -616,6 +616,12 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 			SniHostname: epName + "." + hostName,
 		})
 	}
+	ingressControllerImage := os.Getenv("INGRESS_CONTROLLER_IMAGE")
+	if ingressControllerImage == "" {
+		// default to a manually built image that has a fix for CORE-843
+		ingressControllerImage = "platform9/ingress-nginx:0.19.0-006"
+	}
+
 	app := appspec.App{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "nginx-ingress",
@@ -649,8 +655,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 								},
 							},
 						},
-						//Image: "quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.19.0",
-						Image: "platform9systems/nginx-ingress-controller:106",
+						Image: ingressControllerImage,
 						Ports: []v1.ContainerPort{
 							{
 								ContainerPort: int32(443),
@@ -663,11 +668,11 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 						Resources: v1.ResourceRequirements{
 							Requests: v1.ResourceList{
 								"cpu": resource.MustParse("100m"),
-								"memory": resource.MustParse("110Mi"),
+								"memory": resource.MustParse("200Mi"),
 							},
 							Limits: v1.ResourceList{
 								"cpu": resource.MustParse("1000m"),
-								"memory": resource.MustParse("150Mi"),
+								"memory": resource.MustParse("200Mi"),
 							},
 						},
 					},
