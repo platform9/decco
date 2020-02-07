@@ -83,6 +83,8 @@ type SpaceSpec struct {
 	DisablePrivateIngressController bool `json:"disablePrivateIngressController"`
 	VerboseIngressControllerLogging bool `json:"verboseIngressControllerLogging"`
 	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints"`
+	// Optional suffix to append to host names of private ingress controller's tcp endpoints
+	PrivateIngressControllerTcpHostnameSuffix string `json:"privateIngressControllerTcpHostnameSuffix"`
 	Permissions *SpacePermissions `json:permissions`
 	CreateDefaultHttpDeploymentAndIngress bool `json:createDefaultHttpDeploymentAndIngress`
 }

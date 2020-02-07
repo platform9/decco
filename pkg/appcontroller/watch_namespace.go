@@ -43,7 +43,7 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 	nsApi := kubeApi.CoreV1().Namespaces()
 	restClient := kubeApi.CoreV1().RESTClient()
 	sleepSeconds := 0
-
+	ctx := context.Background()
 	for {
 		select {
 		case <- ctl.stopCh:
@@ -57,7 +57,7 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 		}
 		sleepSeconds += retryDelayIncrement
 		fs := fmt.Sprintf("metadata.name=%s", ctl.namespace)
-		nsList, err := nsApi.List(meta_v1.ListOptions{FieldSelector: fs})
+		nsList, err := nsApi.List(ctx, meta_v1.ListOptions{FieldSelector: fs})
 		if err != nil {
 			log.Warnf("failed to list namespaces %s", err)
 			continue
