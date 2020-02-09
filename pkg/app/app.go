@@ -272,7 +272,7 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 			},
 		}
 		saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
-		_, err := saApi.Create(ctx, &sa)
+		_, err := saApi.Create(ctx, &sa, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to create svcaccount: %s", err)
 		}
@@ -283,7 +283,7 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 		Rules: rules,
 	}
 	rolesApi := ar.kubeApi.RbacV1().Roles(ar.namespace)
-	_, err := rolesApi.Create(ctx, &role)
+	_, err := rolesApi.Create(ctx, &role, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create role: %s", err)
 	}
@@ -303,7 +303,7 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 		},
 	}
 	rbApi := ar.kubeApi.RbacV1().RoleBindings(ar.namespace)
-	_, err = rbApi.Create(ctx, &rb)
+	_, err = rbApi.Create(ctx, &rb, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create role binding: %s", err)
 	}
@@ -547,7 +547,7 @@ func (ar *AppRuntime) createDeployment(
 				Template: podTemplateSpec,
 				BackoffLimit: &backoffLimit,
 			},
-		})
+		}, metav1.CreateOptions{})
 		return err
 	} else {
 		depSpec := &v1beta1.Deployment{
@@ -563,7 +563,7 @@ func (ar *AppRuntime) createDeployment(
 			},
 		}
 		depApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-		_, err := depApi.Create(ctx, depSpec)
+		_, err := depApi.Create(ctx, depSpec, metav1.CreateOptions{})
 		return err
 	}
 }
@@ -608,7 +608,7 @@ func (ar *AppRuntime) createSvc(
 				"decco-app": appName,
 			},
 		},
-	})
+	}, metav1.CreateOptions{})
 	return err
 }
 
@@ -759,6 +759,6 @@ func (ar *AppRuntime) createTcpIngress(
 		},
 	}
 	ctx := context.Background()
-	_, err := ingApi.Create(ctx, &ing)
+	_, err := ingApi.Create(ctx, &ing, metav1.CreateOptions{})
 	return err
 }

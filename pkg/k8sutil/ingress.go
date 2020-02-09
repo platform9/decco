@@ -90,6 +90,6 @@ func CreateHttpIngress(
 		},
 	}
 	ctx := context.Background()
-	_, err := ingApi.Create(ctx, &ing)
+	_, err := ingApi.Create(ctx, &ing, metav1.CreateOptions{})
 	return err
 }

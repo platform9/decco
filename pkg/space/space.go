@@ -250,7 +250,7 @@ func (c * SpaceRuntime) createPermissions() error {
 		Rules: perms.Rules,
 	}
 	ctx := context.Background()
-	_, err := rolesApi.Create(ctx, &role)
+	_, err := rolesApi.Create(ctx, &role, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create space-creator role: %s", err)
 	}
@@ -266,7 +266,7 @@ func (c * SpaceRuntime) createPermissions() error {
 		},
 	}
 	rbApi := c.kubeApi.RbacV1().RoleBindings(c.Space.Name)
-	_, err = rbApi.Create(ctx, &rb)
+	_, err = rbApi.Create(ctx, &rb, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create space-creator role binding: %s", err)
 	}
@@ -310,7 +310,7 @@ func (c * SpaceRuntime) createNetPolicy() error {
 	}
 	netApi := c.kubeApi.NetworkingV1().NetworkPolicies(c.Space.Name)
 	ctx := context.Background()
-	_, err := netApi.Create(ctx, &np)
+	_, err := netApi.Create(ctx, &np, metav1.CreateOptions{})
 	return err
 }
 
@@ -387,7 +387,7 @@ func (c *SpaceRuntime) createNamespace() error {
 		ns.ObjectMeta.Labels["decco-project"] = c.Space.Spec.Project
 	}
 	ctx := context.Background()
-	_, err := nsApi.Create(ctx, &ns)
+	_, err := nsApi.Create(ctx, &ns, metav1.CreateOptions{})
 	return err
 }
 
@@ -510,7 +510,7 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 				},
 			},
 		},
-	})
+	}, metav1.CreateOptions{})
 	return err
 }
 
@@ -526,7 +526,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "nginx-ingress",
 		},
-	})
+	}, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create nginx-ingress svc acct: %s",
 			err)
@@ -559,7 +559,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 				Verbs: []string {"get", "watch", "list"},
 			},
 		},
-	})
+	}, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create nginx-controller role: %s",
 			err)
@@ -579,7 +579,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 			Kind: "Role",
 			Name: "ingress-controller",
 		},
-	})
+	}, metav1.CreateOptions{})
 
 	hostName := c.Space.Name + "." + c.Space.Spec.DomainName
 	config := k8sutil.GetClusterConfigOrDie()
@@ -725,7 +725,7 @@ func (c *SpaceRuntime) createDefaultHttpSvc() error {
 				"app": "default-http",
 			},
 		},
-	})
+	}, metav1.CreateOptions{})
 	return err
 }
 
@@ -784,6 +784,6 @@ func (c *SpaceRuntime) copySecret(s *v1.Secret) error {
 	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Name)
 	ctx := context.Background()
-	_, err := secrApi.Create(ctx, &newCertSecret)
+	_, err := secrApi.Create(ctx, &newCertSecret, metav1.CreateOptions{})
 	return err
 }

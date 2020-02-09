@@ -98,7 +98,8 @@ func CreateCRD(clientset apiextensionsclient.Interface) error {
 		},
 	}
 	ctx := context.Background()
-	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(ctx, crd)
+	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(
+		ctx, crd, metav1.CreateOptions{})
 	return err
 }
 
