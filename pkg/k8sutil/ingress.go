@@ -1,6 +1,7 @@
 package k8sutil
 
 import (
+	"context"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -88,6 +89,7 @@ func CreateHttpIngress(
 			TLS: tls,
 		},
 	}
-	_, err := ingApi.Create(&ing)
+	ctx := context.Background()
+	_, err := ingApi.Create(ctx, &ing)
 	return err
 }

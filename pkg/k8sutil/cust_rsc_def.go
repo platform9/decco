@@ -97,13 +97,16 @@ func CreateCRD(clientset apiextensionsclient.Interface) error {
 			},
 		},
 	}
-	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
+	ctx := context.Background()
+	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(ctx, crd)
 	return err
 }
 
 func WaitCRDReady(clientset apiextensionsclient.Interface) error {
 	err := retryutil.Retry(5*time.Second, 20, func() (bool, error) {
-		crd, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(spec.CRDName, metav1.GetOptions{})
+		ctx := context.Background()
+		crd, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(
+			ctx, spec.CRDName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}

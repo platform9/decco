@@ -90,7 +90,8 @@ func (c *SpaceRuntime) Update(spc spec.Space) {
 
 func (c *SpaceRuntime) Delete() (nsDeleted bool) {
 	nsApi := c.kubeApi.CoreV1().Namespaces()
-	err := nsApi.Delete(c.Space.Name, nil)
+	ctx := context.Background()
+	err := nsApi.Delete(ctx, c.Space.Name, nil)
 	if err != nil {
 		c.log.Warnf("failed to delete namespace %s: ", err.Error())
 	}
@@ -248,7 +249,8 @@ func (c * SpaceRuntime) createPermissions() error {
 		ObjectMeta: metav1.ObjectMeta{Name: "space-creator"},
 		Rules: perms.Rules,
 	}
-	_, err := rolesApi.Create(&role)
+	ctx := context.Background()
+	_, err := rolesApi.Create(ctx, &role)
 	if err != nil {
 		return fmt.Errorf("failed to create space-creator role: %s", err)
 	}
@@ -264,7 +266,7 @@ func (c * SpaceRuntime) createPermissions() error {
 		},
 	}
 	rbApi := c.kubeApi.RbacV1().RoleBindings(c.Space.Name)
-	_, err = rbApi.Create(&rb)
+	_, err = rbApi.Create(ctx, &rb)
 	if err != nil {
 		return fmt.Errorf("failed to create space-creator role binding: %s", err)
 	}
@@ -307,7 +309,8 @@ func (c * SpaceRuntime) createNetPolicy() error {
 		},
 	}
 	netApi := c.kubeApi.NetworkingV1().NetworkPolicies(c.Space.Name)
-	_, err := netApi.Create(&np)
+	ctx := context.Background()
+	_, err := netApi.Create(ctx, &np)
 	return err
 }
 
@@ -383,7 +386,8 @@ func (c *SpaceRuntime) createNamespace() error {
 	if c.Space.Spec.Project != "" {
 		ns.ObjectMeta.Labels["decco-project"] = c.Space.Spec.Project
 	}
-	_, err := nsApi.Create(&ns)
+	ctx := context.Background()
+	_, err := nsApi.Create(ctx, &ns)
 	return err
 }
 
@@ -478,8 +482,8 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 			{ContainerPort: defaultHttpInternalPort },
 		}
 	}
-
-	_, err := depApi.Create(&v1beta1.Deployment{
+	ctx := context.Background()
+	_, err := depApi.Create(ctx, &v1beta1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "default-http",
 			Labels: map[string]string {
@@ -517,7 +521,8 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		return nil
 	}
 	svcAcctApi := c.kubeApi.CoreV1().ServiceAccounts(c.Space.Name)
-	_, err := svcAcctApi.Create(&v1.ServiceAccount{
+	ctx := context.Background()
+	_, err := svcAcctApi.Create(ctx, &v1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "nginx-ingress",
 		},
@@ -527,7 +532,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 			err)
 	}
 	rolesApi := c.kubeApi.RbacV1().Roles(c.Space.Name)
-	_, err = rolesApi.Create(&rbacv1.Role{
+	_, err = rolesApi.Create(ctx, &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "ingress-controller",
 		},
@@ -560,7 +565,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 			err)
 	}
 	rbApi := c.kubeApi.RbacV1().RoleBindings(c.Space.Name)
-	_, err = rbApi.Create(&rbacv1.RoleBinding{
+	_, err = rbApi.Create(ctx, &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "nginx-ingress",
 		},
@@ -613,7 +618,9 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		endpoints = append(endpoints, appspec.EndpointSpec{
 			Name: "nginx-ingress-sni-" + epName,
 			Port: 80,
-			SniHostname: epName + "." + hostName,
+			SniHostname: epName +
+				c.Space.Spec.PrivateIngressControllerTcpHostnameSuffix +
+				"." + hostName,
 		})
 	}
 	ingressControllerImage := os.Getenv("INGRESS_CONTROLLER_IMAGE")
@@ -683,7 +690,6 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 	}
 	var rtObj runtime.Object
 	rtObj = &app
-	ctx := context.Background()
 	err = restCli.Post().Namespace(c.Space.Name).
 		Resource(appspec.CRDResourcePlural).
 		Body(rtObj).Do(ctx).Into(nil)
@@ -700,7 +706,8 @@ func (c *SpaceRuntime) createDefaultHttpSvc() error {
 		svcPort = k8sutil.TlsPort
 		tgtPort = k8sutil.TlsPort
 	}
-	_, err := svcApi.Create(&v1.Service{
+	ctx := context.Background()
+	_, err := svcApi.Create(ctx, &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "default-http",
 		},
@@ -726,7 +733,8 @@ func (c *SpaceRuntime) createDefaultHttpSvc() error {
 
 func (c *SpaceRuntime) getHttpCert() (*v1.Secret, error) {
 	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Namespace)
-	return secrApi.Get(c.Space.Spec.HttpCertSecretName, metav1.GetOptions{})
+	ctx := context.Background()
+	return secrApi.Get(ctx, c.Space.Spec.HttpCertSecretName, metav1.GetOptions{})
 }
 
 // -----------------------------------------------------------------------------
@@ -736,7 +744,8 @@ func (c *SpaceRuntime) deleteHttpCert() error {
 		return nil
 	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Namespace)
-	return secrApi.Delete(c.Space.Spec.HttpCertSecretName,
+	ctx := context.Background()
+	return secrApi.Delete(ctx, c.Space.Spec.HttpCertSecretName,
 		&metav1.DeleteOptions{})
 }
 
@@ -747,7 +756,8 @@ func (c *SpaceRuntime) deleteTcpCertAndCa() error {
 		return nil
 	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Namespace)
-	return secrApi.Delete(c.Space.Spec.TcpCertAndCaSecretName,
+	ctx := context.Background()
+	return secrApi.Delete(ctx, c.Space.Spec.TcpCertAndCaSecretName,
 		&metav1.DeleteOptions{})
 }
 
@@ -758,7 +768,8 @@ func (c *SpaceRuntime) getTcpCertAndCa() (*v1.Secret, error) {
 		return nil, nil
 	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Namespace)
-	return secrApi.Get(c.Space.Spec.TcpCertAndCaSecretName, metav1.GetOptions{})
+	ctx := context.Background()
+	return secrApi.Get(ctx, c.Space.Spec.TcpCertAndCaSecretName, metav1.GetOptions{})
 }
 
 // -----------------------------------------------------------------------------
@@ -772,6 +783,7 @@ func (c *SpaceRuntime) copySecret(s *v1.Secret) error {
 		StringData: s.StringData,
 	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Name)
-	_, err := secrApi.Create(&newCertSecret)
+	ctx := context.Background()
+	_, err := secrApi.Create(ctx, &newCertSecret)
 	return err
 }

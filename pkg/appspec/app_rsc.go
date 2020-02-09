@@ -98,6 +98,7 @@ type AppSpec struct {
 	InitialReplicas int32 `json:"initialReplicas"`
 	Egresses        []TlsEgress
 	RunAsJob        bool `json:"runAsJob"`
+	JobBackoffLimit int32 `json:"jobBackoffLimit"`
 	Endpoints       []EndpointSpec
 	FirstEndpointListenPort int32
 	Permissions     []rbacv1.PolicyRule
@@ -112,6 +113,7 @@ type EndpointSpec struct {
 	// optional Cert and CA if don't want to use default one for the space
 	CertAndCaSecretName string `json:"certAndCaSecretName"`
 	CreateClearTextSvc  bool   `json:"createClearTextSvc"`
+
 	// The following only apply to http endpoints (httpPath not empty)
 	// RewritePath value is interpreted as follows:
 	// empty: the path is forwarded unmodified
@@ -119,11 +121,18 @@ type EndpointSpec struct {
 	HttpPath             string `json:"httpPath"`
 	RewritePath          string `json:"rewritePath"`
 	HttpLocalhostOnly bool `json:"httpLocalhostOnly"`
+
 	// The following only apply to tcp endpoints (httpPath empty)
 	CreateDnsRecord     bool   `json:"createDnsRecord"`
 	DisableTlsTermination bool `json:"disableTlsTermination"`
 	DisableTcpClientTlsVerification bool   `json:"disableTcpClientTlsVerification"`
 	SniHostname string   `json:"sniHostname"` // optional SNI hostname override
+	// Optional name suffix to append to server name for SNI routing purposes.
+	// For e.g., if endpoint name is "foo", space domain name is "bar.com",
+	// and nameSuffix is ".v0", then the SNI routing name becomes:
+	// foo.v0.bar.com
+	TcpHostnameSuffix           string `json:"tcpHostnameSuffix"`
+
 	// Optional ingress resource annotations
 	AdditionalIngressAnnotations map[string]string `json:"additionalIngressAnnotations,omitempty"`
 }
