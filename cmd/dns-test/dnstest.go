@@ -1,12 +1,12 @@
 package main
 
 import (
-	_ "k8s.io/kubernetes/federation/pkg/dnsprovider/providers/aws/route53"
-	"github.com/sirupsen/logrus"
-	"fmt"
 	"flag"
-	"k8s.io/kubernetes/federation/pkg/dnsprovider"
-	"k8s.io/kubernetes/federation/pkg/dnsprovider/rrstype"
+	"fmt"
+	"github.com/sirupsen/logrus"
+	"k8s.io/federation/pkg/dnsprovider"
+	_ "k8s.io/federation/pkg/dnsprovider/providers/aws/route53"
+	"k8s.io/federation/pkg/dnsprovider/rrstype"
 )
 
 func main() {

@@ -1,25 +1,24 @@
 package app
 
 import (
-	"context"
-	"github.com/sirupsen/logrus"
+	"encoding/json"
+	"errors"
+	"fmt"
 	spec "github.com/platform9/decco/pkg/appspec"
-	sspec "github.com/platform9/decco/pkg/spec"
+	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
-	"reflect"
-	"k8s.io/client-go/kubernetes"
+	sspec "github.com/platform9/decco/pkg/spec"
+	"github.com/platform9/decco/pkg/watcher"
+	"github.com/sirupsen/logrus"
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	batchv1 "k8s.io/api/batch/v1"
-	"fmt"
-	"errors"
-	"strings"
-	"encoding/json"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"github.com/platform9/decco/pkg/dns"
-	"github.com/platform9/decco/pkg/watcher"
+	"k8s.io/client-go/kubernetes"
+	"reflect"
+	"strings"
 )
 
 var (
@@ -53,9 +52,7 @@ func New(
 	spaceSpec sspec.SpaceSpec,
 ) *AppRuntime {
 
-	log := logrus.WithField("pkg","app",
-		).WithField("app", app.Name,
-		).WithField("space", namespace)
+	log := logrus.WithField("pkg", "app").WithField("app", app.Name).WithField("space", namespace)
 
 	ar := &AppRuntime{
 		kubeApi:   kubeApi,
@@ -102,10 +99,9 @@ func (ar *AppRuntime) Delete() {
 	log := ar.log.WithField("func", "Delete")
 	propPolicy := metav1.DeletePropagationBackground
 	delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
-	ctx := context.Background()
 	for _, e := range ar.app.Spec.Endpoints {
 		svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
-		err := svcApi.Delete(ctx, e.Name, nil)
+		err := svcApi.Delete(e.Name, nil)
 		if err != nil {
 			log.Warnf("failed to delete service '%s': %s", e.Name, err)
 		}
@@ -121,13 +117,13 @@ func (ar *AppRuntime) Delete() {
 	}
 	if ar.app.Spec.RunAsJob {
 		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
-		err := batchApi.Delete(ctx, ar.app.Name, &delOpts)
+		err := batchApi.Delete(ar.app.Name, &delOpts)
 		if err != nil {
 			log.Warnf("failed to delete job: %s", err)
 		}
 	} else {
 		deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-		err := deployApi.Delete(ctx, ar.app.Name, &delOpts)
+		err := deployApi.Delete(ar.app.Name, &delOpts)
 		if err != nil {
 			log.Warnf("failed to delete deployment: %s", err)
 		}
@@ -234,7 +230,7 @@ func (ar *AppRuntime) internalCreate() error {
 		return fmt.Errorf("failed to create endpoints: %s", err)
 	}
 	err = ar.createDeployment(podSpec, containers, volumes, stunnelIndex)
-	if  err != nil {
+	if err != nil {
 		return fmt.Errorf("failed to create deployment: %s", err)
 	}
 	return nil
@@ -248,7 +244,7 @@ func (ar *AppRuntime) insertDomainEnvVar(containers []v1.Container) {
 	}
 	for i, _ := range containers {
 		containers[i].Env = append(containers[i].Env, v1.EnvVar{
-			Name: ar.app.Spec.DomainEnvVarName,
+			Name:  ar.app.Spec.DomainEnvVarName,
 			Value: ar.spaceSpec.DomainName,
 		})
 	}
@@ -262,7 +258,6 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 	if rules == nil || len(rules) == 0 {
 		return nil
 	}
-	ctx := context.Background()
 	saName := podSpec.ServiceAccountName
 	if saName == "" {
 		saName = ar.app.Name
@@ -272,7 +267,7 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 			},
 		}
 		saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
-		_, err := saApi.Create(ctx, &sa)
+		_, err := saApi.Create(&sa)
 		if err != nil {
 			return fmt.Errorf("failed to create svcaccount: %s", err)
 		}
@@ -280,10 +275,10 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 
 	role := rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{Name: saName},
-		Rules: rules,
+		Rules:      rules,
 	}
 	rolesApi := ar.kubeApi.RbacV1().Roles(ar.namespace)
-	_, err := rolesApi.Create(ctx, &role)
+	_, err := rolesApi.Create(&role)
 	if err != nil {
 		return fmt.Errorf("failed to create role: %s", err)
 	}
@@ -291,19 +286,19 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 		ObjectMeta: metav1.ObjectMeta{Name: saName},
 		Subjects: []rbacv1.Subject{
 			{
-				Kind: "ServiceAccount",
-				Name: saName,
+				Kind:      "ServiceAccount",
+				Name:      saName,
 				Namespace: ar.namespace,
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
-			Kind: "Role",
-			Name: saName,
+			Kind:     "Role",
+			Name:     saName,
 		},
 	}
 	rbApi := ar.kubeApi.RbacV1().RoleBindings(ar.namespace)
-	_, err = rbApi.Create(ctx, &rb)
+	_, err = rbApi.Create(&rb)
 	if err != nil {
 		return fmt.Errorf("failed to create role binding: %s", err)
 	}
@@ -321,13 +316,12 @@ func (ar *AppRuntime) teardownPermissions() {
 	}
 	log := ar.log.WithField("func", "teardownPermissions")
 	rbApi := ar.kubeApi.RbacV1().RoleBindings(ar.namespace)
-	ctx := context.Background()
-	err := rbApi.Delete(ctx, ar.app.Name, nil)
+	err := rbApi.Delete(ar.app.Name, nil)
 	if err != nil {
 		log.Warnf("failed to delete role binding: %s", err)
 	}
 	rolesApi := ar.kubeApi.RbacV1().Roles(ar.namespace)
-	err = rolesApi.Delete(ctx, ar.app.Name, nil)
+	err = rolesApi.Delete(ar.app.Name, nil)
 	if err != nil {
 		log.Warnf("failed to delete role: %s", err)
 	}
@@ -336,7 +330,7 @@ func (ar *AppRuntime) teardownPermissions() {
 		return
 	}
 	saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
-	err = saApi.Delete(ctx, ar.app.Name, nil)
+	err = saApi.Delete(ar.app.Name, nil)
 	if err != nil {
 		log.Warnf("failed to delete svc account: %s", err)
 	}
@@ -523,28 +517,27 @@ func (ar *AppRuntime) createDeployment(
 	podSpec.Volumes = volumes
 	objMeta := metav1.ObjectMeta{
 		Name: ar.app.Name,
-		Labels: map[string]string {
+		Labels: map[string]string{
 			"decco-derived-from": "app",
 		},
 	}
 	podTemplateSpec := v1.PodTemplateSpec{
-		ObjectMeta: metav1.ObjectMeta {
+		ObjectMeta: metav1.ObjectMeta{
 			Name: ar.app.Name,
-			Labels: map[string]string {
-				"app": "decco",
+			Labels: map[string]string{
+				"app":       "decco",
 				"decco-app": ar.app.Name,
 			},
 		},
 		Spec: podSpec,
 	}
-	ctx := context.Background()
 	if ar.app.Spec.RunAsJob {
 		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
 		backoffLimit := ar.app.Spec.JobBackoffLimit
-		_, err := batchApi.Create(ctx, &batchv1.Job{
+		_, err := batchApi.Create(&batchv1.Job{
 			ObjectMeta: objMeta,
 			Spec: batchv1.JobSpec{
-				Template: podTemplateSpec,
+				Template:     podTemplateSpec,
 				BackoffLimit: &backoffLimit,
 			},
 		})
@@ -555,7 +548,7 @@ func (ar *AppRuntime) createDeployment(
 			Spec: v1beta1.DeploymentSpec{
 				Replicas: &initialReplicas,
 				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string {
+					MatchLabels: map[string]string{
 						"decco-app": ar.app.Name,
 					},
 				},
@@ -563,7 +556,7 @@ func (ar *AppRuntime) createDeployment(
 			},
 		}
 		depApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-		_, err := depApi.Create(ctx, depSpec)
+		_, err := depApi.Create(depSpec)
 		return err
 	}
 }
@@ -579,18 +572,17 @@ func (ar *AppRuntime) createSvc(
 	svcName := e.Name
 	portName := svcName
 	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
-	labels := map[string]string {
+	labels := map[string]string{
 		"decco-derived-from": "app",
-		"decco-app": appName,
+		"decco-app":          appName,
 	}
 	if e.IsMetricsEndpoint {
 		labels["monitoring-group"] = "decco"
 		portName = "metrics"
 	}
-	ctx := context.Background()
-	_, err := svcApi.Create(ctx, &v1.Service{
+	_, err := svcApi.Create(&v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: svcName,
+			Name:   svcName,
 			Labels: labels,
 		},
 		Spec: v1.ServiceSpec{
@@ -598,13 +590,13 @@ func (ar *AppRuntime) createSvc(
 				{
 					Port: svcPort,
 					Name: portName,
-					TargetPort: intstr.IntOrString {
-						Type: intstr.Int,
+					TargetPort: intstr.IntOrString{
+						Type:   intstr.Int,
 						IntVal: tgtPort,
 					},
 				},
 			},
-			Selector: map[string]string {
+			Selector: map[string]string{
 				"decco-app": appName,
 			},
 		},
@@ -626,7 +618,7 @@ func (ar *AppRuntime) createEndpoints(
 		var err error
 		var svcPort, tgtPort int32
 		containers, volumes, svcPort, tgtPort, err = ar.createStunnel(&e,
-			containers, volumes, stunnelIndex);
+			containers, volumes, stunnelIndex)
 		if err != nil {
 			f := "failed to create stunnel for endpoint '%s': %s"
 			return nil, nil, fmt.Errorf(f, e.Name, err)
@@ -643,7 +635,7 @@ func (ar *AppRuntime) createEndpoints(
 			f := "failed to create tcp ingress for endpoint '%s': %s"
 			return nil, nil, fmt.Errorf(f, e.Name, err)
 		}
-		err = ar.updateDns(&e,false);
+		err = ar.updateDns(&e, false)
 		if err != nil {
 			f := "failed to update dns for endpoint '%s': %s"
 			return nil, nil, fmt.Errorf(f, e.Name, err)
@@ -676,9 +668,9 @@ func (ar *AppRuntime) createHttpIngress(e *spec.EndpointSpec) error {
 		ar.kubeApi,
 		ar.namespace,
 		ingName,
-		map[string]string {
+		map[string]string{
 			"decco-derived-from": "app",
-			"decco-app": ar.Name(),
+			"decco-app":          ar.Name(),
 		},
 		hostName,
 		path,
@@ -697,8 +689,7 @@ func (ar *AppRuntime) createHttpIngress(e *spec.EndpointSpec) error {
 func (ar *AppRuntime) deleteIngress(e *spec.EndpointSpec) error {
 	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
 	ingName := e.Name
-	ctx := context.Background()
-	return ingApi.Delete(ctx, ingName, &metav1.DeleteOptions{})
+	return ingApi.Delete(ingName, &metav1.DeleteOptions{})
 }
 
 // -----------------------------------------------------------------------------
@@ -729,9 +720,9 @@ func (ar *AppRuntime) createTcpIngress(
 	ing := v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: e.Name,
-			Labels: map[string]string {
+			Labels: map[string]string{
 				"decco-derived-from": "app",
-				"decco-app": ar.Name(),
+				"decco-app":          ar.Name(),
 			},
 			Annotations: anno,
 		},
@@ -739,14 +730,14 @@ func (ar *AppRuntime) createTcpIngress(
 			Rules: []v1beta1.IngressRule{
 				{
 					Host: hostName,
-					IngressRuleValue: v1beta1.IngressRuleValue {
+					IngressRuleValue: v1beta1.IngressRuleValue{
 						HTTP: &v1beta1.HTTPIngressRuleValue{
-							Paths: []v1beta1.HTTPIngressPath {
+							Paths: []v1beta1.HTTPIngressPath{
 								{
 									Backend: v1beta1.IngressBackend{
 										ServiceName: e.Name,
-										ServicePort: intstr.IntOrString {
-											Type: intstr.Int,
+										ServicePort: intstr.IntOrString{
+											Type:   intstr.Int,
 											IntVal: svcPort,
 										},
 									},
@@ -758,7 +749,6 @@ func (ar *AppRuntime) createTcpIngress(
 			},
 		},
 	}
-	ctx := context.Background()
-	_, err := ingApi.Create(ctx, &ing)
+	_, err := ingApi.Create(&ing)
 	return err
 }

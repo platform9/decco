@@ -15,14 +15,13 @@
 package k8sutil
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/platform9/decco/pkg/spec"
 	"github.com/coreos/etcd-operator/pkg/util/retryutil"
+	"github.com/platform9/decco/pkg/spec"
 
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -36,8 +35,7 @@ func WatchSpaces(host string, httpClient *http.Client, resourceVersion string) (
 }
 
 func GetSpaceList(restcli rest.Interface) (*spec.SpaceList, error) {
-	ctx := context.Background()
-	b, err := restcli.Get().RequestURI(listSpacesURI()).DoRaw(ctx)
+	b, err := restcli.Get().RequestURI(listSpacesURI()).DoRaw()
 	if err != nil {
 		return nil, err
 	}
@@ -64,8 +62,7 @@ func UpdateSpaceCustRsc(
 		c.Namespace,
 		spec.CRDResourcePlural,
 		c.Name)
-	ctx := context.Background()
-	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw(ctx)
+	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw()
 	if err != nil {
 		return spec.Space{}, err
 	}
@@ -97,16 +94,13 @@ func CreateCRD(clientset apiextensionsclient.Interface) error {
 			},
 		},
 	}
-	ctx := context.Background()
-	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(ctx, crd)
+	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
 	return err
 }
 
 func WaitCRDReady(clientset apiextensionsclient.Interface) error {
 	err := retryutil.Retry(5*time.Second, 20, func() (bool, error) {
-		ctx := context.Background()
-		crd, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(
-			ctx, spec.CRDName, metav1.GetOptions{})
+		crd, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(spec.CRDName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
