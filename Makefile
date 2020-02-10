@@ -53,6 +53,7 @@ SPRINGBOARD_FULL_TAG := $(SPRINGBOARD_REPO_TAG):$(IMAGE_TAG)
 DEFAULT_HTTP_IMAGE_TAG ?= platform9systems/decco-default-http
 
 export GOPATH:=$(GOPATH_DIR)
+export GOROOT:=$(GO_TOOLCHAIN)
 export PATH:=$(GO_TOOLCHAIN)/bin:$(PATH)
 
 $(BUILD_DIR):
