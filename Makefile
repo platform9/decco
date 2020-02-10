@@ -59,7 +59,7 @@ $(BUILD_DIR):
 	mkdir -p $@
 
 $(GO_TOOLCHAIN):| $(BUILD_DIR)
-	cd $(BUILD_DIR) && wget $(GO_DOWNLOAD_URL) && tar xf go*.tar.gz
+	cd $(BUILD_DIR) && wget -q $(GO_DOWNLOAD_URL) && tar xf go*.tar.gz
 	go version
 
 gotoolchain: | $(GO_TOOLCHAIN)
