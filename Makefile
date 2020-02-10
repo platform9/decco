@@ -3,6 +3,8 @@ SHELL := bash
 SRC_DIR=$(shell pwd)
 BUILD_DIR=$(SRC_DIR)/build
 GOPATH_DIR=$(BUILD_DIR)/gopath
+GO_TOOLCHAIN=$(BUILD_DIR)/go
+GO_DOWNLOAD_URL=https://dl.google.com/go/go1.13.7.linux-amd64.tar.gz
 CLIENTGO=$(GOPATH_DIR)/src/k8s.io/client-go
 GOSRC=$(GOPATH_DIR)/src
 PF9_DIR=$(GOSRC)/github.com/platform9
@@ -51,11 +53,18 @@ SPRINGBOARD_FULL_TAG := $(SPRINGBOARD_REPO_TAG):$(IMAGE_TAG)
 DEFAULT_HTTP_IMAGE_TAG ?= platform9systems/decco-default-http
 
 export GOPATH:=$(GOPATH_DIR)
+export PATH:=$(GO_TOOLCHAIN)/bin:$(PATH)
 
 $(BUILD_DIR):
 	mkdir -p $@
 
-$(GOPATH_DIR):| $(BUILD_DIR)
+$(GO_TOOLCHAIN):| $(BUILD_DIR)
+	cd $(BUILD_DIR) && wget $(GO_DOWNLOAD_URL) && tar xf go*.tar.gz
+	go version
+
+gotoolchain: | $(GO_TOOLCHAIN)
+
+$(GOPATH_DIR):| $(BUILD_DIR) $(GO_TOOLCHAIN)
 	mkdir -p $@
 
 $(PF9_DIR):| $(BUILD_DIR)
