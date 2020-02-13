@@ -2,6 +2,7 @@ package k8sutil
 
 import (
 	"fmt"
+	"os"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -114,7 +115,29 @@ func InsertStunnel(
 			},
 		},
 	})
-	containers = append(containers, v1.Container{
+	// Default values for stunnel request and memory
+	// stunnel has been observed to consume between 3 and 6 MB, so
+	// set memory request to 5 and limit to 25.
+	// Also limit cpu usage to 1 whole CPU
+	// In some cases we have seen the memory limit to go higher > 50Mi
+	// these cases can be handled by the configuration variables
+	limitCPU := getEnvVarWithDefault("STUNNEL_LIMIT_CPU", "")
+	limitMem := getEnvVarWithDefault("STUNNEL_LIMIT_MEMORY", "")
+	limits := v1.ResourceList{}
+	if limitCPU != "" {
+		limits["cpu"] = resource.MustParse(limitCPU)
+        }
+	if limitMem != "" {
+		limits["memory"] = resource.MustParse(limitMem)
+	}
+        resourceRequirements := v1.ResourceRequirements{
+		Requests: v1.ResourceList{
+			"cpu":    resource.MustParse(getEnvVarWithDefault("STUNNEL_REQUEST_CPU", "5m")),
+			"memory": resource.MustParse(getEnvVarWithDefault("STUNNEL_REQUEST_MEMORY", "10Mi")),
+		},
+		Limits: limits,
+	}
+        containers = append(containers, v1.Container{
 		Name: containerName,
 		Image: "platform9/springboard-stunnel:1.0.0-000",
 		Ports: []v1.ContainerPort{
@@ -130,21 +153,17 @@ func InsertStunnel(
 				MountPath: "/etc/stunnel/certs",
 			},
 		},
-		// stunnel has been observed to consume between 3 and 6 MB, so
-		// set memory request to 5 and limit to 10.
-		// Also limit cpu usage to 1 whole CPU
-		Resources: v1.ResourceRequirements{
-			Requests: v1.ResourceList{
-				"cpu": resource.MustParse("5m"),
-				"memory": resource.MustParse("10Mi"),
-			},
-			Limits: v1.ResourceList{
-				"cpu": resource.MustParse("1000m"),
-				"memory": resource.MustParse("25Mi"),
-			},
-		},
+		Resources: resourceRequirements,
 	})
 	return volumes, containers
 }
 
-
+// Get env variables and default to the defaultVal if none found
+// in the process environment
+func getEnvVarWithDefault(key string, defaultVal string) string {
+    val := os.Getenv(key)
+    if val == "" {
+        return defaultVal
+    }
+    return val
+}
