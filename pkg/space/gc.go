@@ -1,8 +1,6 @@
 package space
 
 import (
-	"context"
-
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,11 +13,9 @@ func Collect(kubeApi kubernetes.Interface,
 
 	log = log.WithField("func", "collect")
 	nsApi := kubeApi.CoreV1().Namespaces()
-	ctx := context.Background()
-	nses, err := nsApi.List(ctx,
-		meta_v1.ListOptions{
-			LabelSelector: "app=decco",
-		},
+	nses, err := nsApi.List(meta_v1.ListOptions{
+		LabelSelector: "app=decco",
+	},
 	)
 	if err != nil {
 		log.Warnf("list namespaces failed: %s", err.Error())
@@ -34,7 +30,7 @@ func Collect(kubeApi kubernetes.Interface,
 				continue
 			}
 			log.Infof("deleting orphaned namespace %s", ns.Name)
-			err = nsApi.Delete(ctx, ns.Name, nil)
+			err = nsApi.Delete(ns.Name, nil)
 			if err != nil {
 				log.Warnf("failed to delete namespace %s: %s",
 					ns.Name, err.Error())

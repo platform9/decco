@@ -15,7 +15,6 @@
 package k8sutil
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -38,8 +37,7 @@ func WatchApps(host string, ns string, httpClient *http.Client, resourceVersion 
 
 func GetAppList(restcli rest.Interface,
 	ns string) (*spec.AppList, error) {
-	ctx := context.Background()
-	b, err := restcli.Get().RequestURI(listAppsURI(ns)).DoRaw(ctx)
+	b, err := restcli.Get().RequestURI(listAppsURI(ns)).DoRaw()
 	if err != nil {
 		return nil, err
 	}
@@ -69,8 +67,7 @@ func UpdateAppCustRsc(
 		ns,
 		spec.CRDResourcePlural,
 		c.Name)
-	ctx := context.Background()
-	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw(ctx)
+	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw()
 	if err != nil {
 		return spec.App{}, err
 	}
@@ -102,17 +99,13 @@ func CreateAppCRD(clientset apiextensionsclient.Interface) error {
 			},
 		},
 	}
-	ctx := context.Background()
-	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(
-		ctx, crd, metav1.CreateOptions{})
+	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
 	return err
 }
 
 func WaitAppCRDReady(clientset apiextensionsclient.Interface) error {
 	err := retryutil.Retry(5*time.Second, 20, func() (bool, error) {
-		ctx := context.Background()
-		crd, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(
-			ctx, spec.CRDName, metav1.GetOptions{})
+		crd, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(spec.CRDName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}

@@ -1,8 +1,6 @@
 package k8sutil
 
 import (
-	"context"
-
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -59,7 +57,7 @@ func CreateHttpIngress(
 			},
 		},
 	}
-	tls := []v1beta1.IngressTLS{}
+	var tls []v1beta1.IngressTLS
 	rules := []v1beta1.IngressRule{
 		{
 			Host:             "localhost",
@@ -89,7 +87,6 @@ func CreateHttpIngress(
 			TLS:   tls,
 		},
 	}
-	ctx := context.Background()
-	_, err := ingApi.Create(ctx, &ing, metav1.CreateOptions{})
+	_, err := ingApi.Create(&ing)
 	return err
 }
