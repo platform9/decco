@@ -4,22 +4,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	spec "github.com/platform9/decco/pkg/appspec"
-	"github.com/platform9/decco/pkg/dns"
-	"github.com/platform9/decco/pkg/k8sutil"
-	sspec "github.com/platform9/decco/pkg/spec"
-	"github.com/platform9/decco/pkg/watcher"
+	"reflect"
+	"strings"
+
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/api/core/v1"
+	netv1beta1 "k8s.io/api/networking/v1beta1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
-	"reflect"
-	"strings"
-	netv1beta1 "k8s.io/api/networking/v1beta1"
+
+	"github.com/platform9/decco/pkg/dns"
+	"github.com/platform9/decco/pkg/k8sutil"
+	"github.com/platform9/decco/pkg/watcher"
+
+	deccov1 "github.com/platform9/decco/api/v1"
 )
 
 var (
@@ -29,13 +31,13 @@ var (
 type AppRuntime struct {
 	kubeApi   kubernetes.Interface
 	namespace string
-	spaceSpec sspec.SpaceSpec
+	spaceSpec deccov1.SpaceSpec
 	log       *logrus.Entry
-	app       spec.App
+	app       deccov1.App
 
 	// in memory state of the app
 	// status is the source of truth after AppRuntime struct is materialized.
-	status spec.AppStatus
+	status deccov1.AppStatus
 }
 
 // -----------------------------------------------------------------------------
@@ -47,10 +49,10 @@ func (ar *AppRuntime) Name() string {
 // -----------------------------------------------------------------------------
 
 func New(
-	app spec.App,
+	app deccov1.App,
 	kubeApi kubernetes.Interface,
 	namespace string,
-	spaceSpec sspec.SpaceSpec,
+	spaceSpec deccov1.SpaceSpec,
 ) *AppRuntime {
 
 	log := logrus.WithField("pkg", "app").WithField("app", app.Name).WithField("space", namespace)
@@ -59,19 +61,19 @@ func New(
 		kubeApi:   kubeApi,
 		log:       log,
 		app:       app,
-		status:    app.Status.Copy(),
+		status:    *app.Status.DeepCopy(),
 		namespace: namespace,
 		spaceSpec: spaceSpec,
 	}
 
 	if setupErr := ar.setup(); setupErr != nil {
 		log.Errorf("app failed to setup: %v", setupErr)
-		if ar.status.Phase != spec.AppPhaseFailed {
+		if ar.status.Phase != deccov1.AppPhaseFailed {
 			ar.status.SetReason(setupErr.Error())
-			ar.status.SetPhase(spec.AppPhaseFailed)
+			ar.status.SetPhase(deccov1.AppPhaseFailed)
 			if err := ar.updateCRStatus(); err != nil {
 				ar.log.Errorf("failed to update app phase (%v): %v",
-					spec.AppPhaseFailed, err)
+					deccov1.AppPhaseFailed, err)
 			}
 		}
 	}
@@ -85,7 +87,7 @@ func (ar *AppRuntime) Update(item watcher.Item) {
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) GetApp() spec.App {
+func (ar *AppRuntime) GetApp() deccov1.App {
 	return ar.app
 }
 
@@ -165,11 +167,11 @@ func (ar *AppRuntime) setup() error {
 
 	var shouldCreateResources bool
 	switch ar.status.Phase {
-	case spec.AppPhaseNone:
+	case deccov1.AppPhaseNone:
 		shouldCreateResources = true
-	case spec.AppPhaseCreating:
+	case deccov1.AppPhaseCreating:
 		return errInCreatingPhase
-	case spec.AppPhaseActive:
+	case deccov1.AppPhaseActive:
 		shouldCreateResources = false
 
 	default:
@@ -195,18 +197,18 @@ func (ar *AppRuntime) phaseUpdateError(op string, err error) error {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) create() error {
-	ar.status.SetPhase(spec.AppPhaseCreating)
+	ar.status.SetPhase(deccov1.AppPhaseCreating)
 	if err := ar.updateCRStatus(); err != nil {
 		return ar.phaseUpdateError("app create", err)
 	}
 	if err := ar.internalCreate(); err != nil {
 		return err
 	}
-	ar.status.SetPhase(spec.AppPhaseActive)
+	ar.status.SetPhase(deccov1.AppPhaseActive)
 	if err := ar.updateCRStatus(); err != nil {
 		return fmt.Errorf(
 			"app create: failed to update app phase (%v): %v",
-			spec.AppPhaseActive,
+			deccov1.AppPhaseActive,
 			err,
 		)
 	}
@@ -339,7 +341,7 @@ func (ar *AppRuntime) teardownPermissions() {
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) updateDns(e *spec.EndpointSpec, delete bool) error {
+func (ar *AppRuntime) updateDns(e *deccov1.EndpointSpec, delete bool) error {
 	if !e.CreateDnsRecord {
 		return nil
 	}
@@ -373,7 +375,7 @@ func (ar *AppRuntime) logCreation() {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) createStunnel(
-	e *spec.EndpointSpec,
+	e *deccov1.EndpointSpec,
 	containers []v1.Container,
 	volumes []v1.Volume,
 	stunnelIndex *int,
@@ -394,7 +396,7 @@ func (ar *AppRuntime) createStunnel(
 	svcPort = e.Port
 	tgtPort = e.Port
 	if tgtPort < 1 {
-		err = spec.ErrInvalidPort
+		err = deccov1.ErrInvalidPort
 		return
 	}
 
@@ -565,7 +567,7 @@ func (ar *AppRuntime) createDeployment(
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) createSvc(
-	e *spec.EndpointSpec,
+	e *deccov1.EndpointSpec,
 	svcPort int32,
 	tgtPort int32,
 ) error {
@@ -647,7 +649,7 @@ func (ar *AppRuntime) createEndpoints(
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) createHttpIngress(e *spec.EndpointSpec) error {
+func (ar *AppRuntime) createHttpIngress(e *deccov1.EndpointSpec) error {
 	if ar.app.Spec.RunAsJob {
 		return nil
 	}
@@ -687,7 +689,7 @@ func (ar *AppRuntime) createHttpIngress(e *spec.EndpointSpec) error {
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) deleteIngress(e *spec.EndpointSpec) error {
+func (ar *AppRuntime) deleteIngress(e *deccov1.EndpointSpec) error {
 	ingApi := ar.kubeApi.NetworkingV1beta1().Ingresses(ar.namespace)
 	ingName := e.Name
 	return ingApi.Delete(ingName, &metav1.DeleteOptions{})
@@ -696,7 +698,7 @@ func (ar *AppRuntime) deleteIngress(e *spec.EndpointSpec) error {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) createTcpIngress(
-	e *spec.EndpointSpec,
+	e *deccov1.EndpointSpec,
 	svcPort int32,
 ) error {
 	if e.IsMetricsEndpoint {

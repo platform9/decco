@@ -22,26 +22,26 @@ import (
 
 	"github.com/coreos/etcd-operator/pkg/util/retryutil"
 
-	"github.com/platform9/decco/pkg/spec"
-
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
+
+	deccov1 "github.com/platform9/decco/api/v1"
 )
 
 func WatchSpaces(host string, httpClient *http.Client, resourceVersion string) (*http.Response, error) {
 	return httpClient.Get(fmt.Sprintf("%s/apis/%s/%s?watch=true&resourceVersion=%s",
-		host, spec.SchemeGroupVersion.String(), spec.CRDResourcePlural, resourceVersion))
+		host, deccov1.GroupVersion.String(), "spaces", resourceVersion))
 }
 
-func GetSpaceList(restcli rest.Interface) (*spec.SpaceList, error) {
+func GetSpaceList(restcli rest.Interface) (*deccov1.SpaceList, error) {
 	b, err := restcli.Get().RequestURI(listSpacesURI()).DoRaw()
 	if err != nil {
 		return nil, err
 	}
 
-	spaces := &spec.SpaceList{}
+	spaces := &deccov1.SpaceList{}
 	if err := json.Unmarshal(b, spaces); err != nil {
 		return nil, err
 	}
@@ -50,30 +50,30 @@ func GetSpaceList(restcli rest.Interface) (*spec.SpaceList, error) {
 
 func listSpacesURI() string {
 	return fmt.Sprintf("/apis/%s/%s",
-		spec.SchemeGroupVersion.String(),
-		spec.CRDResourcePlural)
+		deccov1.GroupVersion.String(),
+		"spaces")
 }
 
 func UpdateSpaceCustRsc(
 	restcli rest.Interface,
-	c spec.Space,
-) (spec.Space, error) {
+	c deccov1.Space,
+) (deccov1.Space, error) {
 	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s",
-		spec.SchemeGroupVersion.String(),
+		deccov1.GroupVersion.String(),
 		c.Namespace,
-		spec.CRDResourcePlural,
+		"spaces",
 		c.Name)
 	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw()
 	if err != nil {
-		return spec.Space{}, err
+		return deccov1.Space{}, err
 	}
 	return readSpaceCR(b)
 }
 
-func readSpaceCR(b []byte) (spec.Space, error) {
-	space := &spec.Space{}
+func readSpaceCR(b []byte) (deccov1.Space, error) {
+	space := &deccov1.Space{}
 	if err := json.Unmarshal(b, space); err != nil {
-		return spec.Space{},
+		return deccov1.Space{},
 			fmt.Errorf("read space CR from json data failed: %v", err)
 	}
 	return *space, nil
@@ -82,16 +82,16 @@ func readSpaceCR(b []byte) (spec.Space, error) {
 func CreateCRD(clientset apiextensionsclient.Interface) error {
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: spec.CRDName,
+			Name: "space",
 		},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
-			Group:   spec.SchemeGroupVersion.Group,
-			Version: spec.SchemeGroupVersion.Version,
+			Group:   deccov1.GroupVersion.Group,
+			Version: deccov1.GroupVersion.Version,
 			Scope:   apiextensionsv1beta1.NamespaceScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
-				Plural:     spec.CRDResourcePlural,
-				Kind:       spec.CRDResourceKind,
-				ShortNames: []string{spec.CRDShortName},
+				Plural:     "spaces",
+				Kind:       "Space",
+				ShortNames: []string{"space"},
 			},
 		},
 	}
@@ -101,7 +101,8 @@ func CreateCRD(clientset apiextensionsclient.Interface) error {
 
 func WaitCRDReady(clientset apiextensionsclient.Interface) error {
 	err := retryutil.Retry(5*time.Second, 20, func() (bool, error) {
-		crd, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(spec.CRDName, metav1.GetOptions{})
+		crd, err := clientset.ApiextensionsV1beta1().
+			CustomResourceDefinitions().Get("space", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}

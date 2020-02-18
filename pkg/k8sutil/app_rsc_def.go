@@ -22,27 +22,28 @@ import (
 
 	"github.com/coreos/etcd-operator/pkg/util/retryutil"
 
-	spec "github.com/platform9/decco/pkg/appspec"
-
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
+
+	deccov1 "github.com/platform9/decco/api/v1"
 )
 
 func WatchApps(host string, ns string, httpClient *http.Client, resourceVersion string) (*http.Response, error) {
 	return httpClient.Get(fmt.Sprintf("%s/apis/%s/namespaces/%s/%s?watch=true&resourceVersion=%s",
-		host, spec.SchemeGroupVersion.String(), ns, spec.CRDResourcePlural, resourceVersion))
+		host, deccov1.GroupVersion.String(), ns, "apps",
+		resourceVersion))
 }
 
 func GetAppList(restcli rest.Interface,
-	ns string) (*spec.AppList, error) {
+	ns string) (*deccov1.AppList, error) {
 	b, err := restcli.Get().RequestURI(listAppsURI(ns)).DoRaw()
 	if err != nil {
 		return nil, err
 	}
 
-	apps := &spec.AppList{}
+	apps := &deccov1.AppList{}
 	if err := json.Unmarshal(b, apps); err != nil {
 		return nil, err
 	}
@@ -51,33 +52,33 @@ func GetAppList(restcli rest.Interface,
 
 func listAppsURI(ns string) string {
 	return fmt.Sprintf("/apis/%s/namespaces/%s/%s",
-		spec.SchemeGroupVersion.String(),
+		deccov1.GroupVersion.String(),
 		ns,
-		spec.CRDResourcePlural)
+		"apps")
 }
 
 func UpdateAppCustRsc(
 	restcli rest.Interface,
 	ns string,
-	c spec.App,
-) (spec.App, error) {
+	c deccov1.App,
+) (deccov1.App, error) {
 
 	uri := fmt.Sprintf("/apis/%s/namespaces/%s/%s/%s",
-		spec.SchemeGroupVersion.String(),
+		deccov1.GroupVersion.String(),
 		ns,
-		spec.CRDResourcePlural,
+		"apps",
 		c.Name)
 	b, err := restcli.Put().RequestURI(uri).Body(&c).DoRaw()
 	if err != nil {
-		return spec.App{}, err
+		return deccov1.App{}, err
 	}
 	return readAppCR(b)
 }
 
-func readAppCR(b []byte) (spec.App, error) {
-	app := &spec.App{}
+func readAppCR(b []byte) (deccov1.App, error) {
+	app := &deccov1.App{}
 	if err := json.Unmarshal(b, app); err != nil {
-		return spec.App{},
+		return deccov1.App{},
 			fmt.Errorf("read app CR from json data failed: %v", err)
 	}
 	return *app, nil
@@ -86,16 +87,16 @@ func readAppCR(b []byte) (spec.App, error) {
 func CreateAppCRD(clientset apiextensionsclient.Interface) error {
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: spec.CRDName,
+			Name: "app",
 		},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
-			Group:   spec.SchemeGroupVersion.Group,
-			Version: spec.SchemeGroupVersion.Version,
+			Group:   deccov1.GroupVersion.Group,
+			Version: deccov1.GroupVersion.Version,
 			Scope:   apiextensionsv1beta1.NamespaceScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
-				Plural:     spec.CRDResourcePlural,
-				Kind:       spec.CRDResourceKind,
-				ShortNames: []string{spec.CRDShortName},
+				Plural:     "apps",
+				Kind:       "App",
+				ShortNames: []string{"app"},
 			},
 		},
 	}
@@ -105,7 +106,8 @@ func CreateAppCRD(clientset apiextensionsclient.Interface) error {
 
 func WaitAppCRDReady(clientset apiextensionsclient.Interface) error {
 	err := retryutil.Retry(5*time.Second, 20, func() (bool, error) {
-		crd, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(spec.CRDName, metav1.GetOptions{})
+		crd, err := clientset.ApiextensionsV1beta1().
+			CustomResourceDefinitions().Get("app", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}

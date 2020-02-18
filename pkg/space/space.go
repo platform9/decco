@@ -10,8 +10,8 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/sirupsen/logrus"
-	"k8s.io/api/core/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -20,13 +20,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/platform9/decco/pkg/appspec"
+	deccov1 "github.com/platform9/decco/api/v1"
 	"github.com/platform9/decco/pkg/client"
 	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/misc"
 	"github.com/platform9/decco/pkg/slack"
-	"github.com/platform9/decco/pkg/spec"
 )
 
 var (
@@ -44,17 +43,17 @@ type SpaceRuntime struct {
 
 	// config Config
 
-	Space spec.Space
+	Space deccov1.Space
 
 	// in memory state of the spaceRsc
 	// Status is the source of truth after SpaceRuntime struct is materialized.
-	Status spec.SpaceStatus
+	Status deccov1.SpaceStatus
 }
 
 // -----------------------------------------------------------------------------
 
 func New(
-	spc spec.Space,
+	spc deccov1.Space,
 	kubeApi kubernetes.Interface,
 ) *SpaceRuntime {
 
@@ -64,17 +63,17 @@ func New(
 		kubeApi: kubeApi,
 		log:     lg,
 		Space:   spc,
-		Status:  spc.Status.Copy(),
+		Status:  *spc.Status.DeepCopy(),
 	}
 
 	if err := c.setup(); err != nil {
 		c.log.Errorf("cluster failed to setup: %v", err)
-		if c.Status.Phase != spec.SpacePhaseFailed {
+		if c.Status.Phase != deccov1.SpacePhaseFailed {
 			c.Status.SetReason(err.Error())
-			c.Status.SetPhase(spec.SpacePhaseFailed)
+			c.Status.SetPhase(deccov1.SpacePhaseFailed)
 			if err := c.updateCRStatus(); err != nil {
 				c.log.Errorf("failed to update space phase (%v): %v",
-					spec.SpacePhaseFailed, err)
+					deccov1.SpacePhaseFailed, err)
 			}
 		}
 	}
@@ -83,7 +82,7 @@ func New(
 
 // -----------------------------------------------------------------------------
 
-func (c *SpaceRuntime) Update(spc spec.Space) {
+func (c *SpaceRuntime) Update(spc deccov1.Space) {
 }
 
 // -----------------------------------------------------------------------------
@@ -132,11 +131,11 @@ func (c *SpaceRuntime) setup() error {
 
 	var shouldCreateResources bool
 	switch c.Status.Phase {
-	case spec.SpacePhaseNone:
+	case deccov1.SpacePhaseNone:
 		shouldCreateResources = true
-	case spec.SpacePhaseCreating:
+	case deccov1.SpacePhaseCreating:
 		return errInCreatingPhase
-	case spec.SpacePhaseActive:
+	case deccov1.SpacePhaseActive:
 		shouldCreateResources = false
 
 	default:
@@ -163,18 +162,18 @@ func (c *SpaceRuntime) phaseUpdateError(op string, err error) error {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) create() error {
-	c.Status.SetPhase(spec.SpacePhaseCreating)
+	c.Status.SetPhase(deccov1.SpacePhaseCreating)
 	if err := c.updateCRStatus(); err != nil {
 		return c.phaseUpdateError("space create", err)
 	}
 	if err := c.internalCreate(); err != nil {
 		return err
 	}
-	c.Status.SetPhase(spec.SpacePhaseActive)
+	c.Status.SetPhase(deccov1.SpacePhaseActive)
 	if err := c.updateCRStatus(); err != nil {
 		return fmt.Errorf(
 			"space create: failed to update space phase (%v): %v",
-			spec.SpacePhaseActive,
+			deccov1.SpacePhaseActive,
 			err,
 		)
 	}
@@ -281,7 +280,7 @@ func (c *SpaceRuntime) createNetPolicy() error {
 		{
 			NamespaceSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"decco-project": spec.RESERVED_PROJECT_NAME,
+					"decco-project": deccov1.RESERVED_PROJECT_NAME,
 				},
 			},
 		},
@@ -596,7 +595,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		args = append(args, "--v=1")
 	}
 	baseTlsListenPort := int32(k8sutil.TlsPort)
-	endpoints := []appspec.EndpointSpec{
+	endpoints := []deccov1.EndpointSpec{
 		{
 			Name:                  "nginx-ingress",
 			Port:                  baseTlsListenPort, // nginx itself terminates TLS
@@ -609,7 +608,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		},
 	}
 	for _, epName := range c.Space.Spec.PrivateIngressControllerTcpEndpoints {
-		endpoints = append(endpoints, appspec.EndpointSpec{
+		endpoints = append(endpoints, deccov1.EndpointSpec{
 			Name: "nginx-ingress-sni-" + epName,
 			Port: 80,
 			SniHostname: epName +
@@ -623,11 +622,11 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		ingressControllerImage = "platform9/ingress-nginx:0.19.0-006"
 	}
 
-	app := appspec.App{
+	app := deccov1.App{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "nginx-ingress",
 		},
-		Spec: appspec.AppSpec{
+		Spec: deccov1.AppSpec{
 			InitialReplicas:         1,
 			FirstEndpointListenPort: baseTlsListenPort + 1, // 'cause nginx itself uses 443
 			PodSpec: v1.PodSpec{
@@ -685,7 +684,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 	var rtObj runtime.Object
 	rtObj = &app
 	err = restCli.Post().Namespace(c.Space.Name).
-		Resource(appspec.CRDResourcePlural).
+		Resource("apps").
 		Body(rtObj).Do().Into(nil)
 	return err
 }

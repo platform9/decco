@@ -27,10 +27,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	deccov1 "github.com/platform9/decco/api/v1"
 	"github.com/platform9/decco/pkg/app"
-	"github.com/platform9/decco/pkg/appspec"
 	"github.com/platform9/decco/pkg/k8sutil"
-	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/watcher"
 )
 
@@ -40,7 +39,7 @@ type InternalController struct {
 	extensionsApi apiextensionsclient.Interface
 	kubeApi       kubernetes.Interface
 	namespace     string
-	spaceSpec     spec.SpaceSpec
+	spaceSpec     deccov1.SpaceSpec
 	stopCh        chan interface{}
 }
 
@@ -49,7 +48,7 @@ type Controller struct {
 	wg        *sync.WaitGroup
 	stopCh    chan interface{}
 	stopOnce  sync.Once
-	spaceSpec spec.SpaceSpec
+	spaceSpec deccov1.SpaceSpec
 	namespace string
 }
 
@@ -58,7 +57,7 @@ type Controller struct {
 func New(
 	log *logrus.Entry,
 	namespace string,
-	spaceSpec spec.SpaceSpec,
+	spaceSpec deccov1.SpaceSpec,
 	wg *sync.WaitGroup,
 ) *Controller {
 	return &Controller{
@@ -113,7 +112,7 @@ func (ctl *Controller) Stop() {
 
 func NewInternalController(
 	namespace string,
-	spaceSpec spec.SpaceSpec,
+	spaceSpec deccov1.SpaceSpec,
 	stopCh chan interface{},
 ) *InternalController {
 	clustConfig := k8sutil.GetClusterConfigOrDie()
@@ -136,16 +135,14 @@ func NewInternalController(
 // ----------------------------------------------------------------------------
 
 type appWrapper struct {
-	app *appspec.App
+	app *deccov1.App
 }
 
 func (aw *appWrapper) Name() string {
 	return aw.app.Name
 }
 
-func (ctl *InternalController) GetItemList() (
-	rv string, items []watcher.Item, err error,
-) {
+func (ctl *InternalController) GetItemList() (rv string, items []watcher.Item, err error) {
 	appList, err := k8sutil.GetAppList(
 		ctl.kubeApi.CoreV1().RESTClient(), ctl.namespace)
 	if err != nil {
@@ -226,7 +223,7 @@ func (c *InternalController) UnmarshalItem(
 	data []byte,
 ) (watcher.Item, string, error) {
 
-	a := &appspec.App{}
+	a := &deccov1.App{}
 	err := json.Unmarshal(data, a)
 	if err != nil {
 		s := "failed to unmarshal app object from data (%v): %v"
