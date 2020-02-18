@@ -1,0 +1,7 @@
+apiVersion: decco.platform9.com/v1
+kind: Space
+metadata:
+  name: space-sample
+spec:
+  # Add fields here
+  foo: bar
