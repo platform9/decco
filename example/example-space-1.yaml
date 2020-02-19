@@ -1,7 +1,6 @@
 apiVersion: "decco.platform9.com/v1beta2"
 kind: "Space"
 metadata:
-  namespace: "decco"
   name: "example-space-1"
 spec:
   domainName: platform9.horse
