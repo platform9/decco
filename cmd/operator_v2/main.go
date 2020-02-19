@@ -25,7 +25,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	deccov1 "github.com/platform9/decco/api/v1"
+	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/controllers"
 	// +kubebuilder:scaffold:imports
 )
@@ -38,7 +38,7 @@ var (
 func init() {
 	_ = clientgoscheme.AddToScheme(scheme)
 
-	_ = deccov1.AddToScheme(scheme)
+	_ = deccov1beta2.AddToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
 }
 

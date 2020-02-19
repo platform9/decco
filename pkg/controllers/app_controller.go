@@ -22,7 +22,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	deccov1 "github.com/platform9/decco/api/v1"
+	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
 )
 
 // AppReconciler reconciles a App object
@@ -45,6 +45,6 @@ func (r *AppReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&deccov1.App{}).
+		For(&deccov1beta2.App{}).
 		Complete(r)
 }

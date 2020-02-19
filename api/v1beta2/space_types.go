@@ -53,19 +53,19 @@ const (
 // SpaceSpec defines the desired state of Space
 type SpaceSpec struct {
 	DomainName                           string   `json:"domainName"`
-	Project                              string   `json:"project"`
+	Project                              string   `json:"project,omitempty"`
 	HttpCertSecretName                   string   `json:"httpCertSecretName"`
-	TcpCertAndCaSecretName               string   `json:"tcpCertAndCaSecretName"`
-	EncryptHttp                          bool     `json:"encryptHttp"`
-	DeleteHttpCertSecretAfterCopy        bool     `json:"deleteHttpCertSecretAfterCopy"`
-	DeleteTcpCertAndCaSecretAfterCopy    bool     `json:"deleteTcpCertAndCaSecretAfterCopy"`
-	DisablePrivateIngressController      bool     `json:"disablePrivateIngressController"`
-	VerboseIngressControllerLogging      bool     `json:"verboseIngressControllerLogging"`
-	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints"`
+	TcpCertAndCaSecretName               string   `json:"tcpCertAndCaSecretName,omitempty"`
+	EncryptHttp                          bool     `json:"encryptHttp,omitempty"`
+	DeleteHttpCertSecretAfterCopy        bool     `json:"deleteHttpCertSecretAfterCopy,omitempty"`
+	DeleteTcpCertAndCaSecretAfterCopy    bool     `json:"deleteTcpCertAndCaSecretAfterCopy,omitempty"`
+	DisablePrivateIngressController      bool     `json:"disablePrivateIngressController,omitempty"`
+	VerboseIngressControllerLogging      bool     `json:"verboseIngressControllerLogging,omitempty"`
+	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints,omitempty"`
 	// Optional suffix to append to host names of private ingress controller's tcp endpoints
-	PrivateIngressControllerTcpHostnameSuffix string            `json:"privateIngressControllerTcpHostnameSuffix"`
-	Permissions                               *SpacePermissions `json:"permissions"`
-	CreateDefaultHttpDeploymentAndIngress     bool              `json:"createDefaultHttpDeploymentAndIngress"`
+	PrivateIngressControllerTcpHostnameSuffix string            `json:"privateIngressControllerTcpHostnameSuffix,omitempty"`
+	Permissions                               *SpacePermissions `json:"permissions,omitempty"`
+	CreateDefaultHttpDeploymentAndIngress     bool              `json:"createDefaultHttpDeploymentAndIngress,omitempty"`
 }
 
 func (in *SpaceSpec) Validate() error {

@@ -144,20 +144,6 @@ spec:
               type: string
             verboseIngressControllerLogging:
               type: boolean
-          required:
-          - createDefaultHttpDeploymentAndIngress
-          - deleteHttpCertSecretAfterCopy
-          - deleteTcpCertAndCaSecretAfterCopy
-          - disablePrivateIngressController
-          - domainName
-          - encryptHttp
-          - httpCertSecretName
-          - permissions
-          - privateIngressControllerTcpEndpoints
-          - privateIngressControllerTcpHostnameSuffix
-          - project
-          - tcpCertAndCaSecretName
-          - verboseIngressControllerLogging
           type: object
         status:
           description: SpaceStatus defines the observed state of Space
