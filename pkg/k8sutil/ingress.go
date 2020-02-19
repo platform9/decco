@@ -7,6 +7,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// TODO(erwin) just return the ingress object
 func CreateHttpIngress(
 	kubeApi kubernetes.Interface,
 	ns string,

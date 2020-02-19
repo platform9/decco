@@ -1,9 +1,7 @@
 package k8sutil
 
 import (
-	"flag"
 	"os"
-	"path/filepath"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	restclient "k8s.io/client-go/rest"
@@ -12,17 +10,17 @@ import (
 
 var kubeconfig *string
 
-func init() {
-	if home := homeDir(); home != "" {
-		kubeconfig = flag.String(
-			"kubeconfig",
-			filepath.Join(home, ".kube", "config"),
-			"(optional) absolute path to the kubeconfig file")
-	} else {
-		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-	}
-	flag.Parse()
-}
+// func init() {
+// 	if home := homeDir(); home != "" {
+// 		kubeconfig = flag.String(
+// 			"kubeconfig",
+// 			filepath.Join(home, ".kube", "config"),
+// 			"(optional) absolute path to the kubeconfig file")
+// 	} else {
+// 		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+// 	}
+// 	flag.Parse()
+// }
 
 func GetClusterConfigOrDie() *restclient.Config {
 	if _, err := os.Stat(*kubeconfig); os.IsNotExist(err) {

@@ -8,3 +8,19 @@ spec:
   tcpCertAndCaSecretName: example-space-1
   encryptHttp: true
   project: dev
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pf9-horse-secret
+type: opaque
+stringData:
+  secret: "someSecret1"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: example-space-1
+type: opaque
+stringData:
+  secret: "someSecret2"
