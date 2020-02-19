@@ -21,8 +21,8 @@ import (
 	"os"
 
 	"github.com/go-logr/logr"
-	"k8s.io/api/apps/v1beta1"
-	v1 "k8s.io/api/core/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -52,9 +52,20 @@ type SpaceReconciler struct {
 	Log logr.Logger
 }
 
-// TODO(erwin) update the RBAC rules: namespace, app, rbac, networkpolicy...
+// TODO(erwin) Narrow down RBAC rules
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=spaces,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=spaces/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=decco.platform9.com,resources=apps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+
 
 // TODO(erwin) handle updates to space resource (in Active phase).
 func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
@@ -210,7 +221,7 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 	namespace := space.Name
 
 	// Check what the current status is of the namespace.
-	ns := &v1.Namespace{}
+	ns := &corev1.Namespace{}
 	err := r.Client.Get(ctx, types.NamespacedName{
 		Name: namespace,
 	}, ns)
@@ -236,7 +247,7 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 		}
 
 		// Attempt to create the namespace.
-		err = r.Client.Create(ctx, &v1.Namespace{
+		err = r.Client.Create(ctx, &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: namespace,
 				OwnerReferences: []metav1.OwnerReference{
@@ -390,7 +401,7 @@ func (r *SpaceReconciler) reconcileHTTPCertificate(ctx context.Context, space *d
 	}
 
 	// Skip if secret is already present in namespace
-	existingSecret := &v1.Secret{}
+	existingSecret := &corev1.Secret{}
 	err := r.Client.Get(ctx, types.NamespacedName{
 		Name:      space.Spec.TcpCertAndCaSecretName,
 		Namespace: space.Status.Namespace,
@@ -402,7 +413,7 @@ func (r *SpaceReconciler) reconcileHTTPCertificate(ctx context.Context, space *d
 	}
 
 	// Fetch the expected secret
-	httpSecret := &v1.Secret{}
+	httpSecret := &corev1.Secret{}
 	err = r.Client.Get(ctx, types.NamespacedName{
 		Name:      space.Spec.HttpCertSecretName,
 		Namespace: space.Namespace,
@@ -412,7 +423,7 @@ func (r *SpaceReconciler) reconcileHTTPCertificate(ctx context.Context, space *d
 	}
 
 	// Copy the secret to the space's namespace
-	err = r.Client.Create(ctx, &v1.Secret{
+	err = r.Client.Create(ctx, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      httpSecret.Name,
 			Namespace: space.Status.Namespace,
@@ -445,7 +456,7 @@ func (r *SpaceReconciler) reconcileTCPCertificate(ctx context.Context, space *de
 	}
 
 	// Skip if secret is already present in namespace
-	existingSecret := &v1.Secret{}
+	existingSecret := &corev1.Secret{}
 	err := r.Client.Get(ctx, types.NamespacedName{
 		Name:      space.Spec.TcpCertAndCaSecretName,
 		Namespace: space.Status.Namespace,
@@ -457,7 +468,7 @@ func (r *SpaceReconciler) reconcileTCPCertificate(ctx context.Context, space *de
 	}
 
 	// Fetch the expected secret
-	httpSecret := &v1.Secret{}
+	httpSecret := &corev1.Secret{}
 	err = r.Client.Get(ctx, types.NamespacedName{
 		Name:      space.Spec.TcpCertAndCaSecretName,
 		Namespace: space.Namespace,
@@ -467,7 +478,7 @@ func (r *SpaceReconciler) reconcileTCPCertificate(ctx context.Context, space *de
 	}
 
 	// Copy the secret to the space's namespace
-	err = r.Client.Create(ctx, &v1.Secret{
+	err = r.Client.Create(ctx, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      httpSecret.Name,
 			Namespace: space.Status.Namespace,
@@ -601,24 +612,24 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1.S
 	}
 
 	// Create the default-http deployment
-	var volumes []v1.Volume
-	containers := []v1.Container{
+	var volumes []corev1.Volume
+	containers := []corev1.Container{
 		{
 			Name:  "default-http",
 			Image: "platform9systems/decco-default-http",
-			Env: []v1.EnvVar{
+			Env: []corev1.EnvVar{
 				{
 					Name: "MY_POD_NAMESPACE",
-					ValueFrom: &v1.EnvVarSource{
-						FieldRef: &v1.ObjectFieldSelector{
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
 							FieldPath: "metadata.namespace",
 						},
 					},
 				},
 			},
-			LivenessProbe: &v1.Probe{
-				Handler: v1.Handler{
-					HTTPGet: &v1.HTTPGetAction{
+			LivenessProbe: &corev1.Probe{
+				Handler: corev1.Handler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/healthz",
 						Port: intstr.IntOrString{
 							Type:   intstr.Int,
@@ -630,8 +641,8 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1.S
 				InitialDelaySeconds: 30,
 				TimeoutSeconds:      5,
 			},
-			Resources: v1.ResourceRequirements{
-				Limits: v1.ResourceList{
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
 					"cpu": resource.Quantity{
 						Format: "10m",
 					},
@@ -639,7 +650,7 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1.S
 						Format: "20Mi",
 					},
 				},
-				Requests: v1.ResourceList{
+				Requests: corev1.ResourceList{
 					"cpu": resource.Quantity{
 						Format: "10m",
 					},
@@ -658,11 +669,11 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1.S
 			true, false, volumes,
 			containers, 0, 0)
 	} else {
-		containers[0].Ports = []v1.ContainerPort{
+		containers[0].Ports = []corev1.ContainerPort{
 			{ContainerPort: defaultHttpInternalPort},
 		}
 	}
-	err = r.Client.Create(ctx, &v1beta1.Deployment{
+	err = r.Client.Create(ctx, &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "default-http",
 			Namespace: space.Status.Namespace,
@@ -670,21 +681,21 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1.S
 				"app": "decco",
 			},
 		},
-		Spec: v1beta1.DeploymentSpec{
+		Spec: appsv1.DeploymentSpec{
 			Replicas: nil,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app": "default-http",
 				},
 			},
-			Template: v1.PodTemplateSpec{
+			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "default-http",
 					Labels: map[string]string{
 						"app": "default-http",
 					},
 				},
-				Spec: v1.PodSpec{
+				Spec: corev1.PodSpec{
 					Containers: containers,
 					Volumes:    volumes,
 				},
@@ -702,13 +713,13 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1.S
 		svcPort = k8sutil.TlsPort
 		targetPort = k8sutil.TlsPort
 	}
-	err = r.Client.Create(ctx, &v1.Service{
+	err = r.Client.Create(ctx, &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "default-http",
 			Namespace: space.Status.Namespace,
 		},
-		Spec: v1.ServiceSpec{
-			Ports: []v1.ServicePort{
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
 				{
 					Port: svcPort,
 					TargetPort: intstr.IntOrString{
@@ -741,7 +752,7 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 	}
 
 	// Create the ingress service account.
-	err := r.Client.Create(ctx, &v1.ServiceAccount{
+	err := r.Client.Create(ctx, &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "nginx-ingress",
 			Namespace: space.Status.Namespace,
@@ -868,17 +879,17 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 			InitialReplicas:         1,
 			FirstEndpointListenPort: baseTlsListenPort + 1, // 'cause nginx itself uses 443
 			Permissions:             []rbacv1.PolicyRule{},
-			PodSpec: v1.PodSpec{
+			PodSpec: corev1.PodSpec{
 				ServiceAccountName: "nginx-ingress",
-				Containers: []v1.Container{
+				Containers: []corev1.Container{
 					{
 						Name: "nginx-ingress",
 						Args: args,
-						Env: []v1.EnvVar{
+						Env: []corev1.EnvVar{
 							{
 								Name: "POD_NAME",
-								ValueFrom: &v1.EnvVarSource{
-									FieldRef: &v1.ObjectFieldSelector{
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
 										APIVersion: "v1",
 										FieldPath:  "metadata.name",
 									},
@@ -886,8 +897,8 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 							},
 							{
 								Name: "POD_NAMESPACE",
-								ValueFrom: &v1.EnvVarSource{
-									FieldRef: &v1.ObjectFieldSelector{
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
 										APIVersion: "v1",
 										FieldPath:  "metadata.namespace",
 									},
@@ -895,7 +906,7 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 							},
 						},
 						Image: ingressControllerImage,
-						Ports: []v1.ContainerPort{
+						Ports: []corev1.ContainerPort{
 							{
 								ContainerPort: int32(443),
 							},
@@ -904,12 +915,12 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 								ContainerPort: metricsPort,
 							},
 						},
-						Resources: v1.ResourceRequirements{
-							Requests: v1.ResourceList{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
 								"cpu":    resource.MustParse("100m"),
 								"memory": resource.MustParse("200Mi"),
 							},
-							Limits: v1.ResourceList{
+							Limits: corev1.ResourceList{
 								"cpu":    resource.MustParse("1000m"),
 								"memory": resource.MustParse("200Mi"),
 							},
