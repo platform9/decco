@@ -1,0 +1,53 @@
+before:
+  hooks:
+    - make clean
+    - go mod tidy
+    - make generate
+builds:
+  - id: operator
+    binary: decco-operator
+    main: ./cmd/operator
+    env:
+      - CGO_ENABLED=0
+      - GO111MODULE=on
+  - id: springboard
+    binary: springboard
+    main: ./cmd/springboard
+    env:
+      - CGO_ENABLED=0
+      - GO111MODULE=on
+archives:
+  # Use values used by `uname` (OS) and `uname -m` (architecture).
+  - id: default
+    name_template: "decco_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds:
+      - operator
+      - springboard
+    replacements:
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+      386: i386
+      amd64: x86_64
+    files:
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+snapshot:
+  name_template: "{{ .Tag }}-SNAPSHOT-{{.Commit}}"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+dockers:
+  - dockerfile: ./support/operator/Dockerfile
+    goos: linux
+    goarch: amd64
+    binaries:
+      - decco-operator
+    image_templates:
+      - "docker.io/erwinvaneyk/decco-operator:latest" # Change to platform9 repo once verified
+      - "docker.io/erwinvaneyk/decco-operator:{{ .Tag }}" # Change to platform9 repo once verified
+  # TODO(erwin) add springboard docker
