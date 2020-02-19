@@ -10,7 +10,7 @@ spec:
   - JSONPath: .spec.domainName
     name: Domain
     type: string
-  - JSONPath: .metadata.Name
+  - JSONPath: .status.Namespace
     name: Namespace
     type: string
   - JSONPath: .status.phase
@@ -166,6 +166,8 @@ spec:
         status:
           description: SpaceStatus defines the observed state of Space
           properties:
+            dnsConfigured:
+              type: boolean
             namespace:
               type: string
             phase:
@@ -173,6 +175,7 @@ spec:
             reason:
               type: string
           required:
+          - dnsConfigured
           - namespace
           - phase
           - reason

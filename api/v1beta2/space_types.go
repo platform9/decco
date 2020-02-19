@@ -100,9 +100,10 @@ func (in *SpaceSpec) Cleanup() {
 
 // SpaceStatus defines the observed state of Space
 type SpaceStatus struct {
-	Phase     SpacePhase `json:"phase"`
-	Reason    string     `json:"reason"`
-	Namespace string     `json:"namespace"`
+	Phase         SpacePhase `json:"phase"`
+	Reason        string     `json:"reason"`
+	Namespace     string     `json:"namespace"`
+	DNSConfigured bool       `json:"dnsConfigured"`
 }
 
 func (in *SpaceStatus) IsFailed() bool {
