@@ -52,7 +52,7 @@ type SpaceReconciler struct {
 	Log logr.Logger
 }
 
-// TODO(erwin) update the RBAC rules: namespace, app, rbac, networkpolicy
+// TODO(erwin) update the RBAC rules: namespace, app, rbac, networkpolicy...
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=spaces,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=spaces/status,verbs=get;update;patch
 
@@ -79,8 +79,8 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 			}
 		}
 
-		// Add the a finalizer in order to update the phase update on deletion.
-		err := r.addFinalizerAndUpdate(ctx, space, spacePhaseFinalizer)
+		// Remove the a finalizer in order to update the phase update on deletion.
+		err := r.removeFinalizerAndUpdate(ctx, space, spacePhaseFinalizer)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -196,11 +196,9 @@ func (r *SpaceReconciler) reconcileSpace(ctx context.Context, space *deccov1.Spa
 			fmt.Errorf("failed to reconcile DNS records: %w", err)
 	}
 
-	// All done!
-	// TODO check conditions/statuses
-	log.Info("Updating the space status to Active, because all resources have been successfully reconciled.")
-
-	if space.Status.Namespace != "" {
+	// Check if the space is ready to become Active
+	if space.Status.Namespace != ""  && (!dns.Enabled() || space.Status.DNSConfigured) {
+		log.Info("Updating the space status to Active, because all resources have been successfully reconciled.")
 		space.Status.SetPhase(deccov1.SpacePhaseActive, "Space successfully created")
 		err = r.Client.Status().Update(ctx, space)
 	}
