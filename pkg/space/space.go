@@ -394,7 +394,7 @@ func (c *SpaceRuntime) createHttpIngress() error {
 	if c.Space.Spec.EncryptHttp {
 		defaultHttpSvcPort = k8sutil.TlsPort
 	}
-	return k8sutil.CreateHttpIngress(
+	return k8sutil.CreateHTTPIngress(
 		c.kubeApi,
 		c.Space.Name,
 		"http-ingress",

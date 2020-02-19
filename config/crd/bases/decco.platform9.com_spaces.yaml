@@ -144,6 +144,9 @@ spec:
               type: string
             verboseIngressControllerLogging:
               type: boolean
+          required:
+          - domainName
+          - httpCertSecretName
           type: object
         status:
           description: SpaceStatus defines the observed state of Space

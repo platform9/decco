@@ -5688,15 +5688,7 @@ spec:
             runAsJob:
               type: boolean
           required:
-          - domainEnvVarName
-          - egresses
-          - endpoints
-          - firstEndpointListenPort
-          - initialReplicas
-          - jobBackoffLimit
-          - permissions
           - pod
-          - runAsJob
           type: object
         status:
           description: 'AppStatus defines the observed state of App Important: Run

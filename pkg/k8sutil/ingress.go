@@ -7,8 +7,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// TODO(erwin) just return the ingress object
-func CreateHttpIngress(
+func CreateHTTPIngress(
 	kubeApi kubernetes.Interface,
 	ns string,
 	name string,
@@ -24,6 +23,26 @@ func CreateHttpIngress(
 	additionalAnnotations map[string]string,
 ) error {
 	ingApi := kubeApi.NetworkingV1beta1().Ingresses(ns)
+	ing := NewHTTPIngress(ns, name, labels, hostName, path, svcName, svcPort,
+		rewritePath, encryptHttp, secretName, localhostOnly, additionalAnnotations)
+	_, err := ingApi.Create(ing)
+	return err
+}
+
+func NewHTTPIngress(
+	ns string,
+	name string,
+	labels map[string]string,
+	hostName string,
+	path string,
+	svcName string,
+	svcPort int32,
+	rewritePath string,
+	encryptHttp bool,
+	secretName string,
+	localhostOnly bool,
+	additionalAnnotations map[string]string,
+) *netv1beta1.Ingress {
 	annotations := make(map[string]string)
 	// Copy over additional annotations.
 	// Note: this works even if additionalAnnotations is nil
@@ -77,9 +96,10 @@ func CreateHttpIngress(
 			SecretName: secretName,
 		})
 	}
-	ing := netv1beta1.Ingress{
+	ing := &netv1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
+			Namespace:   ns,
 			Labels:      labels,
 			Annotations: annotations,
 		},
@@ -88,6 +108,5 @@ func CreateHttpIngress(
 			TLS:   tls,
 		},
 	}
-	_, err := ingApi.Create(&ing)
-	return err
+	return ing
 }
