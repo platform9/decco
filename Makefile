@@ -147,3 +147,6 @@ container-full-tag: $(TAG_FILE)
 
 clean-tag-file:
 	rm -f $(TAG_FILE)
+
+generate:
+	# nop
