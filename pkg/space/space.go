@@ -339,12 +339,12 @@ func (c *SpaceRuntime) updateDns(delete bool) error {
 			c.log.Warnf(msg)
 			err = fmt.Errorf("%s", msg)
 			if url != "" {
-				slack.PostBestEffort(url, msg, c.log)
+				slack.PostBestEffort(url, msg, nil)
 			}
 		} else if url != "" && attempt >= 2 {
 			msg := fmt.Sprintf("DNS %s for %s succeeded after %d attempts",
 				verb, c.Space.Name, attempt)
-			slack.PostBestEffort(url, msg, c.log)
+			slack.PostBestEffort(url, msg, nil)
 		}
 		return err
 	}

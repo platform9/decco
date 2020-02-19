@@ -11,7 +11,11 @@ import (
 func PostBestEffort(url string, msg string, log logr.Logger) {
 	err := Post(url, msg)
 	if err != nil {
-		log.Info(err.Error())
+		if log != nil {
+			log.Info(err.Error())
+		} else {
+			fmt.Println(err.Error())
+		}
 	}
 }
 
