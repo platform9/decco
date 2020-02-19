@@ -17,7 +17,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-logr/logr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -59,15 +58,15 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	}
 
 	// Decide what to do based on current phase
-	switch space.Status.Phase {
-	case deccov1.SpacePhaseNone:
-		shouldCreateResources = true
-	case deccov1.SpacePhaseCreating:
-	case deccov1.SpacePhaseActive:
-		// Nothing to do when active
-	default:
-		return ctrl.Result{}, fmt.Errorf("unexpected space phase: %s", space.Status.Phase)
-	}
+	// switch space.Status.Phase {
+	// case deccov1.SpacePhaseNone:
+	// 	shouldCreateResources = true
+	// case deccov1.SpacePhaseCreating:
+	// case deccov1.SpacePhaseActive:
+	// 	// Nothing to do when active
+	// default:
+	// 	return ctrl.Result{}, fmt.Errorf("unexpected space phase: %s", space.Status.Phase)
+	// }
 
 	return ctrl.Result{}, nil
 }
