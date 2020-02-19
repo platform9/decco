@@ -18,3 +18,8 @@
 
 build/
 vendor/
+bin/
+dist/
+
+# For development
+kubeconfig
