@@ -116,11 +116,12 @@ $(SPRINGBOARD_STAGE_DIR):
 $(SPRINGBOARD_EXE): | $(SPRINGBOARD_STAGE_DIR)
 	go build -o $@ $(SRC_DIR)/cmd/springboard
 
-$(SPRINGBOARD_IMAGE_MARKER): $(SPRINGBOARD_EXE)
-	cp -f $(SRC_DIR)/support/stunnel-instrumented-with-springboard/* $(SPRINGBOARD_STAGE_DIR)
-	sed -i 's|__STUNNEL_CONTAINER_TAG__|$(STUNNEL_CONTAINER_TAG)|g' $(SPRINGBOARD_STAGE_DIR)/Dockerfile
-	docker build --tag $(SPRINGBOARD_FULL_TAG) $(SPRINGBOARD_STAGE_DIR)
-	touch $@
+# Build manager binary
+operator: generate fmt vet
+	go build -o bin/operator ./cmd/operator_v2
+
+operator-debug: generate fmt vet
+	go build -gcflags="all=-N -l" -o bin/manager cmd/operator_v2.go
 
 springboard-image: $(SPRINGBOARD_IMAGE_MARKER)
 
@@ -177,3 +178,41 @@ container-full-tag: $(TAG_FILE)
 
 clean-tag-file:
 	rm -f $(TAG_FILE)
+
+# Run against the configured Kubernetes cluster in ~/.kube/config
+run: generate fmt vet
+	go run ./cmd/operator_v2
+
+# Install CRDs into a cluster
+install: manifests
+	kubectl apply -f config/crd/bases
+
+# Deploy controller in the configured Kubernetes cluster in ~/.kube/config
+deploy: manifests
+	kubectl apply -f config/crd/bases
+	kustomize build config/default | kubectl apply -f -
+
+# Generate manifests e.g. CRD, RBAC etc.
+manifests: controller-gen
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+
+# Build the docker image
+# TODO(erwin) reconcile commented out kubebuilder docker-build with existing
+#docker-build: test
+#	docker build . -t ${IMG}
+#	@echo "updating kustomize image patch file for manager resource"
+#	sed -i'' -e 's@image: .*@image: '"${IMG}"'@' ./config/default/manager_image_patch.yaml
+
+# Push the docker image
+#docker-push:
+#	docker push ${IMG}
+
+# find or download controller-gen
+# download controller-gen if necessary
+controller-gen:
+ifeq (, $(shell which controller-gen))
+	go get sigs.k8s.io/controller-tools/cmd/controller-gen@v0.2.0-beta.4
+CONTROLLER_GEN=$(GOBIN)/controller-gen
+else
+CONTROLLER_GEN=$(shell which controller-gen)
+endif
