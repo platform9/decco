@@ -45,9 +45,13 @@ func init() {
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
+	var disableAppReconciling bool
+	var disableSpaceReconciling bool
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&disableAppReconciling, "disable-app-reconciling", false, "Disable the App reconciler.")
+	flag.BoolVar(&disableSpaceReconciling, "disable-space-reconciling", false, "Disable the Space reconciler.")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
@@ -62,19 +66,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.AppReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("App"),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "App")
-		os.Exit(1)
+	if !disableAppReconciling {
+		if err = (&controllers.AppReconciler{
+			Client: mgr.GetClient(),
+			Log:    ctrl.Log.WithName("controllers").WithName("App"),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "App")
+			os.Exit(1)
+		}
+		setupLog.Info("Set up the AppReconciler.")
 	}
-	if err = (&controllers.SpaceReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("Space"),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Space")
-		os.Exit(1)
+	if !disableSpaceReconciling {
+		if err = (&controllers.SpaceReconciler{
+			Client: mgr.GetClient(),
+			Log:    ctrl.Log.WithName("controllers").WithName("Space"),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "Space")
+			os.Exit(1)
+		}
+		setupLog.Info("Set up the SpaceReconciler.")
 	}
 	// +kubebuilder:scaffold:builder
 
