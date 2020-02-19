@@ -121,7 +121,7 @@ operator: generate fmt vet
 	go build -o bin/operator ./cmd/operator_v2
 
 operator-debug: generate fmt vet
-	go build -gcflags="all=-N -l" -o bin/manager cmd/operator_v2.go
+	go build -gcflags="all=-N -l" -o bin/operator ./cmd/operator_v2
 
 springboard-image: $(SPRINGBOARD_IMAGE_MARKER)
 

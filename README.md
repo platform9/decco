@@ -33,6 +33,7 @@ Ex: `pkg/controllers/app_controller.go` --> click to the left of a line number t
 **NOTE:** if you get errors relating to controller-gen, try running `hack/setup_kubebuilder.sh`
 
 5. Click on vscode's Debug tab and click the green button near the top-left  
+
 This repo includes a launch.json configured to work with the above steps. 
 
 ### Go toolchain configuration
