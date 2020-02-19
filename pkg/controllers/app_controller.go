@@ -24,6 +24,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -62,7 +64,14 @@ func (r *AppReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	err = r.reconcileEndpoints(ctx, app)
 	if err != nil {
 		return ctrl.Result{},
-			fmt.Errorf("failed to reconcile namespace: %w", err)
+			fmt.Errorf("failed to reconcile endpoints: %w", err)
+	}
+
+	log.Info("Reconciling deployment")
+	err = r.reconcileDeployment(ctx, app)
+	if err != nil {
+		return ctrl.Result{},
+			fmt.Errorf("failed to reconcile deployment: %w", err)
 	}
 
 	return ctrl.Result{}, nil
@@ -121,6 +130,7 @@ func (r *AppReconciler) reconcileSvc(ctx context.Context, app *deccov1.App, e *d
 				*metav1.NewControllerRef(app, deccov1.GroupVersion.WithKind("App")),
 			},
 		},
+		// TODO(josh): add back in the stunnel tomfoolery
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{
 				{
@@ -155,6 +165,74 @@ func (r *AppReconciler) reconcileSvc(ctx context.Context, app *deccov1.App, e *d
 	}
 
 	err := r.Client.Create(ctx, svc)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
+}
+
+func (r *AppReconciler) reconcileDeployment(ctx context.Context, app *deccov1.App) error {
+	// TODO(josh): handle stunnel stuff, as well as egresses
+	objMeta := metav1.ObjectMeta{
+		Name: app.Name,
+		Namespace: app.Namespace,
+		Labels: map[string]string {
+			"decco-derived-from": "app",
+		},
+		OwnerReferences: []metav1.OwnerReference{
+			*metav1.NewControllerRef(app, deccov1.GroupVersion.WithKind("App")),
+		},
+	}
+	var err error
+	if app.Spec.RunAsJob {
+		backoffLimit := app.Spec.JobBackoffLimit
+		err = r.Client.Create(ctx, &batchv1.Job{
+			ObjectMeta: objMeta,
+			Spec: batchv1.JobSpec{
+				Template: v1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta {
+						Name: app.Name,
+						Namespace: app.Namespace,
+						Labels: map[string]string {
+							"app": "decco",
+							"decco-app": app.Name,
+						},
+					},
+					Spec: app.Spec.PodSpec,
+				},
+				BackoffLimit: &backoffLimit,
+			},
+		})
+	} else {
+		err = r.Client.Create(ctx, &appsv1.Deployment{
+			ObjectMeta: objMeta,
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &app.Spec.InitialReplicas,
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string {
+						"decco-app": app.Name,
+					},
+				},
+				Template: v1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta {
+						Name: app.Name,
+						Annotations: map[string]string {
+							"linkerd.io/inject": "enabled",
+							// https://linkerd.io/2/features/protocol-detection/#configuring-protocol-detection
+							// Skip linkerd proxy when making outbound connections to mysql
+							"config.linkerd.io/skip-outbound-ports": "3306",
+						},
+						Labels: map[string]string {
+							"app": "decco",
+							"decco-app": app.Name,
+						},
+					},
+					Spec: app.Spec.PodSpec,
+				},
+			},
+		})
+	}
+
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return err
 	}
