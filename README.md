@@ -19,3 +19,18 @@ Decco solves and automates the following problems:
 - Securing communications using end-to-end TLS and Kubernetes Network Policies.
 - Routing network requests to the correct application endpoints
 - Collecting and aggregating log files
+
+
+
+## Developing
+Littering print statements throughout your code in order to debug complicated reconcilation loops can become difficult to reason about. With that said, this repo offers at least 1 opinionated way of setting break points for iterative development.
+
+1. Create a file named `kubeconfig` at the root of this repo (same place as the Makefile)
+2. Have [vscode](https://code.visualstudio.com/) installed
+3. Go to the controller you would like to debug and set a breakpoint  
+Ex: `pkg/controllers/app_controller.go` --> click to the left of a line number to place a red dot
+4. Run `make operator-debug` to build the operator binary  
+**NOTE:** if you get errors relating to controller-gen, try running `hack/setup_kubebuilder.sh`
+
+5. Click on vscode's Debug tab and click the green button near the top-left  
+This repo includes a launch.json configured to work with the above steps 
