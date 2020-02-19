@@ -6,6 +6,19 @@ metadata:
   creationTimestamp: null
   name: spaces.decco.platform9.com
 spec:
+  additionalPrinterColumns:
+  - JSONPath: .spec.domainName
+    name: Domain
+    type: string
+  - JSONPath: .metadata.Name
+    name: Namespace
+    type: string
+  - JSONPath: .status.phase
+    name: Status
+    type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: Age
+    type: date
   group: decco.platform9.com
   names:
     kind: Space
@@ -13,6 +26,8 @@ spec:
     plural: spaces
     singular: space
   scope: ""
+  subresources:
+    status: {}
   validation:
     openAPIV3Schema:
       description: Space is the Schema for the spaces API
@@ -151,11 +166,14 @@ spec:
         status:
           description: SpaceStatus defines the observed state of Space
           properties:
+            namespace:
+              type: string
             phase:
               type: string
             reason:
               type: string
           required:
+          - namespace
           - phase
           - reason
           type: object
