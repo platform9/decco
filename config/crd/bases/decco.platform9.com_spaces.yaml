@@ -10,7 +10,7 @@ spec:
   - JSONPath: .spec.domainName
     name: Domain
     type: string
-  - JSONPath: .status.Namespace
+  - JSONPath: .status.namespace
     name: Namespace
     type: string
   - JSONPath: .status.phase

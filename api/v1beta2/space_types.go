@@ -121,7 +121,7 @@ func (in *SpaceStatus) SetPhase(phase SpacePhase, reason string) {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Domain",type="string",JSONPath=".spec.domainName"
-// +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.Namespace"
+// +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.namespace"
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
