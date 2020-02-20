@@ -68,7 +68,6 @@ type SpaceReconciler struct {
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 
-// TODO(erwin) handle updates to space resource (in Active phase).
 func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 	log := r.Log.WithValues("space", req.NamespacedName)
@@ -90,6 +89,12 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 	// Update the phase of the Space.
 	r.updatePhase(space)
+
+	// Note: for now we do not reconcile during the active phase.
+	// TODO(erwin) handle updates to space resource (in Active phase).
+	if space.Status.Phase == deccov1.SpacePhaseActive {
+		return ctrl.Result{}, nil
+	}
 
 	log.Info("Reconciling namespace")
 	err = r.reconcileNamespace(ctx, space)
