@@ -255,6 +255,10 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 				Labels: map[string]string{
 					"app":                "decco",
 					"decco-space-rsc-ns": namespace,
+					// Hack: add labels to be able to locate the space
+					// associated to this namespace.
+					"space.decco.platform9.com/name":      space.Name,
+					"space.decco.platform9.com/namespace": space.Namespace,
 				},
 			},
 		})
