@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	v1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -58,6 +59,18 @@ func (r *AppReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	if !app.ObjectMeta.DeletionTimestamp.IsZero() {
 		log.Info("Ignoring App being deleted.")
 		return ctrl.Result{}, nil
+	}
+
+	// Augment App based on other values present in the App Spec
+	if err := prepareApp(app); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to prepare App")
+	}
+
+	log.Info("Reconciling serviceaccount, role, and rolebinding")
+	err = r.reconcileRBAC(ctx, app)
+	if err != nil {
+		return ctrl.Result{},
+			fmt.Errorf("failed to reconcile RBAC: %w", err)
 	}
 
 	log.Info("Reconciling endpoints")
@@ -237,6 +250,84 @@ func (r *AppReconciler) reconcileDeployment(ctx context.Context, app *deccov1.Ap
 		return err
 	}
 	return nil
+}
+
+
+func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1.App) error {
+	if app.Spec.Permissions == nil {
+		return nil
+	}
+	// Ensure ServiceAccount exists
+	sa := app.Spec.PodSpec.ServiceAccountName
+	if sa == "" {
+		sa = app.Name
+		err = r.Client.Create(ctx, &v1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: sa,
+				OwnerReferences: []metav1.OwnerReference{
+					*metav1.NewControllerRef(app, deccov1.GroupVersion.WithKind("App")),
+				},
+			},
+		})
+		if err != nil && !errors.IsAlreadyExists(err) {
+			return err
+		}
+	}
+	// Ensure Role exists
+	err = r.Client.Create(ctx, &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: sa,
+			Namespace: app.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(app, deccov1.GroupVersion.WithKind("App")),
+			},
+		},
+		Rules: app.Spec.Permissions,
+	})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
+	}
+	// Ensure RoleBinding exists
+	err = r.Client.Create(ctx, &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: saName,
+			Namespace: app.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(app, deccov1.GroupVersion.WithKind("App")),
+			},
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      saName,
+				Namespace: app.Namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     saName,
+		},
+	})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
+	}
+
+	return nil
+}
+
+
+func prepareApp(app *deccov1.App) error {
+	// insertDomainEnvVar into each container
+	if app.Spec.DomainEnvVarName == "" {
+		return nil
+	}
+	for i := range app.Spec.PodSpec.Containers {
+		containers[i].Env = append(containers[i].Env, v1.EnvVar{
+			Name:  ar.app.Spec.DomainEnvVarName,
+			Value: ar.spaceSpec.DomainName,
+		})
+	}
 }
 
 func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
