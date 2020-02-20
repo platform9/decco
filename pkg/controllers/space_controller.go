@@ -163,6 +163,15 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		}, nil
 	}
 
+	// If all reconciliation loops succeeded and everything is ready,
+	// set the phase to active.
+	if space.Status.Phase == deccov1beta2.AppPhaseCreating && space.Status.
+			Namespace != "" && (!dns.Enabled() || space.Status.DNSConfigured) {
+		// TODO status check resources inside the space
+		log.Info("Updating the space status to Active, because all resources have been successfully reconciled.")
+		space.Status.SetPhase(deccov1beta2.SpacePhaseActive, "Space successfully created")
+	}
+
 	return ctrl.Result{}, nil
 }
 
