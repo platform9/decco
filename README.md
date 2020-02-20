@@ -25,7 +25,7 @@ Decco solves and automates the following problems:
 
 To install the Decco operator with the default configuration into your cluster: 
 
-```yaml
+```bash
 kubectl apply -k github.com/platform9/decco/config/default
 ```
 
@@ -34,7 +34,7 @@ This will install the CRDs and deploy the Decco components in the
 
 To install the CRDs separately in your cluster:
 
-```yaml
+```bash
 kubectl apply -k github.com/platform9/decco/config/crd
 ```
 
@@ -46,13 +46,13 @@ To develop Decco you will need to have the following binaries on your PATH:
 - [goreleaser](goreleaser.com) (if you want to create a new release)
 
 To test your modified Decco operator in the development cluster:
-```yaml
+```bash
 make run
 ```
 
 If you change kubebuilder annotations (e.g. `// +kubebuilder:object:root=true`)
 you will need to re-generate 
-```
+```bash
 # Generate Go files, such as zz_generated.deepcopy.go
 make generate 
 
