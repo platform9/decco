@@ -41,7 +41,14 @@ type AppReconciler struct {
 }
 
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=apps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=decco.platform9.com,resources=spaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=decco.platform9.com,resources=apps/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 
 func (r *AppReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	// Re-implementing https://github.com/platform9/decco/blob/104a69d77c1a599643c7c1f11adc06c2d98d23a5/pkg/app/app.go#L219
