@@ -35,7 +35,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	deccov1 "github.com/platform9/decco/api/v1beta2"
+	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/slack"
@@ -73,7 +73,7 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("space", req.NamespacedName)
 
 	// Lookup the current Space
-	space := &deccov1.Space{}
+	space := &deccov1beta2.Space{}
 	err := r.Client.Get(ctx, req.NamespacedName, space)
 	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -92,7 +92,7 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 	// Note: for now we do not reconcile during the active phase.
 	// TODO(erwin) handle updates to space resource (in Active phase).
-	if space.Status.Phase == deccov1.SpacePhaseActive {
+	if space.Status.Phase == deccov1beta2.SpacePhaseActive {
 		return ctrl.Result{}, nil
 	}
 
@@ -169,27 +169,27 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 // TODO(erwin) add controller ownerReference and add .Owns here
 func (r *SpaceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&deccov1.Space{}).
+		For(&deccov1beta2.Space{}).
 		Complete(r)
 }
 
-func (r *SpaceReconciler) updatePhase(space *deccov1.Space) {
+func (r *SpaceReconciler) updatePhase(space *deccov1beta2.Space) {
 	log := r.getLoggerFor(space)
 	switch {
 	case space.Status.Phase == "":
 		log.Info("Setting the space phase to Creating, because the space has no phase set.")
-		space.Status.Phase = deccov1.SpacePhaseCreating
+		space.Status.Phase = deccov1beta2.SpacePhaseCreating
 	case isDeleting(space):
 		log.Info("Setting the space phase to Deleting, because the space has been scheduled for deletion.")
-		space.Status.Phase = deccov1.SpacePhaseDeleting
-	case space.Status.Phase == deccov1.AppPhaseCreating && space.Status.Namespace != "" && (!dns.Enabled() || space.Status.DNSConfigured):
+		space.Status.Phase = deccov1beta2.SpacePhaseDeleting
+	case space.Status.Phase == deccov1beta2.AppPhaseCreating && space.Status.Namespace != "" && (!dns.Enabled() || space.Status.DNSConfigured):
 		// TODO status check resources inside the space
 		log.Info("Updating the space status to Active, because all resources have been successfully reconciled.")
-		space.Status.SetPhase(deccov1.SpacePhaseActive, "Space successfully created")
+		space.Status.SetPhase(deccov1beta2.SpacePhaseActive, "Space successfully created")
 	}
 }
 
-func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1.Space) error {
+func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1beta2.Space) error {
 	log := r.getLoggerFor(space)
 	namespace := space.Name
 
@@ -268,7 +268,7 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 	return nil
 }
 
-func (r *SpaceReconciler) reconcileNetPolicy(ctx context.Context, space *deccov1.Space) error {
+func (r *SpaceReconciler) reconcileNetPolicy(ctx context.Context, space *deccov1beta2.Space) error {
 	// note(erwin): from original code, not sure why this condition is here.
 	// This probably should be part of the overall validation?
 	if space.Spec.Project == "" {
@@ -291,7 +291,7 @@ func (r *SpaceReconciler) reconcileNetPolicy(ctx context.Context, space *deccov1
 			Name:      space.Name,
 			Namespace: space.Status.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(space, deccov1.GroupVersion.WithKind("Space")),
+				*metav1.NewControllerRef(space, deccov1beta2.GroupVersion.WithKind("Space")),
 			},
 		},
 		Spec: netv1.NetworkPolicySpec{
@@ -302,7 +302,7 @@ func (r *SpaceReconciler) reconcileNetPolicy(ctx context.Context, space *deccov1
 						{
 							NamespaceSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
-									"decco-project": deccov1.ReservedProjectName,
+									"decco-project": deccov1beta2.ReservedProjectName,
 								},
 							},
 						},
@@ -324,7 +324,7 @@ func (r *SpaceReconciler) reconcileNetPolicy(ctx context.Context, space *deccov1
 	return nil
 }
 
-func (r *SpaceReconciler) reconcileRBAC(ctx context.Context, space *deccov1.Space) error {
+func (r *SpaceReconciler) reconcileRBAC(ctx context.Context, space *deccov1beta2.Space) error {
 	log := r.getLoggerFor(space)
 	perms := space.Spec.Permissions
 	if perms == nil {
@@ -381,7 +381,7 @@ func (r *SpaceReconciler) reconcileRBAC(ctx context.Context, space *deccov1.Spac
 	return nil
 }
 
-func (r *SpaceReconciler) reconcileCertificates(ctx context.Context, space *deccov1.Space) error {
+func (r *SpaceReconciler) reconcileCertificates(ctx context.Context, space *deccov1beta2.Space) error {
 	log := r.getLoggerFor(space)
 
 	// hack: rely on the namespace deletion to clean up these resources.
@@ -406,7 +406,7 @@ func (r *SpaceReconciler) reconcileCertificates(ctx context.Context, space *decc
 	return nil
 }
 
-func (r *SpaceReconciler) reconcileHTTPCertificate(ctx context.Context, space *deccov1.Space) error {
+func (r *SpaceReconciler) reconcileHTTPCertificate(ctx context.Context, space *deccov1beta2.Space) error {
 	if err := ensureNamespaceIsCreated(space); err != nil {
 		return err
 	}
@@ -457,7 +457,7 @@ func (r *SpaceReconciler) reconcileHTTPCertificate(ctx context.Context, space *d
 	return nil
 }
 
-func (r *SpaceReconciler) reconcileTCPCertificate(ctx context.Context, space *deccov1.Space) error {
+func (r *SpaceReconciler) reconcileTCPCertificate(ctx context.Context, space *deccov1beta2.Space) error {
 	if space.Spec.TcpCertAndCaSecretName == "" {
 		return nil
 	}
@@ -512,7 +512,7 @@ func (r *SpaceReconciler) reconcileTCPCertificate(ctx context.Context, space *de
 	return nil
 }
 
-func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1.Space) error {
+func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1beta2.Space) error {
 	if err := ensureNamespaceIsCreated(space); err != nil {
 		return err
 	}
@@ -683,7 +683,7 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1.S
 	return nil
 }
 
-func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context, space *deccov1.Space) error {
+func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context, space *deccov1beta2.Space) error {
 	if err := ensureNamespaceIsCreated(space); err != nil {
 		return err
 	}
@@ -789,7 +789,7 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 		args = append(args, "--v=1")
 	}
 	baseTlsListenPort := int32(k8sutil.TlsPort)
-	endpoints := []deccov1.EndpointSpec{
+	endpoints := []deccov1beta2.EndpointSpec{
 		{
 			Name:                  "nginx-ingress",
 			Port:                  baseTlsListenPort, // nginx itself terminates TLS
@@ -802,7 +802,7 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 		},
 	}
 	for _, epName := range space.Spec.PrivateIngressControllerTcpEndpoints {
-		endpoints = append(endpoints, deccov1.EndpointSpec{
+		endpoints = append(endpoints, deccov1beta2.EndpointSpec{
 			Name: "nginx-ingress-sni-" + epName,
 			Port: 80,
 			SniHostname: epName +
@@ -816,7 +816,7 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 		ingressControllerImage = "platform9/ingress-nginx:0.19.0-006"
 	}
 
-	err = r.Client.Create(ctx, &deccov1.App{
+	err = r.Client.Create(ctx, &deccov1beta2.App{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "nginx-ingress",
 			Namespace: space.Status.Namespace,
@@ -824,7 +824,7 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 				createSpaceOwnerRef(space),
 			},
 		},
-		Spec: deccov1.AppSpec{
+		Spec: deccov1beta2.AppSpec{
 			InitialReplicas:         1,
 			FirstEndpointListenPort: baseTlsListenPort + 1, // 'cause nginx itself uses 443
 			Permissions:             []rbacv1.PolicyRule{},
@@ -886,7 +886,7 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 	return nil
 }
 
-func (r *SpaceReconciler) reconcileDNS(ctx context.Context, space *deccov1.Space) error {
+func (r *SpaceReconciler) reconcileDNS(ctx context.Context, space *deccov1beta2.Space) error {
 	log := r.getLoggerFor(space)
 	if !dns.Enabled() {
 		log.Info("skipping DNS update: no registered provider")
@@ -946,7 +946,7 @@ func (r *SpaceReconciler) reconcileDNS(ctx context.Context, space *deccov1.Space
 	return err
 }
 
-func (r *SpaceReconciler) getLoggerFor(space *deccov1.Space) logr.Logger {
+func (r *SpaceReconciler) getLoggerFor(space *deccov1beta2.Space) logr.Logger {
 	return r.Log.WithValues("space", types.NamespacedName{
 		Namespace: space.Namespace,
 		Name:      space.Name,
@@ -973,14 +973,14 @@ func removeString(slice []string, s string) (result []string) {
 	return
 }
 
-func ensureNamespaceIsCreated(space *deccov1.Space) error {
+func ensureNamespaceIsCreated(space *deccov1beta2.Space) error {
 	if space.Status.Namespace == "" {
 		return fmt.Errorf("the space's namespace has not yet been created")
 	}
 	return nil
 }
 
-func hasSpaceAsOwner(owners []metav1.OwnerReference, space *deccov1.Space) bool {
+func hasSpaceAsOwner(owners []metav1.OwnerReference, space *deccov1beta2.Space) bool {
 	needle := createSpaceOwnerRef(space)
 	for _, owner := range owners {
 		if reflect.DeepEqual(owner, needle) {
@@ -990,21 +990,21 @@ func hasSpaceAsOwner(owners []metav1.OwnerReference, space *deccov1.Space) bool 
 	return false
 }
 
-func createSpaceOwnerRef(space *deccov1.Space) metav1.OwnerReference {
-	return *metav1.NewControllerRef(space, deccov1.GroupVersion.WithKind("Space"))
+func createSpaceOwnerRef(space *deccov1beta2.Space) metav1.OwnerReference {
+	return *metav1.NewControllerRef(space, deccov1beta2.GroupVersion.WithKind("Space"))
 }
 
-func isDeleting(space *deccov1.Space) bool {
+func isDeleting(space *deccov1beta2.Space) bool {
 	return !space.ObjectMeta.DeletionTimestamp.IsZero()
 }
 
-func addFinalizer(space *deccov1.Space, finalizer string) {
+func addFinalizer(space *deccov1beta2.Space, finalizer string) {
 	if !containsString(space.Finalizers, finalizer) {
 		space.Finalizers = append(space.Finalizers, finalizer)
 	}
 }
 
-func removeFinalizer(space *deccov1.Space, finalizer string) {
+func removeFinalizer(space *deccov1beta2.Space, finalizer string) {
 	if containsString(space.Finalizers, finalizer) {
 		space.Finalizers = removeString(space.Finalizers, finalizer)
 	}

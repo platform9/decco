@@ -48,7 +48,7 @@ func (r *AppReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("app", req.NamespacedName)
 
 	// Lookup the current keys
-	app := &deccov1.App{}
+	app := &deccov1beta2.App{}
 	err := r.Client.Get(ctx, req.NamespacedName, app)
 	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -90,7 +90,7 @@ func (r *AppReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
-func (r *AppReconciler) reconcileEndpoints(ctx context.Context, app *deccov1.App) error {
+func (r *AppReconciler) reconcileEndpoints(ctx context.Context, app *deccov1beta2.App) error {
 	if app.Spec.RunAsJob {
 		return nil // no service endpoints for a job
 	}
@@ -125,7 +125,7 @@ func (r *AppReconciler) reconcileEndpoints(ctx context.Context, app *deccov1.App
 	return nil
 }
 
-func (r *AppReconciler) reconcileSvc(ctx context.Context, app *deccov1.App, e *deccov1.EndpointSpec) error {
+func (r *AppReconciler) reconcileSvc(ctx context.Context, app *deccov1beta2.App, e *deccov1beta2.EndpointSpec) error {
 	labels := map[string]string{
 		"decco-derived-from": "app",
 		"decco-app":          app.Name,
@@ -140,7 +140,7 @@ func (r *AppReconciler) reconcileSvc(ctx context.Context, app *deccov1.App, e *d
 			Namespace: app.Namespace,
 			Labels:    labels,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(app, deccov1.GroupVersion.WithKind("App")),
+				*metav1.NewControllerRef(app, deccov1beta2.GroupVersion.WithKind("App")),
 			},
 		},
 		// TODO(josh): add back in the stunnel tomfoolery
@@ -184,7 +184,7 @@ func (r *AppReconciler) reconcileSvc(ctx context.Context, app *deccov1.App, e *d
 	return nil
 }
 
-func (r *AppReconciler) reconcileDeployment(ctx context.Context, app *deccov1.App) error {
+func (r *AppReconciler) reconcileDeployment(ctx context.Context, app *deccov1beta2.App) error {
 	// TODO(josh): handle stunnel stuff, as well as egresses
 	objMeta := metav1.ObjectMeta{
 		Name: app.Name,
@@ -193,7 +193,7 @@ func (r *AppReconciler) reconcileDeployment(ctx context.Context, app *deccov1.Ap
 			"decco-derived-from": "app",
 		},
 		OwnerReferences: []metav1.OwnerReference{
-			*metav1.NewControllerRef(app, deccov1.GroupVersion.WithKind("App")),
+			*metav1.NewControllerRef(app, deccov1beta2.GroupVersion.WithKind("App")),
 		},
 	}
 	var err error
@@ -253,7 +253,7 @@ func (r *AppReconciler) reconcileDeployment(ctx context.Context, app *deccov1.Ap
 }
 
 
-func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1.App) error {
+func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1beta2.App) error {
 	if app.Spec.Permissions == nil {
 		return nil
 	}
@@ -265,7 +265,7 @@ func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1.App) err
 			ObjectMeta: metav1.ObjectMeta{
 				Name: sa,
 				OwnerReferences: []metav1.OwnerReference{
-					*metav1.NewControllerRef(app, deccov1.GroupVersion.WithKind("App")),
+					*metav1.NewControllerRef(app, deccov1beta2.GroupVersion.WithKind("App")),
 				},
 			},
 		})
@@ -279,7 +279,7 @@ func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1.App) err
 			Name: sa,
 			Namespace: app.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(app, deccov1.GroupVersion.WithKind("App")),
+				*metav1.NewControllerRef(app, deccov1beta2.GroupVersion.WithKind("App")),
 			},
 		},
 		Rules: app.Spec.Permissions,
@@ -293,7 +293,7 @@ func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1.App) err
 			Name: saName,
 			Namespace: app.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(app, deccov1.GroupVersion.WithKind("App")),
+				*metav1.NewControllerRef(app, deccov1beta2.GroupVersion.WithKind("App")),
 			},
 		},
 		Subjects: []rbacv1.Subject{
@@ -317,7 +317,7 @@ func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1.App) err
 }
 
 
-func prepareApp(app *deccov1.App) error {
+func prepareApp(app *deccov1beta2.App) error {
 	// insertDomainEnvVar into each container
 	if app.Spec.DomainEnvVarName == "" {
 		return nil

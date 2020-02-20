@@ -1,7 +1,7 @@
 builds:
   - id: operator
     binary: decco-operator
-    main: ./cmd/operator_v2
+    main: ./cmd/operator
     env:
       - CGO_ENABLED=0
       - GO111MODULE=on
