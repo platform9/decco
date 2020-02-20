@@ -53,15 +53,15 @@ const (
 
 // SpaceSpec defines the desired state of Space
 type SpaceSpec struct {
-	DomainName                        string `json:"domainName"`
-	Project                           string `json:"project,omitempty"`
-	HttpCertSecretName                string `json:"httpCertSecretName"`
-	TcpCertAndCaSecretName            string `json:"tcpCertAndCaSecretName,omitempty"`
-	EncryptHttp                       bool   `json:"encryptHttp,omitempty"`
-	DeleteHttpCertSecretAfterCopy     bool   `json:"deleteHttpCertSecretAfterCopy,omitempty"`
-	DeleteTcpCertAndCaSecretAfterCopy bool   `json:"deleteTcpCertAndCaSecretAfterCopy,omitempty"`
-	DisablePrivateIngressController   bool   `json:"disablePrivateIngressController,omitempty"`
-	VerboseIngressControllerLogging   bool   `json:"verboseIngressControllerLogging,omitempty"`
+	DomainName                           string   `json:"domainName"`
+	Project                              string   `json:"project,omitempty"`
+	HttpCertSecretName                   string   `json:"httpCertSecretName"`
+	TcpCertAndCaSecretName               string   `json:"tcpCertAndCaSecretName,omitempty"`
+	EncryptHttp                          bool     `json:"encryptHttp,omitempty"`
+	DeleteHttpCertSecretAfterCopy        bool     `json:"deleteHttpCertSecretAfterCopy,omitempty"`
+	DeleteTcpCertAndCaSecretAfterCopy    bool     `json:"deleteTcpCertAndCaSecretAfterCopy,omitempty"`
+	DisablePrivateIngressController      bool     `json:"disablePrivateIngressController,omitempty"`
+	VerboseIngressControllerLogging      bool     `json:"verboseIngressControllerLogging,omitempty"`
 	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints,omitempty"`
 	// Optional suffix to append to host names of private ingress controller's tcp endpoints
 	PrivateIngressControllerTcpHostnameSuffix string            `json:"privateIngressControllerTcpHostnameSuffix,omitempty"`

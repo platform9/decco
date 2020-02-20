@@ -39,6 +39,7 @@ const (
 	AppPhaseCreating          = "Creating"
 	AppPhaseActive            = "Active"
 	AppPhaseFailed            = "Failed"
+	AppPhaseError             = "Error"
 )
 
 // AppSpec defines the desired state of App

@@ -20,13 +20,14 @@ import (
 	"fmt"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	batchv1 "k8s.io/api/batch/v1"
-	appsv1 "k8s.io/api/apps/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -54,6 +55,14 @@ func (r *AppReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Always update the app at the end of the reconcilation loop
+	defer func() {
+		err := r.Client.Update(ctx, app)
+		if err != nil {
+			log.Error(err, "Failed to update the App.")
+		}
+	}()
+
 	// Check if App is being deleted
 	// TODO(josh) set status to deleting to indicate that it is waiting for dependent objects to be deleted.
 	if !app.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -62,7 +71,8 @@ func (r *AppReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	}
 
 	// Augment App based on other values present in the App Spec
-	if err := prepareApp(app); err != nil {
+	if err := r.prepareApp(ctx, app); err != nil {
+
 		return ctrl.Result{}, fmt.Errorf("failed to prepare App")
 	}
 
@@ -187,9 +197,9 @@ func (r *AppReconciler) reconcileSvc(ctx context.Context, app *deccov1beta2.App,
 func (r *AppReconciler) reconcileDeployment(ctx context.Context, app *deccov1beta2.App) error {
 	// TODO(josh): handle stunnel stuff, as well as egresses
 	objMeta := metav1.ObjectMeta{
-		Name: app.Name,
+		Name:      app.Name,
 		Namespace: app.Namespace,
-		Labels: map[string]string {
+		Labels: map[string]string{
 			"decco-derived-from": "app",
 		},
 		OwnerReferences: []metav1.OwnerReference{
@@ -203,11 +213,11 @@ func (r *AppReconciler) reconcileDeployment(ctx context.Context, app *deccov1bet
 			ObjectMeta: objMeta,
 			Spec: batchv1.JobSpec{
 				Template: v1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta {
-						Name: app.Name,
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      app.Name,
 						Namespace: app.Namespace,
-						Labels: map[string]string {
-							"app": "decco",
+						Labels: map[string]string{
+							"app":       "decco",
 							"decco-app": app.Name,
 						},
 					},
@@ -222,21 +232,21 @@ func (r *AppReconciler) reconcileDeployment(ctx context.Context, app *deccov1bet
 			Spec: appsv1.DeploymentSpec{
 				Replicas: &app.Spec.InitialReplicas,
 				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string {
+					MatchLabels: map[string]string{
 						"decco-app": app.Name,
 					},
 				},
 				Template: v1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta {
+					ObjectMeta: metav1.ObjectMeta{
 						Name: app.Name,
-						Annotations: map[string]string {
+						Annotations: map[string]string{
 							"linkerd.io/inject": "enabled",
 							// https://linkerd.io/2/features/protocol-detection/#configuring-protocol-detection
 							// Skip linkerd proxy when making outbound connections to mysql
 							"config.linkerd.io/skip-outbound-ports": "3306",
 						},
-						Labels: map[string]string {
-							"app": "decco",
+						Labels: map[string]string{
+							"app":       "decco",
 							"decco-app": app.Name,
 						},
 					},
@@ -257,6 +267,7 @@ func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1beta2.App
 	if app.Spec.Permissions == nil {
 		return nil
 	}
+	var err error
 	// Ensure ServiceAccount exists
 	sa := app.Spec.PodSpec.ServiceAccountName
 	if sa == "" {
@@ -276,7 +287,7 @@ func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1beta2.App
 	// Ensure Role exists
 	err = r.Client.Create(ctx, &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: sa,
+			Name:      sa,
 			Namespace: app.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(app, deccov1beta2.GroupVersion.WithKind("App")),
@@ -290,7 +301,7 @@ func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1beta2.App
 	// Ensure RoleBinding exists
 	err = r.Client.Create(ctx, &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: saName,
+			Name:      sa,
 			Namespace: app.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(app, deccov1beta2.GroupVersion.WithKind("App")),
@@ -299,14 +310,14 @@ func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1beta2.App
 		Subjects: []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
-				Name:      saName,
+				Name:      sa,
 				Namespace: app.Namespace,
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
-			Name:     saName,
+			Name:     sa,
 		},
 	})
 	if err != nil && !errors.IsAlreadyExists(err) {
@@ -317,17 +328,61 @@ func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1beta2.App
 }
 
 
-func prepareApp(app *deccov1beta2.App) error {
+func (r *AppReconciler) prepareApp(ctx context.Context, app *deccov1beta2.App) error {
 	// insertDomainEnvVar into each container
 	if app.Spec.DomainEnvVarName == "" {
 		return nil
 	}
-	for i := range app.Spec.PodSpec.Containers {
+	space, err := r.getOwningSpace(ctx, app)
+	if err != nil {
+		app.Status.SetPhase(deccov1beta2.AppPhaseError)
+		app.Status.SetReason("App is deployed in a namespace which is not associated with a Space")
+		return err
+	}
+	containers := app.Spec.PodSpec.Containers
+	for i := range containers {
 		containers[i].Env = append(containers[i].Env, v1.EnvVar{
-			Name:  ar.app.Spec.DomainEnvVarName,
-			Value: ar.spaceSpec.DomainName,
+			Name:  app.Spec.DomainEnvVarName,
+			Value: space.Spec.DomainName,
 		})
 	}
+	return nil
+}
+
+// getOwningSpace returns the Space which created the namespace that the input App
+// is deployed in. If no owning Space is found, the App's status is updated to an error state
+func (r *AppReconciler) getOwningSpace(ctx context.Context, app *deccov1beta2.App) (*deccov1beta2.Space, error) {
+	appNamespace := &v1.Namespace{}
+	err := r.Client.Get(ctx, types.NamespacedName{
+		Name: app.Namespace,
+	}, appNamespace)
+	if err != nil {
+		return nil, err
+	}
+
+	tmp := types.NamespacedName{}
+	labels := []string{
+		"space.decco.platform9.com/name",
+		"space.decco.platform9.com/namespace",
+	}
+
+	// Yeah yeah, could use a loop but...
+	var found bool
+	if tmp.Name, found = appNamespace.Labels[labels[0]]; !found {
+		return nil, fmt.Errorf("namespace %s does not contain label %s", app.Namespace, labels[0])
+	}
+
+	if tmp.Namespace, found = appNamespace.Labels[labels[1]]; !found {
+		return nil, fmt.Errorf("namespace %s does not contain label %s", app.Namespace, labels[1])
+	}
+
+	// Found both labels in the App's namespace.
+	space := &deccov1beta2.Space{}
+	err = r.Client.Get(ctx, tmp, space)
+	if err != nil {
+		return nil, err
+	}
+	return space, nil
 }
 
 func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
