@@ -26,8 +26,7 @@ spec:
     plural: spaces
     singular: space
   scope: ""
-  subresources:
-    status: {}
+  subresources: {}
   validation:
     openAPIV3Schema:
       description: Space is the Schema for the spaces API

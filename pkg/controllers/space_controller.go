@@ -19,6 +19,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
+	"time"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
@@ -42,8 +44,8 @@ import (
 const (
 	defaultHttpInternalPort int32  = 8081
 	metricsPort             int32  = 10254
-	spacePhaseFinalizer     string = "phase.space.decco.platform9.com"
-	spaceDNSFinalizer       string = "dns.space.decco.platform9.com"
+	finalizerSpaceDNS       string = "dns.space.decco.platform9.com"
+	finalizerSpaceNamespace string = "namespace.space.decco.platform9.com"
 )
 
 // SpaceReconciler reconciles a Space object
@@ -66,103 +68,41 @@ type SpaceReconciler struct {
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 
-
 // TODO(erwin) handle updates to space resource (in Active phase).
 func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 	log := r.Log.WithValues("space", req.NamespacedName)
 
-	// Lookup the current keys
+	// Lookup the current Space
 	space := &deccov1.Space{}
 	err := r.Client.Get(ctx, req.NamespacedName, space)
 	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if isDeleting(space) {
-		// Update the phase to Deleting when the space is scheduled for deletion
-		if space.Status.Phase != deccov1.SpacePhaseDeleting {
-			log.Info("Space is being deleted; updating phase", "phase", space.Status.Phase)
-			space.Status.Phase = deccov1.SpacePhaseDeleting
-			err := r.Client.Status().Update(ctx, space)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-
-		// Remove the a finalizer in order to update the phase update on deletion.
-		err := r.removeFinalizerAndUpdate(ctx, space, spacePhaseFinalizer)
+	// Always update the space at the end of the reconcilation loop
+	defer func() {
+		err := r.Client.Update(ctx, space)
 		if err != nil {
-			return ctrl.Result{}, err
+			log.Error(err, "Failed to update the Space.")
 		}
-	} else {
-		// Add the a finalizer in order to update the phase update on deletion.
-		err := r.addFinalizerAndUpdate(ctx, space, spacePhaseFinalizer)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	}
+	}()
 
-	// Validate object
-	// TODO(erwin) Move to admission controller
-	// TODO(erwin) Validate secrets too
-	err = space.Spec.Validate()
-	if err != nil {
-		return ctrl.Result{}, err
-	}
+	// Update the phase of the Space.
+	r.updatePhase(space)
 
-	// Space's states
-	//
-	// Phase     | Description
-	// ----------|------------
-	// ""        | Move to Creating
-	// Creating  | Space is being created/reconciled and is not yet ready for use.
-	// Active    | Space has been created and is ready for usage.
-	// Failed    | Space is in a permanent error state. (not used right now)
-	// Deleting  | Space is being deleted; resources are being cleaned up.
-	//
-	// NOTE(erwin) currently no reconciling is taking place in the
-	// Active state. In the future we should support (partial) reconciling there too.
-	// TODO(erwin) support reconciling in Active phase
-	switch space.Status.Phase {
-	case deccov1.SpacePhaseNone:
-		log.Info("Updating the space phase to Creating, because the space has no phase set.")
-		space.Status.SetPhase(deccov1.AppPhaseCreating, "")
-		err := r.Status().Update(ctx, space)
-		return ctrl.Result{}, err
-	case deccov1.SpacePhaseCreating:
-		log.Info("Reconciling Space in Creating phase.")
-		return r.reconcileSpace(ctx, space)
-	case deccov1.SpacePhaseActive:
-		log.Info("Space is in the Active phase; skipping.")
-		return ctrl.Result{}, nil
-	case deccov1.SpacePhaseDeleting:
-		log.Info("Deleting space.")
-		// TODO do not differentiate between reconciling of creates and deletes
-		err := r.reconcileDNS(ctx, space)
-		return ctrl.Result{}, err
-	case deccov1.SpacePhaseFailed:
-		log.Info("Space is in the Failed phase: " + space.Status.Reason)
-		return ctrl.Result{}, nil
-	default:
-		return ctrl.Result{}, fmt.Errorf("space is in unknown phase: %s", space.Status.Phase)
-	}
-}
-
-// TODO(erwin) add controller ownerReference and add .Owns here
-func (r *SpaceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&deccov1.Space{}).
-		Complete(r)
-}
-
-func (r *SpaceReconciler) reconcileSpace(ctx context.Context, space *deccov1.Space) (ctrl.Result, error) {
-	log := r.getLoggerFor(space)
 	log.Info("Reconciling namespace")
-	err := r.reconcileNamespace(ctx, space)
+	err = r.reconcileNamespace(ctx, space)
 	if err != nil {
 		return ctrl.Result{},
-			fmt.Errorf("failed to reconcile namespace: %w", err)
+			fmt.Errorf("failed to reconcile the namespace: %w", err)
+	}
+
+	log.Info("Reconciling RBAC rules")
+	err = r.reconcileRBAC(ctx, space)
+	if err != nil {
+		return ctrl.Result{},
+			fmt.Errorf("failed to reconcile RBAC rules: %w", err)
 	}
 
 	log.Info("Reconciling networkpolicy")
@@ -204,20 +144,48 @@ func (r *SpaceReconciler) reconcileSpace(ctx context.Context, space *deccov1.Spa
 	err = r.reconcileDNS(ctx, space)
 	if err != nil {
 		return ctrl.Result{},
-			fmt.Errorf("failed to reconcile DNS records: %w", err)
+			fmt.Errorf("failed to reconcile the DNS records: %w", err)
 	}
 
-	// Check if the space is ready to become Active
-	if space.Status.Namespace != ""  && (!dns.Enabled() || space.Status.DNSConfigured) {
+	// Hack: while actively deleting we might need to wait a bit for
+	// other resources to be deleted. To avoid having to wait for the next
+	// periodic update, we forcefully requeue the space every couple of seconds.
+	if isDeleting(space) {
+		requeueAfter := 10 * time.Second
+		log.Info("Requeueing space because it is being deleted.", "requeueAfter", requeueAfter)
+		return ctrl.Result{
+			RequeueAfter: requeueAfter,
+		}, nil
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// TODO(erwin) add controller ownerReference and add .Owns here
+func (r *SpaceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&deccov1.Space{}).
+		Complete(r)
+}
+
+func (r *SpaceReconciler) updatePhase(space *deccov1.Space) {
+	log := r.getLoggerFor(space)
+	switch {
+	case space.Status.Phase == "":
+		log.Info("Setting the space phase to Creating, because the space has no phase set.")
+		space.Status.Phase = deccov1.SpacePhaseCreating
+	case isDeleting(space):
+		log.Info("Setting the space phase to Deleting, because the space has been scheduled for deletion.")
+		space.Status.Phase = deccov1.SpacePhaseDeleting
+	case space.Status.Phase == deccov1.AppPhaseCreating && space.Status.Namespace != "" && (!dns.Enabled() || space.Status.DNSConfigured):
+		// TODO status check resources inside the space
 		log.Info("Updating the space status to Active, because all resources have been successfully reconciled.")
 		space.Status.SetPhase(deccov1.SpacePhaseActive, "Space successfully created")
-		err = r.Client.Status().Update(ctx, space)
 	}
-
-	return ctrl.Result{}, err
 }
 
 func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1.Space) error {
+	log := r.getLoggerFor(space)
 	namespace := space.Name
 
 	// Check what the current status is of the namespace.
@@ -231,10 +199,21 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 		//
 		// Check if we are not reusing an existing space not owned by the space.
 		if !hasSpaceAsOwner(ns.OwnerReferences, space) {
-			return fmt.Errorf("namespace %s already exists", ns.Name)
+			return fmt.Errorf("namespace %s already exists", namespace)
 		}
 
-		// Note: we rely on the ownerReference to handle namespace deletion.
+		// Delete the namespace if it not yet scheduled for deletion.
+		if isDeleting(space) {
+			if ns.DeletionTimestamp.IsZero() {
+				log.Info("Deleting the namespace.", "namespace", namespace)
+				err := r.Client.Delete(ctx, ns)
+				if err != nil {
+					return err
+				}
+			} else {
+				log.Info("Awaiting deletion of the namespace.", "namespace", namespace)
+			}
+		}
 	} else {
 		// Stop if there is an unexpected error.
 		if !errors.IsNotFound(err) {
@@ -243,10 +222,25 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 
 		// Skip if the space is being deleted.
 		if isDeleting(space) {
+			// Remove the finalizer, because the space is deleting and the
+			// namespace is no longer there.
+			log.Info("Removing finalizer.", "finalizer", finalizerSpaceNamespace)
+			removeFinalizer(space, finalizerSpaceNamespace)
 			return nil
 		}
 
+		// Set the finalizer to ensure that we get time to delete the ns.
+		//
+		// Currently this is done by the OwnerReference. However, this is based
+		// on undefined behaviour, since a cluster-scoped resource (namespace)
+		// should not be able to have a namespace-scoped resource (space) as its
+		// owner. It currently works, but we should not trust it to be the case
+		// in the future.
+		log.Info("Adding finalizer.", "finalizer", finalizerSpaceNamespace)
+		addFinalizer(space, finalizerSpaceNamespace)
+
 		// Attempt to create the namespace.
+		log.Info("Creating the namespace for the space.", "namespace", namespace)
 		err = r.Client.Create(ctx, &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: namespace,
@@ -264,11 +258,8 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 		}
 	}
 
-	// Update the namespace in the status
-	if space.Status.Namespace != namespace {
-		space.Status.Namespace = namespace
-		return r.Client.Status().Update(ctx, space)
-	}
+	// Ensure that the namespace is set in the status
+	space.Status.Namespace = namespace
 	return nil
 }
 
@@ -278,6 +269,11 @@ func (r *SpaceReconciler) reconcileNetPolicy(ctx context.Context, space *deccov1
 	if space.Spec.Project == "" {
 		r.getLoggerFor(space).Info("Skipping network policy " +
 			"because no project was provided in the space.")
+		return nil
+	}
+
+	// hack: rely on the namespace deletion to clean up these resources.
+	if isDeleting(space) {
 		return nil
 	}
 
@@ -324,10 +320,15 @@ func (r *SpaceReconciler) reconcileNetPolicy(ctx context.Context, space *deccov1
 }
 
 func (r *SpaceReconciler) reconcileRBAC(ctx context.Context, space *deccov1.Space) error {
+	log := r.getLoggerFor(space)
 	perms := space.Spec.Permissions
 	if perms == nil {
-		r.getLoggerFor(space).Info("Skipping RBAC rules, " +
-			"because no permissions were defined in the space.")
+		log.Info("Skipping RBAC rules, because no permissions were defined in the space.")
+		return nil
+	}
+
+	// hack: rely on the namespace deletion to clean up these resources.
+	if isDeleting(space) {
 		return nil
 	}
 
@@ -377,6 +378,11 @@ func (r *SpaceReconciler) reconcileRBAC(ctx context.Context, space *deccov1.Spac
 
 func (r *SpaceReconciler) reconcileCertificates(ctx context.Context, space *deccov1.Space) error {
 	log := r.getLoggerFor(space)
+
+	// hack: rely on the namespace deletion to clean up these resources.
+	if isDeleting(space) {
+		return nil
+	}
 
 	// Copy the HTTP certificate to the space and delete the original one.
 	log.Info("Reconciling HTTP certificate")
@@ -501,81 +507,14 @@ func (r *SpaceReconciler) reconcileTCPCertificate(ctx context.Context, space *de
 	return nil
 }
 
-// TODO(erwin) remove backoff here and rely on the back-off of the controller itself.
-func (r *SpaceReconciler) reconcileDNS(ctx context.Context, space *deccov1.Space) error {
-	log := r.getLoggerFor(space)
-	if !dns.Enabled() {
-		log.Info("skipping DNS update: no registered provider")
-		return nil
-	}
-
-	ipOrHostname, isHostname, err := k8sutil.GetTcpIngressIPOrHostnameWithControllerClient(ctx, r.Client)
-	if err != nil {
-		return fmt.Errorf("failed to get TCP ingress ipOrHostname: %s", err)
-	}
-	url := os.Getenv("SLACK_WEBHOOK_FOR_DNS_UPDATE_FAILURE")
-
-	if isDeleting(space) {
-		// Skip deleting DNS if it is not configured
-		// TODO(erwin) replace with an actual check if it has been configured
-		if !space.Status.DNSConfigured {
-			return nil
-		}
-
-		err = dns.DeleteRecord(space.Spec.DomainName, space.Name, ipOrHostname, isHostname)
-		if err != nil {
-			if url != "" {
-				msg := fmt.Sprintf("attempt to delete DNS for %s failed: %s", space.Name, err)
-				slack.PostBestEffort(url, msg, log)
-			}
-			return fmt.Errorf("failed to delete DNS record: %w", err)
-		}
-		if url != "" {
-			msg := fmt.Sprintf("Deleting DNS records for %s has succeeded!", space.Name)
-			slack.PostBestEffort(url, msg, log)
-		}
-
-		err := r.removeFinalizerAndUpdate(ctx, space, spaceDNSFinalizer)
-		if err != nil {
-			return err
-		}
-	} else {
-		// Check if the DNS has already been configured
-		// TODO(erwin) replace with an actual check if it is configured
-		if space.Status.DNSConfigured {
-			return nil
-		}
-
-		err = dns.CreateOrUpdateRecord(space.Spec.DomainName, space.Name, ipOrHostname, isHostname)
-		if err != nil {
-			if url != "" {
-				msg := fmt.Sprintf("attempt to create DNS for %s failed: %s", space.Name, err)
-				slack.PostBestEffort(url, msg, log)
-			}
-			return fmt.Errorf("failed to update DNS record: %w", err)
-		}
-		if url != "" {
-			msg := fmt.Sprintf("Updating DNS records for %s has succeeded!", space.Name)
-			slack.PostBestEffort(url, msg, log)
-		}
-
-		err := r.addFinalizerAndUpdate(ctx, space, spaceDNSFinalizer)
-		if err != nil {
-			return err
-		}
-
-		space.Status.DNSConfigured = true
-		err = r.Status().Update(ctx, space)
-		if err != nil {
-			return err
-		}
-	}
-	return err
-}
-
 func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1.Space) error {
 	if err := ensureNamespaceIsCreated(space); err != nil {
 		return err
+	}
+
+	// hack: rely on the namespace deletion to clean up these resources.
+	if isDeleting(space) {
+		return nil
 	}
 
 	log := r.getLoggerFor(space)
@@ -742,6 +681,11 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1.S
 func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context, space *deccov1.Space) error {
 	if err := ensureNamespaceIsCreated(space); err != nil {
 		return err
+	}
+
+	// hack: rely on the namespace deletion to clean up these resources.
+	if isDeleting(space) {
+		return nil
 	}
 
 	log := r.getLoggerFor(space)
@@ -937,37 +881,71 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 	return nil
 }
 
+func (r *SpaceReconciler) reconcileDNS(ctx context.Context, space *deccov1.Space) error {
+	log := r.getLoggerFor(space)
+	if !dns.Enabled() {
+		log.Info("skipping DNS update: no registered provider")
+		return nil
+	}
+
+	ipOrHostname, isHostname, err := k8sutil.GetTcpIngressIPOrHostnameWithControllerClient(ctx, r.Client)
+	if err != nil {
+		return fmt.Errorf("failed to get TCP ingress ipOrHostname: %s", err)
+	}
+	url := os.Getenv("SLACK_WEBHOOK_FOR_DNS_UPDATE_FAILURE")
+
+	if isDeleting(space) {
+		// Skip deleting DNS if it is not configured
+		// TODO(erwin) replace with an actual check if it has been configured
+		if !space.Status.DNSConfigured {
+			return nil
+		}
+
+		err = dns.DeleteRecord(space.Spec.DomainName, space.Name, ipOrHostname, isHostname)
+		if err != nil {
+			if url != "" {
+				msg := fmt.Sprintf("attempt to delete DNS for %s failed: %s", space.Name, err)
+				slack.PostBestEffort(url, msg, log)
+			}
+			return fmt.Errorf("failed to delete DNS record: %w", err)
+		}
+		if url != "" {
+			msg := fmt.Sprintf("Deleting DNS records for %s has succeeded!", space.Name)
+			slack.PostBestEffort(url, msg, log)
+		}
+
+		removeFinalizer(space, finalizerSpaceDNS)
+	} else {
+		// Check if the DNS has already been configured
+		// TODO(erwin) replace with an actual check if it is configured
+		if space.Status.DNSConfigured {
+			return nil
+		}
+
+		err = dns.CreateOrUpdateRecord(space.Spec.DomainName, space.Name, ipOrHostname, isHostname)
+		if err != nil {
+			if url != "" {
+				msg := fmt.Sprintf("attempt to create DNS for %s failed: %s", space.Name, err)
+				slack.PostBestEffort(url, msg, log)
+			}
+			return fmt.Errorf("failed to update DNS record: %w", err)
+		}
+		if url != "" {
+			msg := fmt.Sprintf("Updating DNS records for %s has succeeded!", space.Name)
+			slack.PostBestEffort(url, msg, log)
+		}
+
+		addFinalizer(space, finalizerSpaceNamespace)
+		space.Status.DNSConfigured = true
+	}
+	return err
+}
+
 func (r *SpaceReconciler) getLoggerFor(space *deccov1.Space) logr.Logger {
 	return r.Log.WithValues("space", types.NamespacedName{
 		Namespace: space.Namespace,
 		Name:      space.Name,
 	})
-}
-
-func (r *SpaceReconciler) addFinalizerAndUpdate(ctx context.Context, space *deccov1.Space, finalizer string) error {
-	log := r.getLoggerFor(space)
-	if !containsString(space.Finalizers, finalizer) {
-		log.Info("Adding finalizer to space", "finalizer", finalizer)
-		space.Finalizers = append(space.Finalizers, finalizer)
-		err := r.Client.Update(ctx, space)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (r *SpaceReconciler) removeFinalizerAndUpdate(ctx context.Context, space *deccov1.Space, finalizer string) error {
-	log := r.getLoggerFor(space)
-	if containsString(space.Finalizers, finalizer) {
-		log.Info("Removing finalizer to space", "finalizer", finalizer)
-		space.Finalizers = removeString(space.Finalizers, spacePhaseFinalizer)
-		err := r.Client.Update(ctx, space)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // Helper functions to check and remove string from a slice of strings.
@@ -1000,7 +978,7 @@ func ensureNamespaceIsCreated(space *deccov1.Space) error {
 func hasSpaceAsOwner(owners []metav1.OwnerReference, space *deccov1.Space) bool {
 	needle := createSpaceOwnerRef(space)
 	for _, owner := range owners {
-		if owner == needle {
+		if reflect.DeepEqual(owner, needle) {
 			return true
 		}
 	}
@@ -1013,4 +991,16 @@ func createSpaceOwnerRef(space *deccov1.Space) metav1.OwnerReference {
 
 func isDeleting(space *deccov1.Space) bool {
 	return !space.ObjectMeta.DeletionTimestamp.IsZero()
+}
+
+func addFinalizer(space *deccov1.Space, finalizer string) {
+	if !containsString(space.Finalizers, finalizer) {
+		space.Finalizers = append(space.Finalizers, finalizer)
+	}
+}
+
+func removeFinalizer(space *deccov1.Space, finalizer string) {
+	if containsString(space.Finalizers, finalizer) {
+		space.Finalizers = removeString(space.Finalizers, finalizer)
+	}
 }
