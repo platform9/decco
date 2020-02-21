@@ -1,11 +1,12 @@
 package main
 
 import (
-	_ "k8s.io/kubernetes/federation/pkg/dnsprovider/providers/aws/route53"
-	"github.com/sirupsen/logrus"
-	"fmt"
 	"flag"
+	"fmt"
+
+	"github.com/sirupsen/logrus"
 	"k8s.io/kubernetes/federation/pkg/dnsprovider"
+	_ "k8s.io/kubernetes/federation/pkg/dnsprovider/providers/aws/route53"
 	"k8s.io/kubernetes/federation/pkg/dnsprovider/rrstype"
 )
 

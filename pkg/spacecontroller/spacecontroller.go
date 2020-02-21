@@ -16,20 +16,22 @@ package spacecontroller
 
 import (
 	"encoding/json"
-	"github.com/sirupsen/logrus"
-	"github.com/platform9/decco/pkg/k8sutil"
-	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	restclient "k8s.io/client-go/rest"
-	kwatch "k8s.io/apimachinery/pkg/watch"
 	"fmt"
-	"k8s.io/client-go/kubernetes"
-	"github.com/platform9/decco/pkg/space"
 	"net/http"
-	"github.com/platform9/decco/pkg/spec"
-	"github.com/platform9/decco/pkg/appcontroller"
-	"github.com/platform9/decco/pkg/watcher"
-	"k8s.io/client-go/rest"
 	"sync"
+
+	"github.com/sirupsen/logrus"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	kwatch "k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	restclient "k8s.io/client-go/rest"
+
+	"github.com/platform9/decco/pkg/appcontroller"
+	"github.com/platform9/decco/pkg/k8sutil"
+	"github.com/platform9/decco/pkg/space"
+	"github.com/platform9/decco/pkg/spec"
+	"github.com/platform9/decco/pkg/watcher"
 )
 
 func init() {
@@ -40,18 +42,18 @@ func init() {
 }
 
 type Controller struct {
-	log *logrus.Entry
-	apiHost string
-	extensionsApi apiextensionsclient.Interface
-	kubeApi kubernetes.Interface
-	waitApps sync.WaitGroup
+	log                      *logrus.Entry
+	apiHost                  string
+	extensionsApi            apiextensionsclient.Interface
+	kubeApi                  kubernetes.Interface
+	waitApps                 sync.WaitGroup
 	garbageCollectNamespaces bool
 }
 
 type SpaceInfo struct {
-	spc *space.SpaceRuntime
-	appCtrl    *appcontroller.Controller
-	log *logrus.Entry
+	spc     *space.SpaceRuntime
+	appCtrl *appcontroller.Controller
+	log     *logrus.Entry
 }
 
 // ----------------------------------------------------------------------------
@@ -62,7 +64,7 @@ func (spcInfo *SpaceInfo) Name() string {
 
 // ----------------------------------------------------------------------------
 
-func (spcInfo *SpaceInfo) Delete()  {
+func (spcInfo *SpaceInfo) Delete() {
 	nsDeleted := spcInfo.spc.Delete()
 	if !nsDeleted {
 		// An active space resource might have no associated namespace if for
@@ -87,7 +89,7 @@ func (spcInfo *SpaceInfo) Stop() {
 
 // ----------------------------------------------------------------------------
 
-func (spcInfo *SpaceInfo) Update(item watcher.Item)  {
+func (spcInfo *SpaceInfo) Update(item watcher.Item) {
 	wrapped := item.(*spaceWrapper)
 	spc := wrapped.space
 	spcInfo.spc.Update(*spc)
@@ -102,10 +104,10 @@ func New(
 	logger := logrus.WithField("pkg", "spacecontroller")
 	logger.Logger.SetLevel(logrus.DebugLevel)
 	return &Controller{
-		log: logger,
-		apiHost: clustConfig.Host,
+		log:           logger,
+		apiHost:       clustConfig.Host,
 		extensionsApi: k8sutil.MustNewKubeExtClient(),
-		kubeApi: kubeApi,
+		kubeApi:       kubeApi,
 	}
 }
 
@@ -185,9 +187,9 @@ func (c *Controller) InitItem(item watcher.Item) watcher.ManagedItem {
 			spc.Name)
 	}
 	return &SpaceInfo{
-		spc: newSpaceRt,
+		spc:     newSpaceRt,
 		appCtrl: appCtrl,
-		log: c.log.WithField("spaceInfo", spc.Name),
+		log:     c.log.WithField("spaceInfo", spc.Name),
 	}
 }
 

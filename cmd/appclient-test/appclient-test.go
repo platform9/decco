@@ -19,14 +19,16 @@ package main
 
 import (
 	"flag"
-	"github.com/platform9/decco/pkg/appspec"
-	"github.com/platform9/decco/pkg/client"
-	"github.com/platform9/decco/pkg/k8sutil"
+
 	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/klog"
+
+	"github.com/platform9/decco/pkg/appspec"
+	"github.com/platform9/decco/pkg/client"
+	"github.com/platform9/decco/pkg/k8sutil"
 )
 
 func main() {
@@ -51,6 +53,3 @@ func main() {
 		log.Fatalf("failed to create app: %s", err)
 	}
 }
-
-
-

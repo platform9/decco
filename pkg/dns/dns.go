@@ -1,20 +1,21 @@
 package dns
 
 import (
-	"github.com/sirupsen/logrus"
-	_ "k8s.io/federation/pkg/dnsprovider/providers/aws/route53"
-	"k8s.io/federation/pkg/dnsprovider"
-	"k8s.io/federation/pkg/dnsprovider/rrstype"
-	"os"
 	"fmt"
+	"os"
+
+	"github.com/sirupsen/logrus"
+	"k8s.io/federation/pkg/dnsprovider"
+	_ "k8s.io/federation/pkg/dnsprovider/providers/aws/route53"
+	"k8s.io/federation/pkg/dnsprovider/rrstype"
 )
 
 var (
 	dnsProvider dnsprovider.Interface
-	log = logrus.WithField("pkg","dns")
+	log         = logrus.WithField("pkg", "dns")
 )
 
-func init () {
+func init() {
 	dnsProviderName := os.Getenv("DNS_PROVIDER_NAME")
 	if len(dnsProviderName) > 0 {
 		var err error
@@ -58,7 +59,7 @@ func UpdateRecord(domainName string, name string, ipOrHostname string,
 				if len(rrSetList) == 0 {
 					log.Infof("not deleting DNS record because rrSetList empty")
 					return nil
-				} else{
+				} else {
 					changeSet.Remove(rrSetList[0])
 				}
 			} else {
@@ -66,7 +67,7 @@ func UpdateRecord(domainName string, name string, ipOrHostname string,
 				if isHostname {
 					rscType = rrstype.CNAME
 				}
-				rrSet := rrSets.New(rrName, []string{ipOrHostname},180, rscType)
+				rrSet := rrSets.New(rrName, []string{ipOrHostname}, 180, rscType)
 				if len(rrSetList) == 0 {
 					action = "creation"
 				} else {
@@ -87,4 +88,3 @@ func UpdateRecord(domainName string, name string, ipOrHostname string,
 	}
 	return fmt.Errorf("failed to find DNS zone %s", zoneName)
 }
-

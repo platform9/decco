@@ -1,15 +1,16 @@
 package main
 
 import (
-	log "github.com/sirupsen/logrus"
+	"fmt"
+	"net"
 	"os"
 	"os/exec"
-	"net"
-	"syscall"
-	"fmt"
-	"time"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -24,7 +25,7 @@ func main() {
 	if delayStr != "" {
 		delay, err := strconv.Atoi(delayStr)
 		if err != nil {
-			log.Fatalf("failed to parse SPRINGBOARD_DELAY_SECONDS: %s", err);
+			log.Fatalf("failed to parse SPRINGBOARD_DELAY_SECONDS: %s", err)
 		}
 		log.Infof("sleeping for %d seconds", delay)
 		time.Sleep(time.Duration(delay) * time.Second)
@@ -38,26 +39,26 @@ func main() {
 	cmd.Stderr = os.Stderr
 	err := cmd.Start()
 	if err != nil {
-		log.Fatalf("failed to start process: %s", err);
+		log.Fatalf("failed to start process: %s", err)
 	}
 	log.Printf("child process pid is %d", cmd.Process.Pid)
 	cancel := make(chan bool)
-	go func () {
+	go func() {
 		err = cmd.Wait()
 		if err != nil {
-			log.Warnf("failed to wait for child process: %s", err);
+			log.Warnf("failed to wait for child process: %s", err)
 		}
 		log.Printf("child success indicator: %t",
 			cmd.ProcessState.Success())
 		cancel <- true
-	} ()
+	}()
 	keepLooping := true
 	childExited := false
 	for keepLooping {
-		keepLooping = func () bool {
+		keepLooping = func() bool {
 			ln, err := net.Listen("tcp", listenAddr)
 			if err != nil {
-				log.Fatalf("failed to listen: %s", err);
+				log.Fatalf("failed to listen: %s", err)
 			}
 			defer ln.Close()
 			tcpListener := ln.(*net.TCPListener)
@@ -68,13 +69,13 @@ func main() {
 					// retry
 					return true
 				}
-				log.Fatalf("failed to accept connection: %s", err);
+				log.Fatalf("failed to accept connection: %s", err)
 				// not reached
 			} else {
 				conn.Close()
 			}
 			return false
-		} ()
+		}()
 		select {
 		case _ = <-cancel:
 			log.Infof("child process exited on its own")
@@ -88,5 +89,3 @@ func main() {
 		cmd.Process.Signal(syscall.SIGTERM)
 	}
 }
-
-

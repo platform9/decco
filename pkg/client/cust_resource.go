@@ -2,12 +2,13 @@ package client
 
 import (
 	"fmt"
-	"github.com/platform9/decco/pkg/appspec"
-	"github.com/platform9/decco/pkg/spec"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
-)
 
+	"github.com/platform9/decco/pkg/appspec"
+	"github.com/platform9/decco/pkg/spec"
+)
 
 // TODO: make this private so that we don't expose RESTClient once operator code uses this client instead of REST calls
 func New(cfg *rest.Config) (*rest.RESTClient, error) {

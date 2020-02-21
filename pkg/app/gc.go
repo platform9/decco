@@ -2,9 +2,10 @@ package app
 
 import (
 	"context"
+
+	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"github.com/sirupsen/logrus"
 )
 
 func Collect(kubeApi kubernetes.Interface,
@@ -70,7 +71,7 @@ func collectServices(kubeApi kubernetes.Interface,
 	for _, svc := range svcs.Items {
 		labels := svc.Labels
 		appName, ok := labels["decco-app"]
-		if ! ok {
+		if !ok {
 			log.Warnf("service %s has no decco-app label", svc.Name)
 			continue
 		}

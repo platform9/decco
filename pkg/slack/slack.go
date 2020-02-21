@@ -1,10 +1,11 @@
 package slack
 
 import (
-	"github.com/sirupsen/logrus"
-	"fmt"
 	"bytes"
+	"fmt"
 	"net/http"
+
+	"github.com/sirupsen/logrus"
 )
 
 func PostBestEffort(url string, msg string, log *logrus.Entry) {
