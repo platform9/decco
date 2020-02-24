@@ -17,9 +17,10 @@ package spec
 import (
 	"encoding/json"
 	"errors"
+
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 const (
@@ -27,9 +28,9 @@ const (
 )
 
 var (
-	ErrDomainNameMissing = errors.New("spec: missing domain name")
+	ErrDomainNameMissing         = errors.New("spec: missing domain name")
 	ErrHttpCertSecretNameMissing = errors.New("spec: missing certificate secret name")
-	ErrInvalidProjectName = errors.New("spec: invalid project name")
+	ErrInvalidProjectName        = errors.New("spec: invalid project name")
 )
 
 // SpaceList is a list of spaces.
@@ -37,7 +38,7 @@ type SpaceList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata
 	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata
-	metav1.ListMeta                  `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Space `json:"items"`
 }
 
@@ -73,20 +74,20 @@ type SpacePermissions struct {
 }
 
 type SpaceSpec struct {
-	DomainName             string `json:"domainName"`
-	Project                string `json:"project"`
-	HttpCertSecretName     string `json:"httpCertSecretName"`
-	TcpCertAndCaSecretName string `json:"tcpCertAndCaSecretName"`
-	EncryptHttp            bool   `json:"encryptHttp"`
-	DeleteHttpCertSecretAfterCopy bool   `json:"deleteHttpCertSecretAfterCopy"`
-	DeleteTcpCertAndCaSecretAfterCopy bool   `json:"deleteTcpCertAndCaSecretAfterCopy"`
-	DisablePrivateIngressController bool `json:"disablePrivateIngressController"`
-	VerboseIngressControllerLogging bool `json:"verboseIngressControllerLogging"`
+	DomainName                           string   `json:"domainName"`
+	Project                              string   `json:"project"`
+	HttpCertSecretName                   string   `json:"httpCertSecretName"`
+	TcpCertAndCaSecretName               string   `json:"tcpCertAndCaSecretName"`
+	EncryptHttp                          bool     `json:"encryptHttp"`
+	DeleteHttpCertSecretAfterCopy        bool     `json:"deleteHttpCertSecretAfterCopy"`
+	DeleteTcpCertAndCaSecretAfterCopy    bool     `json:"deleteTcpCertAndCaSecretAfterCopy"`
+	DisablePrivateIngressController      bool     `json:"disablePrivateIngressController"`
+	VerboseIngressControllerLogging      bool     `json:"verboseIngressControllerLogging"`
 	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints"`
 	// Optional suffix to append to host names of private ingress controller's tcp endpoints
-	PrivateIngressControllerTcpHostnameSuffix string `json:"privateIngressControllerTcpHostnameSuffix"`
-	Permissions *SpacePermissions `json:permissions`
-	CreateDefaultHttpDeploymentAndIngress bool `json:createDefaultHttpDeploymentAndIngress`
+	PrivateIngressControllerTcpHostnameSuffix string            `json:"privateIngressControllerTcpHostnameSuffix"`
+	Permissions                               *SpacePermissions `json:permissions`
+	CreateDefaultHttpDeploymentAndIngress     bool              `json:createDefaultHttpDeploymentAndIngress`
 }
 
 func (c *SpaceSpec) Validate() error {
@@ -122,15 +123,15 @@ type SpacePhase string
 
 const (
 	SpacePhaseNone     SpacePhase = ""
-	SpacePhaseCreating                     = "Creating"
-	SpacePhaseActive                       = "Active"
-	SpacePhaseFailed                       = "Failed"
+	SpacePhaseCreating            = "Creating"
+	SpacePhaseActive              = "Active"
+	SpacePhaseFailed              = "Failed"
 )
 
 type SpaceCondition struct {
-	Type SpaceConditionType `json:"type"`
-	Reason string `json:"reason"`
-	TransitionTime string `json:"transitionTime"`
+	Type           SpaceConditionType `json:"type"`
+	Reason         string             `json:"reason"`
+	TransitionTime string             `json:"transitionTime"`
 }
 
 type SpaceConditionType string
@@ -138,7 +139,7 @@ type SpaceConditionType string
 type SpaceStatus struct {
 	// Phase is the Space running phase
 	Phase  SpacePhase `json:"phase"`
-	Reason string       `json:"reason"`
+	Reason string     `json:"reason"`
 }
 
 func (cs SpaceStatus) Copy() SpaceStatus {
@@ -168,4 +169,3 @@ func (cs *SpaceStatus) SetPhase(p SpacePhase) {
 func (cs *SpaceStatus) SetReason(r string) {
 	cs.Reason = r
 }
-

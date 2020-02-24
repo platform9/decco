@@ -16,20 +16,22 @@ package appcontroller
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+
 	"github.com/sirupsen/logrus"
-	"github.com/platform9/decco/pkg/k8sutil"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	kwatch "k8s.io/apimachinery/pkg/watch"
-	"fmt"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
 	"github.com/platform9/decco/pkg/app"
-	"time"
-	"net/http"
-	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/appspec"
+	"github.com/platform9/decco/pkg/k8sutil"
+	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/watcher"
-	"sync"
 )
 
 type InternalController struct {
@@ -43,12 +45,12 @@ type InternalController struct {
 }
 
 type Controller struct {
-	log           *logrus.Entry
-	wg            *sync.WaitGroup
-	stopCh        chan interface{}
-	stopOnce      sync.Once
-	spaceSpec     spec.SpaceSpec
-	namespace     string
+	log       *logrus.Entry
+	wg        *sync.WaitGroup
+	stopCh    chan interface{}
+	stopOnce  sync.Once
+	spaceSpec spec.SpaceSpec
+	namespace string
 }
 
 // ----------------------------------------------------------------------------
@@ -60,14 +62,14 @@ func New(
 	wg *sync.WaitGroup,
 ) *Controller {
 	return &Controller{
-		log:        log.WithFields(logrus.Fields{
+		log: log.WithFields(logrus.Fields{
 			"namespace": namespace,
-			"pkg": "appcontroller",
+			"pkg":       "appcontroller",
 		}),
-		namespace:  namespace,
-		wg:         wg,
-		spaceSpec:  spaceSpec,
-		stopCh:     make(chan interface{}),
+		namespace: namespace,
+		wg:        wg,
+		spaceSpec: spaceSpec,
+		stopCh:    make(chan interface{}),
 	}
 }
 
@@ -77,7 +79,7 @@ func (ctl *Controller) Start() {
 	ctl.wg.Add(1)
 	log := ctl.log
 	go ctl.shutdownWhenNamespaceGone()
-	go func () {
+	go func() {
 		defer ctl.wg.Done()
 		for {
 			c := NewInternalController(ctl.namespace, ctl.spaceSpec, ctl.stopCh)
@@ -116,7 +118,7 @@ func NewInternalController(
 ) *InternalController {
 	clustConfig := k8sutil.GetClusterConfigOrDie()
 	logger := logrus.WithFields(logrus.Fields{
-		"pkg": "appcontroller",
+		"pkg":       "appcontroller",
 		"namespace": namespace,
 	})
 	logger.Logger.SetLevel(logrus.DebugLevel)

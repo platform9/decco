@@ -1,12 +1,13 @@
 package k8sutil
 
 import (
+	"flag"
+	"os"
+	"path/filepath"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
-	"flag"
-	"path/filepath"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 var kubeconfig *string

@@ -3,8 +3,9 @@ package k8sutil
 import (
 	"context"
 	"fmt"
-	"k8s.io/client-go/kubernetes"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 func GetTcpIngressIpOrHostname(kubeApi kubernetes.Interface) (string, bool, error) {
@@ -14,7 +15,7 @@ func GetTcpIngressIpOrHostname(kubeApi kubernetes.Interface) (string, bool, erro
 	if err != nil {
 		return "", false, fmt.Errorf("failed to get k8sniff service: %s", err)
 	}
-	lbIngresses := svc.Status.LoadBalancer.Ingress;
+	lbIngresses := svc.Status.LoadBalancer.Ingress
 	if len(lbIngresses) == 0 {
 		return "", false, fmt.Errorf("k8sniff service has no LB ingresses")
 	}
@@ -28,4 +29,3 @@ func GetTcpIngressIpOrHostname(kubeApi kubernetes.Interface) (string, bool, erro
 	}
 	return "", false, fmt.Errorf("k8sniff service has no IP or hostname")
 }
-

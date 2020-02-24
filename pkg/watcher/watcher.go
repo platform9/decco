@@ -1,24 +1,25 @@
 package watcher
 
 import (
-	"net/http"
-	"github.com/sirupsen/logrus"
-	"time"
-	"fmt"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kwatch "k8s.io/apimachinery/pkg/watch"
+	"net/http"
 	"os"
 	"strconv"
+	"time"
+
+	"github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kwatch "k8s.io/apimachinery/pkg/watch"
 )
 
 var (
-	initRetryWaitTime = 30 * time.Second
+	initRetryWaitTime                   = 30 * time.Second
 	delayAfterWatchStreamCloseInSeconds = 2
-	ErrTerminated = errors.New("gracefully terminated")
+	ErrTerminated                       = errors.New("gracefully terminated")
 )
 
 type WatchConsumer interface {
@@ -48,9 +49,9 @@ type ManagedItem interface {
 }
 
 type watchLoop struct {
-	log *logrus.Entry
-	cons WatchConsumer
-	stopCh chan interface{}
+	log     *logrus.Entry
+	cons    WatchConsumer
+	stopCh  chan interface{}
 	itemMap map[string]ManagedItem
 }
 
@@ -76,9 +77,9 @@ func CreateWatchLoop(
 	stopCh chan interface{},
 ) WatchLoop {
 	return &watchLoop{
-		log: logrus.WithField("watchname", name),
-		cons: c,
-		stopCh: stopCh,
+		log:     logrus.WithField("watchname", name),
+		cons:    c,
+		stopCh:  stopCh,
 		itemMap: make(map[string]ManagedItem),
 	}
 }
@@ -139,28 +140,27 @@ func (wl *watchLoop) watch(watchVersion string) error {
 
 type eventChunk struct {
 	evType kwatch.EventType
-	item Item
-	rv string
-	st *metav1.Status
-	err error
+	item   Item
+	rv     string
+	st     *metav1.Status
+	err    error
 }
 
 // ----------------------------------------------------------------------------
 
-func (wl *watchLoop) decodeOneChunk(decoder *json.Decoder) <- chan eventChunk {
+func (wl *watchLoop) decodeOneChunk(decoder *json.Decoder) <-chan eventChunk {
 	evChan := make(chan eventChunk, 1)
 	go func() {
 		evType, item, rv, st, err := wl.pollEvent(decoder)
 		if err == nil && item == nil {
 			wl.log.Warnf("decodeOneChunk: both err and item are nil")
 		}
-		evChan <- eventChunk{ evType,item, rv,st, err}
-	} ()
+		evChan <- eventChunk{evType, item, rv, st, err}
+	}()
 	return evChan
 }
 
 // ----------------------------------------------------------------------------
-
 
 func (wl *watchLoop) processWatchResponse(
 	initialWatchVersion string,
@@ -177,9 +177,9 @@ func (wl *watchLoop) processWatchResponse(
 	for {
 		var chunk eventChunk
 		select {
-		case chunk = <- wl.decodeOneChunk(decoder):
+		case chunk = <-wl.decodeOneChunk(decoder):
 			break
-		case <- wl.stopCh:
+		case <-wl.stopCh:
 			return "", ErrTerminated
 		}
 		evType, item, objVersion, st, err := chunk.evType, chunk.item, chunk.rv, chunk.st, chunk.err
@@ -201,7 +201,7 @@ func (wl *watchLoop) processWatchResponse(
 			return "", err
 		}
 
-		//logrus.Infof("next watch version: %s", nextWatchVersion)
+		// logrus.Infof("next watch version: %s", nextWatchVersion)
 		if item == nil {
 			// Shouldn't happen in theory but has been seen once in practice.
 			// It shouldn't happen because if item were nil, then err should
@@ -236,39 +236,38 @@ func (wl *watchLoop) handleEvent(evType kwatch.EventType, item Item) error {
 	switch evType {
 	case kwatch.Added:
 		if _, ok := wl.itemMap[name]; ok {
-			return fmt.Errorf("unsafe state. %s '%s' was registered" +
+			return fmt.Errorf("unsafe state. %s '%s' was registered"+
 				" before but we received event %s", iType, name, evType)
 		}
 		wl.itemMap[name] = wl.cons.InitItem(item)
-		wl.log.Printf("%s '%s' added. " +
+		wl.log.Printf("%s '%s' added. "+
 			"There now %d %ss", iType, name, len(wl.itemMap), iType)
 
 	case kwatch.Modified:
 		mgItem := wl.itemMap[name]
 		if mgItem == nil {
-			return fmt.Errorf("unsafe state. %s '%s' was not" +
+			return fmt.Errorf("unsafe state. %s '%s' was not"+
 				" registered but we received event %s", iType, name, evType)
 		}
 		mgItem.Update(item)
-		wl.log.Printf("%s '%s' updated. " +
+		wl.log.Printf("%s '%s' updated. "+
 			"There now %d %ss", iType, name, len(wl.itemMap), iType)
 
 	case kwatch.Deleted:
 		mgItem := wl.itemMap[name]
 		if mgItem == nil {
-			return fmt.Errorf("unsafe state. %s '%s' was not " +
+			return fmt.Errorf("unsafe state. %s '%s' was not "+
 				"registered but we received event %s", iType, name, evType)
 		}
 		mgItem.Delete()
 		delete(wl.itemMap, name)
-		wl.log.Printf("%s '%s' deleted. " +
+		wl.log.Printf("%s '%s' deleted. "+
 			"There now %d %ss", iType, name, len(wl.itemMap), iType)
 	}
 	return nil
 }
 
 // ----------------------------------------------------------------------------
-
 
 func (wl *watchLoop) pollEvent(decoder *json.Decoder,
 ) (evType kwatch.EventType, item Item, rv string, st *metav1.Status, err error) {

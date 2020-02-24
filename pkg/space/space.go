@@ -5,14 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"reflect"
+	"strings"
+
 	"github.com/cenkalti/backoff"
-	"github.com/platform9/decco/pkg/appspec"
-	"github.com/platform9/decco/pkg/client"
-	"github.com/platform9/decco/pkg/dns"
-	"github.com/platform9/decco/pkg/k8sutil"
-	"github.com/platform9/decco/pkg/misc"
-	"github.com/platform9/decco/pkg/slack"
-	"github.com/platform9/decco/pkg/spec"
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
@@ -23,9 +20,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
-	"os"
-	"reflect"
-	"strings"
+
+	"github.com/platform9/decco/pkg/appspec"
+	"github.com/platform9/decco/pkg/client"
+	"github.com/platform9/decco/pkg/dns"
+	"github.com/platform9/decco/pkg/k8sutil"
+	"github.com/platform9/decco/pkg/misc"
+	"github.com/platform9/decco/pkg/slack"
+	"github.com/platform9/decco/pkg/spec"
 )
 
 var (
@@ -34,14 +36,14 @@ var (
 
 const (
 	defaultHttpInternalPort int32 = 8081
-	metricsPort int32 = 10254
+	metricsPort             int32 = 10254
 )
 
 type SpaceRuntime struct {
 	kubeApi kubernetes.Interface
-	log *logrus.Entry
+	log     *logrus.Entry
 
-	//config Config
+	// config Config
 
 	Space spec.Space
 
@@ -57,14 +59,13 @@ func New(
 	kubeApi kubernetes.Interface,
 ) *SpaceRuntime {
 
-	lg := logrus.WithField("pkg","space",
-		).WithField("space-name", spc.Name)
+	lg := logrus.WithField("pkg", "space").WithField("space-name", spc.Name)
 
 	c := &SpaceRuntime{
-		kubeApi:   kubeApi,
-		log:       lg,
-		Space:     spc,
-		Status:    spc.Status.Copy(),
+		kubeApi: kubeApi,
+		log:     lg,
+		Space:   spc,
+		Status:  spc.Status.Copy(),
 	}
 
 	if err := c.setup(); err != nil {
@@ -239,7 +240,7 @@ func (c *SpaceRuntime) internalCreate() error {
 
 // -----------------------------------------------------------------------------
 
-func (c * SpaceRuntime) createPermissions() error {
+func (c *SpaceRuntime) createPermissions() error {
 	perms := c.Space.Spec.Permissions
 	if perms == nil {
 		return nil
@@ -247,7 +248,7 @@ func (c * SpaceRuntime) createPermissions() error {
 	rolesApi := c.kubeApi.RbacV1().Roles(c.Space.Name)
 	role := rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{Name: "space-creator"},
-		Rules: perms.Rules,
+		Rules:      perms.Rules,
 	}
 	ctx := context.Background()
 	_, err := rolesApi.Create(ctx, &role, metav1.CreateOptions{})
@@ -261,8 +262,8 @@ func (c * SpaceRuntime) createPermissions() error {
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
-			Kind: "Role",
-			Name: "space-creator",
+			Kind:     "Role",
+			Name:     "space-creator",
 		},
 	}
 	rbApi := c.kubeApi.RbacV1().RoleBindings(c.Space.Name)
@@ -275,14 +276,14 @@ func (c * SpaceRuntime) createPermissions() error {
 
 // -----------------------------------------------------------------------------
 
-func (c * SpaceRuntime) createNetPolicy() error {
+func (c *SpaceRuntime) createNetPolicy() error {
 	if c.Space.Spec.Project == "" {
 		return nil
 	}
 	peers := []netv1.NetworkPolicyPeer{
 		{
 			NamespaceSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string {
+				MatchLabels: map[string]string{
 					"decco-project": spec.RESERVED_PROJECT_NAME,
 				},
 			},
@@ -316,7 +317,7 @@ func (c * SpaceRuntime) createNetPolicy() error {
 
 // -----------------------------------------------------------------------------
 
-func (c * SpaceRuntime) updateDns(delete bool) error {
+func (c *SpaceRuntime) updateDns(delete bool) error {
 	if !dns.Enabled() {
 		c.log.Debug("skipping DNS update: no registered provider")
 		return nil
@@ -330,10 +331,10 @@ func (c * SpaceRuntime) updateDns(delete bool) error {
 	url := os.Getenv("SLACK_WEBHOOK_FOR_DNS_UPDATE_FAILURE")
 	attempt := 0
 	verb := "create"
-	if (delete) {
+	if delete {
 		verb = "delete"
 	}
-	updateFn := func () error {
+	updateFn := func() error {
 		attempt += 1
 		err := dns.UpdateRecord(c.Space.Spec.DomainName, c.Space.Name,
 			ipOrHostname, isHostname, delete)
@@ -377,8 +378,8 @@ func (c *SpaceRuntime) createNamespace() error {
 	ns := v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: c.Space.Name,
-			Labels: map[string]string {
-				"app": "decco",
+			Labels: map[string]string{
+				"app":                "decco",
 				"decco-space-rsc-ns": c.Space.Namespace,
 			},
 		},
@@ -403,7 +404,7 @@ func (c *SpaceRuntime) createHttpIngress() error {
 		c.kubeApi,
 		c.Space.Name,
 		"http-ingress",
-		map[string]string {"app": "decco"},
+		map[string]string{"app": "decco"},
 		hostName,
 		"/",
 		"default-http",
@@ -421,9 +422,9 @@ func (c *SpaceRuntime) createHttpIngress() error {
 func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.Space.Name)
 	var volumes []v1.Volume
-	containers := []v1.Container {
+	containers := []v1.Container{
 		{
-			Name: "default-http",
+			Name:  "default-http",
 			Image: "platform9systems/decco-default-http",
 			Env: []v1.EnvVar{
 				{
@@ -436,20 +437,20 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 				},
 			},
 			LivenessProbe: &v1.Probe{
-				Handler: v1.Handler {
+				Handler: v1.Handler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/healthz",
-						Port: intstr.IntOrString {
-							Type: intstr.Int,
+						Port: intstr.IntOrString{
+							Type:   intstr.Int,
 							IntVal: defaultHttpInternalPort,
 						},
 						Scheme: "HTTP",
 					},
 				},
 				InitialDelaySeconds: 30,
-				TimeoutSeconds: 5,
+				TimeoutSeconds:      5,
 			},
-			Resources: v1.ResourceRequirements {
+			Resources: v1.ResourceRequirements{
 				Limits: v1.ResourceList{
 					"cpu": resource.Quantity{
 						Format: "10m",
@@ -473,40 +474,40 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 	if c.Space.Spec.EncryptHttp {
 		destHostAndPort := fmt.Sprintf("%d", defaultHttpInternalPort)
 		volumes, containers = k8sutil.InsertStunnel("stunnel",
-			k8sutil.TlsPort,"no",
+			k8sutil.TlsPort, "no",
 			destHostAndPort, "", c.Space.Spec.HttpCertSecretName,
 			true, false, volumes,
 			containers, 0, 0)
 	} else {
 		containers[0].Ports = []v1.ContainerPort{
-			{ContainerPort: defaultHttpInternalPort },
+			{ContainerPort: defaultHttpInternalPort},
 		}
 	}
 	ctx := context.Background()
 	_, err := depApi.Create(ctx, &v1beta1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "default-http",
-			Labels: map[string]string {
+			Labels: map[string]string{
 				"app": "decco",
 			},
 		},
 		Spec: v1beta1.DeploymentSpec{
 			Replicas: nil,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string {
+				MatchLabels: map[string]string{
 					"app": "default-http",
 				},
 			},
 			Template: v1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta {
+				ObjectMeta: metav1.ObjectMeta{
 					Name: "default-http",
-					Labels: map[string]string {
+					Labels: map[string]string{
 						"app": "default-http",
 					},
 				},
 				Spec: v1.PodSpec{
 					Containers: containers,
-					Volumes: volumes,
+					Volumes:    volumes,
 				},
 			},
 		},
@@ -538,25 +539,25 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
-				APIGroups: []string {"*"},
-				Resources: []string {"events"},
-				Verbs: []string {"create"},
+				APIGroups: []string{"*"},
+				Resources: []string{"events"},
+				Verbs:     []string{"create"},
 			},
 			{
-				APIGroups: []string {"*"},
-				Resources: []string {"configmaps"},
-				Verbs: []string {"create", "update", "get", "watch", "list"},
+				APIGroups: []string{"*"},
+				Resources: []string{"configmaps"},
+				Verbs:     []string{"create", "update", "get", "watch", "list"},
 			},
 			{
-				APIGroups: []string {"*"},
-				Resources: []string {"ingresses", "ingresses/status"},
-				Verbs: []string {"update", "get", "watch", "list"},
+				APIGroups: []string{"*"},
+				Resources: []string{"ingresses", "ingresses/status"},
+				Verbs:     []string{"update", "get", "watch", "list"},
 			},
 			{
-				APIGroups: []string {"*"},
-				Resources: []string {"pods", "services", "secrets",
+				APIGroups: []string{"*"},
+				Resources: []string{"pods", "services", "secrets",
 					"namespaces", "endpoints"},
-				Verbs: []string {"get", "watch", "list"},
+				Verbs: []string{"get", "watch", "list"},
 			},
 		},
 	}, metav1.CreateOptions{})
@@ -604,10 +605,10 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 	baseTlsListenPort := int32(k8sutil.TlsPort)
 	endpoints := []appspec.EndpointSpec{
 		{
-			Name: "nginx-ingress",
-			Port: baseTlsListenPort,     // nginx itself terminates TLS
-			DisableTlsTermination: true, // no stunnel side-car
-			SniHostname: hostName,
+			Name:                  "nginx-ingress",
+			Port:                  baseTlsListenPort, // nginx itself terminates TLS
+			DisableTlsTermination: true,              // no stunnel side-car
+			SniHostname:           hostName,
 		},
 		{
 			Name: "nginx-ingress-metrics",
@@ -633,8 +634,8 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "nginx-ingress",
 		},
-		Spec: appspec.AppSpec {
-			InitialReplicas: 1,
+		Spec: appspec.AppSpec{
+			InitialReplicas:         1,
 			FirstEndpointListenPort: baseTlsListenPort + 1, // 'cause nginx itself uses 443
 			PodSpec: v1.PodSpec{
 				ServiceAccountName: "nginx-ingress",
@@ -648,7 +649,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 								ValueFrom: &v1.EnvVarSource{
 									FieldRef: &v1.ObjectFieldSelector{
 										APIVersion: "v1",
-										FieldPath: "metadata.name",
+										FieldPath:  "metadata.name",
 									},
 								},
 							},
@@ -657,7 +658,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 								ValueFrom: &v1.EnvVarSource{
 									FieldRef: &v1.ObjectFieldSelector{
 										APIVersion: "v1",
-										FieldPath: "metadata.namespace",
+										FieldPath:  "metadata.namespace",
 									},
 								},
 							},
@@ -668,17 +669,17 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 								ContainerPort: int32(443),
 							},
 							{
-								Name: "metrics",
+								Name:          "metrics",
 								ContainerPort: metricsPort,
 							},
 						},
 						Resources: v1.ResourceRequirements{
 							Requests: v1.ResourceList{
-								"cpu": resource.MustParse("100m"),
+								"cpu":    resource.MustParse("100m"),
 								"memory": resource.MustParse("200Mi"),
 							},
 							Limits: v1.ResourceList{
-								"cpu": resource.MustParse("1000m"),
+								"cpu":    resource.MustParse("1000m"),
 								"memory": resource.MustParse("200Mi"),
 							},
 						},
@@ -715,13 +716,13 @@ func (c *SpaceRuntime) createDefaultHttpSvc() error {
 			Ports: []v1.ServicePort{
 				{
 					Port: svcPort,
-					TargetPort: intstr.IntOrString {
-						Type: intstr.Int,
+					TargetPort: intstr.IntOrString{
+						Type:   intstr.Int,
 						IntVal: tgtPort,
 					},
 				},
 			},
-			Selector: map[string]string {
+			Selector: map[string]string{
 				"app": "default-http",
 			},
 		},
@@ -779,7 +780,7 @@ func (c *SpaceRuntime) copySecret(s *v1.Secret) error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: s.Name,
 		},
-		Data: s.Data,
+		Data:       s.Data,
 		StringData: s.StringData,
 	}
 	secrApi := c.kubeApi.CoreV1().Secrets(c.Space.Name)

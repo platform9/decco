@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 )
@@ -39,6 +39,3 @@ func main() {
 		log.Fatalf("listen failed: %s", err)
 	}
 }
-
-
-

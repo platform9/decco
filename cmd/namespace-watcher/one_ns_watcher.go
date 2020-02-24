@@ -18,14 +18,16 @@ limitations under the License.
 package main
 
 import (
-	//	"k8s.io/client-go/kubernetes/typed/core/v1"
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	"k8s.io/client-go/kubernetes"
-	log "github.com/sirupsen/logrus"
-	"github.com/platform9/decco/pkg/k8sutil"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	scheme "k8s.io/client-go/kubernetes/scheme"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	scheme "k8s.io/client-go/kubernetes/scheme"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+
+	//	"k8s.io/client-go/kubernetes/typed/core/v1"
+	"github.com/platform9/decco/pkg/k8sutil"
 )
 
 func main() {
@@ -45,7 +47,7 @@ func main() {
 		} else {
 			events := watcher.ResultChan()
 			for {
-				event := <- events
+				event := <-events
 				log.Infof("%s %v", event.Type, event.Object)
 				if event.Type == "" {
 					log.Infof("stream closed, restarting after delay")
@@ -56,6 +58,3 @@ func main() {
 		time.Sleep(time.Second * 2)
 	}
 }
-
-
-

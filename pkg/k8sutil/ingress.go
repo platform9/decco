@@ -2,12 +2,12 @@ package k8sutil
 
 import (
 	"context"
-	"k8s.io/client-go/kubernetes"
+
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 )
-
 
 func CreateHttpIngress(
 	kubeApi kubernetes.Interface,
@@ -28,7 +28,7 @@ func CreateHttpIngress(
 	annotations := make(map[string]string)
 	// Copy over additional annotations.
 	// Note: this works even if additionalAnnotations is nil
-	for key, val := range additionalAnnotations{
+	for key, val := range additionalAnnotations {
 		annotations[key] = val
 	}
 	// temporary hack to work around nginx-to-stunnel timeouts during heavy load
@@ -43,15 +43,15 @@ func CreateHttpIngress(
 	if encryptHttp {
 		annotations["nginx.ingress.kubernetes.io/secure-backends"] = "true"
 	}
-	ruleValue := v1beta1.IngressRuleValue {
+	ruleValue := v1beta1.IngressRuleValue{
 		HTTP: &v1beta1.HTTPIngressRuleValue{
-			Paths: []v1beta1.HTTPIngressPath {
+			Paths: []v1beta1.HTTPIngressPath{
 				{
 					Path: path,
 					Backend: v1beta1.IngressBackend{
 						ServiceName: svcName,
-						ServicePort: intstr.IntOrString {
-							Type: intstr.Int,
+						ServicePort: intstr.IntOrString{
+							Type:   intstr.Int,
 							IntVal: svcPort,
 						},
 					},
@@ -62,17 +62,17 @@ func CreateHttpIngress(
 	tls := []v1beta1.IngressTLS{}
 	rules := []v1beta1.IngressRule{
 		{
-			Host: "localhost",
+			Host:             "localhost",
 			IngressRuleValue: ruleValue,
 		},
 	}
 	if !localhostOnly {
 		rules = append(rules, v1beta1.IngressRule{
-			Host: hostName,
+			Host:             hostName,
 			IngressRuleValue: ruleValue,
 		})
 		tls = append(tls, v1beta1.IngressTLS{
-			Hosts: []string {
+			Hosts: []string{
 				hostName,
 			},
 			SecretName: secretName,
@@ -80,13 +80,13 @@ func CreateHttpIngress(
 	}
 	ing := v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-			Labels: labels,
+			Name:        name,
+			Labels:      labels,
 			Annotations: annotations,
 		},
 		Spec: v1beta1.IngressSpec{
 			Rules: rules,
-			TLS: tls,
+			TLS:   tls,
 		},
 	}
 	ctx := context.Background()
