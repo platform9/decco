@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	errInCreatingPhase = errors.New("space already in Creating phase")
+	errInCreatingPhase = errors.New("app already in Creating phase")
 )
 
 type AppRuntime struct {
