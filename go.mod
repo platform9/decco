@@ -1,6 +1,6 @@
 module github.com/platform9/decco
 
-go 1.12
+go 1.13
 
 require (
 	github.com/aws/aws-sdk-go v1.29.5 // indirect
@@ -9,7 +9,7 @@ require (
 	github.com/go-logr/logr v0.1.0
 	github.com/sirupsen/logrus v1.4.2
 	k8s.io/api v0.17.3
-	k8s.io/apiextensions-apiserver v0.17.2
+	k8s.io/apiextensions-apiserver v0.17.3
 	k8s.io/apimachinery v0.17.3
 	k8s.io/client-go v0.17.3
 	k8s.io/federation v1.10.0-alpha.0
