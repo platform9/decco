@@ -5,7 +5,6 @@ BUILD_DIR=$(SRC_DIR)/build
 GOPATH_DIR=$(BUILD_DIR)/gopath
 GO_TOOLCHAIN=$(BUILD_DIR)/go
 GO_DOWNLOAD_URL=https://dl.google.com/go/go1.13.7.linux-amd64.tar.gz
-CLIENTGO=$(GOPATH_DIR)/src/k8s.io/client-go
 GOSRC=$(GOPATH_DIR)/src
 PF9_DIR=$(GOSRC)/github.com/platform9
 DECCO_SYMLINKS=$(PF9_DIR)/decco
@@ -19,22 +18,6 @@ SPRINGBOARD_STAGE_DIR=$(BUILD_DIR)/springboard-stunnel
 SPRINGBOARD_EXE=$(SPRINGBOARD_STAGE_DIR)/springboard
 SPRINGBOARD_IMAGE_NAME := springboard-stunnel
 SPRINGBOARD_IMAGE_MARKER=$(SPRINGBOARD_STAGE_DIR)/image-marker
-
-KLOG := $(GOSRC)/k8s.io/klog
-
-GO_DEPS := \
-	$(GOSRC)/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1 \
-	$(GOSRC)/k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset \
-	$(GOSRC)/github.com/coreos/etcd-operator/pkg/util/retryutil \
-	$(GOSRC)/github.com/aws/aws-sdk-go \
-	$(GOSRC)/github.com/golang/glog \
-	$(GOSRC)/github.com/pborman/uuid \
-	$(GOSRC)/github.com/cenkalti/backoff \
-	$(GOSRC)/github.com/sirupsen/logrus \
-	$(GOSRC)/github.com/googleapis/gnostic \
-	$(GOSRC)/k8s.io/federation/pkg/dnsprovider
-
-OPENAPIV2_SYMLINK := $(GOSRC)/github.com/googleapis/gnostic/OpenAPIv2
 
 IMAGE_NAME := decco-operator
 
@@ -71,37 +54,6 @@ $(GOPATH_DIR):| $(BUILD_DIR) $(GO_TOOLCHAIN)
 $(PF9_DIR):| $(BUILD_DIR)
 	mkdir -p $@
 
-$(GODEP):
-	go get github.com/tools/godep
-
-$(DECCO_SYMLINKS):| $(PF9_DIR)
-	for x in `find pkg -type f` ; do d=`dirname $$x`; f=`basename $$x`; \
-	mkdir -p $@/$$d; ln -s $(SRC_DIR)/$$x $@/$$x ; done
-
-$(KLOG): | $(GOPATH_DIR)
-	go get k8s.io/klog
-	cd $@ && git checkout v0.4.0
-
-
-$(CLIENTGO): | $(GODEP) $(GOPATH_DIR) $(KLOG) $(OPENAPIV2_SYMLINK)
-	go get k8s.io/client-go/...
-
-$(OPENAPIV2_SYMLINK): $(GO_DEPS)
-	cd $(GOSRC)/github.com/googleapis/gnostic && ln -s openapiv2 OpenAPIv2
-
-openapi_symlink: $(OPENAPIV2_SYMLINK)
-
-symlinks: | $(DECCO_SYMLINKS)
-
-clientgo: | $(CLIENTGO)
-
-$(GO_DEPS): $(GOPATH_DIR)
-	go get $(subst $(GOSRC)/,,$@)
-
-godeps: | $(GO_DEPS)
-
-klog: | $(KLOG)
-
 $(OPERATOR_STAGE_DIR):
 	mkdir -p $@
 
@@ -137,13 +89,13 @@ local-default-http:
 local-dns-test:
 	cd $(SRC_DIR)/cmd/dns-test && go build -o $${GOPATH}/bin/dns-test
 
-$(OPERATOR_EXE): $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(CLIENTGO) $(OPERATOR_STAGE_DIR) $(GO_DEPS) $(DECCO_SYMLINKS)
+$(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(OPERATOR_STAGE_DIR)
 	cd $(SRC_DIR)/cmd/operator && \
 	go build -o $(OPERATOR_EXE)
 
 $(GO_ENV_TARBALL): $(OPERATOR_EXE)
 	export TMP_TARBALL=$(shell mktemp --tmpdir gopath.XXX.tgz) && \
-	# include symlink targets in tarball, this can fail on some files, ignore errors \
+	# include symlink targets in tarball, this can fail on some files, ignore errors
 	tar cfz $${TMP_TARBALL} -h --ignore-failed-read -C $(GOPATH) . &> /dev/null || true && \
 	mv $${TMP_TARBALL} $@
 

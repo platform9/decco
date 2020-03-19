@@ -1,7 +1,6 @@
 package appcontroller
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -45,7 +44,6 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 	nsApi := kubeApi.CoreV1().Namespaces()
 	restClient := kubeApi.CoreV1().RESTClient()
 	sleepSeconds := 0
-	ctx := context.Background()
 	for {
 		select {
 		case <-ctl.stopCh:
@@ -59,7 +57,7 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 		}
 		sleepSeconds += retryDelayIncrement
 		fs := fmt.Sprintf("metadata.name=%s", ctl.namespace)
-		nsList, err := nsApi.List(ctx, meta_v1.ListOptions{FieldSelector: fs})
+		nsList, err := nsApi.List(meta_v1.ListOptions{FieldSelector: fs})
 		if err != nil {
 			log.Warnf("failed to list namespaces %s", err)
 			continue
@@ -90,10 +88,7 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 		log.Infof("restarting watch due to stream closure")
 		sleepSeconds = 0
 		continue
-		log.Errorf("did not find matching ns ... shutting down")
-		return
 	}
-	log.Errorf("failed to read namespace too many times, shutting down")
 }
 
 // watch namespace until it is deleted
@@ -115,12 +110,11 @@ func (ctl *Controller) watchNamespaceInternal(
 	}
 	log.Infof("watching namespace at rv %s", resourceVersion)
 	for {
-		ctx := context.Background()
 		w, err := restClient.
 			Get().
 			Resource("namespaces").
 			VersionedParams(&listOpts, scheme.ParameterCodec).
-			Watch(ctx)
+			Watch()
 
 		if err != nil {
 			return false, fmt.Errorf("failed to watch namespace: %s", err)

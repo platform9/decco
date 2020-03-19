@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -102,10 +101,9 @@ func (ar *AppRuntime) Delete() {
 	log := ar.log.WithField("func", "Delete")
 	propPolicy := metav1.DeletePropagationBackground
 	delOpts := metav1.DeleteOptions{PropagationPolicy: &propPolicy}
-	ctx := context.Background()
 	for _, e := range ar.app.Spec.Endpoints {
 		svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
-		err := svcApi.Delete(ctx, e.Name, nil)
+		err := svcApi.Delete(e.Name, nil)
 		if err != nil {
 			log.Warnf("failed to delete service '%s': %s", e.Name, err)
 		}
@@ -121,13 +119,13 @@ func (ar *AppRuntime) Delete() {
 	}
 	if ar.app.Spec.RunAsJob {
 		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
-		err := batchApi.Delete(ctx, ar.app.Name, &delOpts)
+		err := batchApi.Delete(ar.app.Name, &delOpts)
 		if err != nil {
 			log.Warnf("failed to delete job: %s", err)
 		}
 	} else {
 		deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-		err := deployApi.Delete(ctx, ar.app.Name, &delOpts)
+		err := deployApi.Delete(ar.app.Name, &delOpts)
 		if err != nil {
 			log.Warnf("failed to delete deployment: %s", err)
 		}
@@ -262,7 +260,6 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 	if rules == nil || len(rules) == 0 {
 		return nil
 	}
-	ctx := context.Background()
 	saName := podSpec.ServiceAccountName
 	if saName == "" {
 		saName = ar.app.Name
@@ -272,7 +269,7 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 			},
 		}
 		saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
-		_, err := saApi.Create(ctx, &sa, metav1.CreateOptions{})
+		_, err := saApi.Create(&sa)
 		if err != nil {
 			return fmt.Errorf("failed to create svcaccount: %s", err)
 		}
@@ -283,7 +280,7 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 		Rules:      rules,
 	}
 	rolesApi := ar.kubeApi.RbacV1().Roles(ar.namespace)
-	_, err := rolesApi.Create(ctx, &role, metav1.CreateOptions{})
+	_, err := rolesApi.Create(&role)
 	if err != nil {
 		return fmt.Errorf("failed to create role: %s", err)
 	}
@@ -303,7 +300,7 @@ func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
 		},
 	}
 	rbApi := ar.kubeApi.RbacV1().RoleBindings(ar.namespace)
-	_, err = rbApi.Create(ctx, &rb, metav1.CreateOptions{})
+	_, err = rbApi.Create(&rb)
 	if err != nil {
 		return fmt.Errorf("failed to create role binding: %s", err)
 	}
@@ -321,13 +318,12 @@ func (ar *AppRuntime) teardownPermissions() {
 	}
 	log := ar.log.WithField("func", "teardownPermissions")
 	rbApi := ar.kubeApi.RbacV1().RoleBindings(ar.namespace)
-	ctx := context.Background()
-	err := rbApi.Delete(ctx, ar.app.Name, nil)
+	err := rbApi.Delete(ar.app.Name, nil)
 	if err != nil {
 		log.Warnf("failed to delete role binding: %s", err)
 	}
 	rolesApi := ar.kubeApi.RbacV1().Roles(ar.namespace)
-	err = rolesApi.Delete(ctx, ar.app.Name, nil)
+	err = rolesApi.Delete(ar.app.Name, nil)
 	if err != nil {
 		log.Warnf("failed to delete role: %s", err)
 	}
@@ -336,7 +332,7 @@ func (ar *AppRuntime) teardownPermissions() {
 		return
 	}
 	saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
-	err = saApi.Delete(ctx, ar.app.Name, nil)
+	err = saApi.Delete(ar.app.Name, nil)
 	if err != nil {
 		log.Warnf("failed to delete svc account: %s", err)
 	}
@@ -537,17 +533,16 @@ func (ar *AppRuntime) createDeployment(
 		},
 		Spec: podSpec,
 	}
-	ctx := context.Background()
 	if ar.app.Spec.RunAsJob {
 		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
 		backoffLimit := ar.app.Spec.JobBackoffLimit
-		_, err := batchApi.Create(ctx, &batchv1.Job{
+		_, err := batchApi.Create(&batchv1.Job{
 			ObjectMeta: objMeta,
 			Spec: batchv1.JobSpec{
 				Template:     podTemplateSpec,
 				BackoffLimit: &backoffLimit,
 			},
-		}, metav1.CreateOptions{})
+		})
 		return err
 	} else {
 		depSpec := &v1beta1.Deployment{
@@ -563,7 +558,7 @@ func (ar *AppRuntime) createDeployment(
 			},
 		}
 		depApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
-		_, err := depApi.Create(ctx, depSpec, metav1.CreateOptions{})
+		_, err := depApi.Create(depSpec)
 		return err
 	}
 }
@@ -587,8 +582,7 @@ func (ar *AppRuntime) createSvc(
 		labels["monitoring-group"] = "decco"
 		portName = "metrics"
 	}
-	ctx := context.Background()
-	_, err := svcApi.Create(ctx, &v1.Service{
+	_, err := svcApi.Create(&v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   svcName,
 			Labels: labels,
@@ -608,7 +602,7 @@ func (ar *AppRuntime) createSvc(
 				"decco-app": appName,
 			},
 		},
-	}, metav1.CreateOptions{})
+	})
 	return err
 }
 
@@ -697,8 +691,7 @@ func (ar *AppRuntime) createHttpIngress(e *spec.EndpointSpec) error {
 func (ar *AppRuntime) deleteIngress(e *spec.EndpointSpec) error {
 	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
 	ingName := e.Name
-	ctx := context.Background()
-	return ingApi.Delete(ctx, ingName, &metav1.DeleteOptions{})
+	return ingApi.Delete(ingName, &metav1.DeleteOptions{})
 }
 
 // -----------------------------------------------------------------------------
@@ -758,7 +751,6 @@ func (ar *AppRuntime) createTcpIngress(
 			},
 		},
 	}
-	ctx := context.Background()
-	_, err := ingApi.Create(ctx, &ing, metav1.CreateOptions{})
+	_, err := ingApi.Create(&ing)
 	return err
 }

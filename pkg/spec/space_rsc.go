@@ -86,8 +86,8 @@ type SpaceSpec struct {
 	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints"`
 	// Optional suffix to append to host names of private ingress controller's tcp endpoints
 	PrivateIngressControllerTcpHostnameSuffix string            `json:"privateIngressControllerTcpHostnameSuffix"`
-	Permissions                               *SpacePermissions `json:permissions`
-	CreateDefaultHttpDeploymentAndIngress     bool              `json:createDefaultHttpDeploymentAndIngress`
+	Permissions                               *SpacePermissions `json:"permissions"`
+	CreateDefaultHttpDeploymentAndIngress     bool              `json:"createDefaultHttpDeploymentAndIngress"`
 }
 
 func (c *SpaceSpec) Validate() error {
