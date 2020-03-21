@@ -1,4 +1,4 @@
-FROM platform9systems/stunnel:instrumented
+FROM __STUNNEL_CONTAINER_TAG__
 ADD stunnel.sh /usr/local/bin/
 ADD stunnel.conf.template /etc/stunnel/
 ADD springboard /usr/local/bin/

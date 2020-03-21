@@ -107,6 +107,10 @@ func InsertStunnel(
 		checkHost, isNginxIngressStyleCertSecret, isClientMode,
 		clientModeSpringBoardDelaySeconds, index)
 
+	// Reduce TCP keep-alive (net.ipv4.tcp_keepalive_time) idle interval to
+	// 75 seconds, the Linux system default is 7200, or 2 hours!
+	stunnelEnv = append(stunnelEnv, v1.EnvVar{Name:  "KEEPIDLE", Value: "75"})
+
 	volumeName := fmt.Sprintf("%s-certs", containerName)
 	volumes = append(volumes, v1.Volume{
 		Name: volumeName,
@@ -140,7 +144,7 @@ func InsertStunnel(
 	}
 	containers = append(containers, v1.Container{
 		Name:  containerName,
-		Image: "platform9/springboard-stunnel:1.0.0-000",
+		Image: "platform9/springboard-stunnel:1.0.0-001",
 		Ports: []v1.ContainerPort{
 			{
 				ContainerPort: listenPort,
