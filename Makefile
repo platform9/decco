@@ -30,6 +30,7 @@ IMAGE_TAG ?= $(VERSION)-$(BUILD_ID)
 FULL_TAG := $(REPO_TAG):$(IMAGE_TAG)
 TAG_FILE := $(BUILD_DIR)/container-full-tag
 
+STUNNEL_CONTAINER_TAG ?= platform9/stunnel:5.56-102
 SPRINGBOARD_REPO_TAG ?= platform9/$(SPRINGBOARD_IMAGE_NAME)
 SPRINGBOARD_FULL_TAG := $(SPRINGBOARD_REPO_TAG):$(IMAGE_TAG)
 
@@ -68,6 +69,7 @@ $(SPRINGBOARD_EXE): | $(SPRINGBOARD_STAGE_DIR)
 
 $(SPRINGBOARD_IMAGE_MARKER): $(SPRINGBOARD_EXE)
 	cp -f $(SRC_DIR)/support/stunnel-instrumented-with-springboard/* $(SPRINGBOARD_STAGE_DIR)
+	sed -i 's|__STUNNEL_CONTAINER_TAG__|$(STUNNEL_CONTAINER_TAG)|g' $(SPRINGBOARD_STAGE_DIR)/Dockerfile
 	docker build --tag $(SPRINGBOARD_FULL_TAG) $(SPRINGBOARD_STAGE_DIR)
 	touch $@
 
@@ -79,6 +81,9 @@ springboard-push: $(SPRINGBOARD_IMAGE_MARKER)
 		docker push $(SPRINGBOARD_FULL_TAG) && docker logout))
 	docker rmi $(SPRINGBOARD_FULL_TAG)
 	rm -f $(SPRINGBOARD_IMAGE_MARKER)
+
+springboard-clean:
+	rm -rf $(SPRINGBOARD_STAGE_DIR)
 
 springboard:
 	cd $(SRC_DIR)/cmd/springboard && go build -o $(SRC_DIR)/support/stunnel-with-springboard/springboard

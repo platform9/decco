@@ -8,7 +8,17 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+var springboardStunnelImageTag string
 const TlsPort = 443
+
+// -----------------------------------------------------------------------------
+
+func init() {
+	springboardStunnelImageTag = os.Getenv("SPRINGBOARD_STUNNEL_IMAGE_TAG")
+	if springboardStunnelImageTag == "" {
+		springboardStunnelImageTag = "platform9/springboard-stunnel:1.0.0-002"
+	}
+}
 
 // -----------------------------------------------------------------------------
 
@@ -140,7 +150,7 @@ func InsertStunnel(
 	}
 	containers = append(containers, v1.Container{
 		Name:  containerName,
-		Image: "platform9/springboard-stunnel:1.0.0-000",
+		Image: springboardStunnelImageTag,
 		Ports: []v1.ContainerPort{
 			{
 				ContainerPort: listenPort,
