@@ -82,7 +82,7 @@ func readSpaceCR(b []byte) (deccov1.Space, error) {
 func CreateCRD(clientset apiextensionsclient.Interface) error {
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "space",
+			Name: "spaces." + deccov1.GroupVersion.Group,
 		},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
 			Group:   deccov1.GroupVersion.Group,

@@ -87,7 +87,7 @@ func readAppCR(b []byte) (deccov1.App, error) {
 func CreateAppCRD(clientset apiextensionsclient.Interface) error {
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "app",
+			Name: "apps." + deccov1.GroupVersion.Group,
 		},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
 			Group:   deccov1.GroupVersion.Group,
