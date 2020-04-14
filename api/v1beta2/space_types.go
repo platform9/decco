@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	RESERVED_PROJECT_NAME = "system"
+	ReservedProjectName = "system"
 )
 
 var (
@@ -75,7 +75,7 @@ func (in *SpaceSpec) Validate() error {
 	if in.HttpCertSecretName == "" {
 		return ErrHttpCertSecretNameMissing
 	}
-	if in.Project == RESERVED_PROJECT_NAME {
+	if in.Project == ReservedProjectName {
 		return ErrInvalidProjectName
 	}
 	return nil

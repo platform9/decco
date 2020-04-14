@@ -280,7 +280,7 @@ func (c *SpaceRuntime) createNetPolicy() error {
 		{
 			NamespaceSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"decco-project": deccov1.RESERVED_PROJECT_NAME,
+					"decco-project": deccov1.ReservedProjectName,
 				},
 			},
 		},
