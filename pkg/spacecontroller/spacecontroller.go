@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/rest"
 	restclient "k8s.io/client-go/rest"
 
-	deccov1 "github.com/platform9/decco/api/v1"
+	deccov1 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/appcontroller"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/space"

@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/rest"
 
-	deccov1 "github.com/platform9/decco/api/v1"
+	deccov1 "github.com/platform9/decco/api/v1beta2"
 )
 
 // TODO: make this private so that we don't expose RESTClient once operator code uses this client instead of REST calls

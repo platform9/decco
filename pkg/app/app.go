@@ -17,11 +17,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 
+	deccov1 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/watcher"
-
-	deccov1 "github.com/platform9/decco/api/v1"
 )
 
 var (

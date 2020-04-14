@@ -17,7 +17,7 @@ limitations under the License.
 // Package v1 contains API Schema definitions for the decco v1 API group
 // +kubebuilder:object:generate=true
 // +groupName=decco.platform9.com
-package v1
+package v1beta2
 
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"

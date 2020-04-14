@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 
-	deccov1 "github.com/platform9/decco/api/v1"
+	deccov1 "github.com/platform9/decco/api/v1beta2"
 )
 
 func WatchSpaces(host string, httpClient *http.Client, resourceVersion string) (*http.Response, error) {
