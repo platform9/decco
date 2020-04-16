@@ -118,6 +118,9 @@ default-http: $(DEFAULT_HTTP_EXE)
 clean:
 	rm -rf $(BUILD_DIR)
 
+clean-gopath:
+	rm -rf $(GOPATH_DIR)
+
 clean-vendor:
 	rm -rf $(VENDOR_DIR)
 
