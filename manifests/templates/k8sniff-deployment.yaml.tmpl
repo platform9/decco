@@ -6,7 +6,7 @@ metadata:
   labels:
     role: k8sniff
 spec:
-  replicas: 1
+  replicas: ${K8SNIFF_REPLICAS}
   selector:
     matchLabels:
       role: k8sniff
