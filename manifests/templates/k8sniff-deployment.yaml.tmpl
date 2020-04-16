@@ -15,6 +15,16 @@ spec:
       labels:
         role: k8sniff
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: role
+                operator: In
+                values:
+                - k8sniff
+            topologyKey: kubernetes.io/hostname
       serviceAccountName: k8sniff
       containers:
       - image: ${K8SNIFF_IMAGE_TAG}
