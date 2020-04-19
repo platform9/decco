@@ -3,7 +3,7 @@ SHELL := bash
 SRC_DIR=$(shell pwd)
 BUILD_DIR=$(SRC_DIR)/build
 GOPATH_DIR=$(BUILD_DIR)/gopath
-GO_TOOLCHAIN=$(BUILD_DIR)/go
+GO_TOOLCHAIN ?= $(BUILD_DIR)/go
 GO_DOWNLOAD_URL=https://dl.google.com/go/go1.13.7.linux-amd64.tar.gz
 GOSRC=$(GOPATH_DIR)/src
 PF9_DIR=$(GOSRC)/github.com/platform9
@@ -115,17 +115,18 @@ operator: $(OPERATOR_EXE)
 
 default-http: $(DEFAULT_HTTP_EXE)
 
-clean:
+clean: clean-gopath
 	rm -rf $(BUILD_DIR)
 
 clean-gopath:
+	go clean -modcache
 	rm -rf $(GOPATH_DIR)
 
 clean-vendor:
 	rm -rf $(VENDOR_DIR)
 
 operator-clean:
-	rm -f $(OPERATOR_STAGE_DIR)
+	rm -rf $(OPERATOR_STAGE_DIR)
 
 default-http-clean:
 	rm -f $(DEFAULT_HTTP_EXE)
