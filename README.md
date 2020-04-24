@@ -33,4 +33,25 @@ Ex: `pkg/controllers/app_controller.go` --> click to the left of a line number t
 **NOTE:** if you get errors relating to controller-gen, try running `hack/setup_kubebuilder.sh`
 
 5. Click on vscode's Debug tab and click the green button near the top-left  
-This repo includes a launch.json configured to work with the above steps 
+This repo includes a launch.json configured to work with the above steps. 
+
+### Go toolchain configuration
+
+By default, kplane downloads a complete Go toolchain to `./build` and uses 
+this within the Makefile. To ensure that you and the IDE are using, you will 
+need to set the following manually:
+
+```bash
+export GOROOT=$(pwd)/build/go
+export PATH=${GOROOT}/bin:$(PATH)
+```
+
+If you are using an IDE, also update the Go toolchain there too. In Goland, 
+update the GOROOT in the project settings (`Go > GOROOT`).
+
+Alternatively, you can also disable the use of the Go toolchain in ./build; 
+just export an empty GO_TOOLCHAIN:
+
+```bash
+export GO_TOOLCHAIN=""
+```
