@@ -2,7 +2,7 @@
 SHELL := bash
 SRC_DIR=$(shell pwd)
 BUILD_DIR=$(SRC_DIR)/build
-GOPATH_DIR=$(BUILD_DIR)/gopath
+GOPATH_DIR ?= $(BUILD_DIR)/gopath
 GO_TOOLCHAIN ?= $(BUILD_DIR)/go
 GO_DOWNLOAD_URL=https://dl.google.com/go/go1.13.7.linux-amd64.tar.gz
 GOSRC=$(GOPATH_DIR)/src
@@ -119,8 +119,9 @@ clean: clean-gopath
 	rm -rf $(BUILD_DIR)
 
 clean-gopath:
+	echo GOPATH is $(GOPATH_DIR)
 	go clean -modcache
-	rm -rf $(GOPATH_DIR)
+	rm -rf $(GOPATH_DIR)/*
 
 clean-vendor:
 	rm -rf $(VENDOR_DIR)
@@ -159,3 +160,4 @@ clean-tag-file:
 
 generate:
 	# nop
+
