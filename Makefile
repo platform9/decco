@@ -2,12 +2,16 @@
 SHELL := bash
 SRC_DIR=$(shell pwd)
 BUILD_DIR=$(SRC_DIR)/build
-GOPATH_DIR ?= $(BUILD_DIR)/gopath
+
 GO_TOOLCHAIN ?= $(BUILD_DIR)/go
-GO_DOWNLOAD_URL=https://dl.google.com/go/go1.13.7.linux-amd64.tar.gz
-GOSRC=$(GOPATH_DIR)/src
-PF9_DIR=$(GOSRC)/github.com/platform9
-DECCO_SYMLINKS=$(PF9_DIR)/decco
+GO_VERSION := 1.13.7
+GO_DOWNLOAD_URL=https://dl.google.com/go/go$(GO_VERSION).$(shell uname)-amd64.tar.gz
+
+ifneq ($(GO_TOOLCHAIN),"")
+	export GOROOT:=$(GO_TOOLCHAIN)
+	export PATH:=$(GO_TOOLCHAIN)/bin:$(PATH)
+endif
+
 OPERATOR_STAGE_DIR=$(BUILD_DIR)/operator
 DEFAULT_HTTP_STAGE_DIR=$(BUILD_DIR)/default-http
 GO_ENV_TARBALL=$(BUILD_DIR)/decco-go-env.tgz
@@ -36,9 +40,7 @@ SPRINGBOARD_FULL_TAG := $(SPRINGBOARD_REPO_TAG):$(IMAGE_TAG)
 
 DEFAULT_HTTP_IMAGE_TAG ?= platform9systems/decco-default-http
 
-export GOPATH:=$(GOPATH_DIR)
-export GOROOT:=$(GO_TOOLCHAIN)
-export PATH:=$(GO_TOOLCHAIN)/bin:$(PATH)
+all: operator springboard
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -50,9 +52,6 @@ $(GO_TOOLCHAIN):| $(BUILD_DIR)
 gotoolchain: | $(GO_TOOLCHAIN)
 
 $(GOPATH_DIR):| $(BUILD_DIR) $(GO_TOOLCHAIN)
-	mkdir -p $@
-
-$(PF9_DIR):| $(BUILD_DIR)
 	mkdir -p $@
 
 $(OPERATOR_STAGE_DIR):
@@ -121,7 +120,6 @@ clean: clean-gopath
 clean-gopath:
 	echo GOPATH is $(GOPATH_DIR)
 	go clean -modcache
-	rm -rf $(GOPATH_DIR)/*
 
 clean-vendor:
 	rm -rf $(VENDOR_DIR)
