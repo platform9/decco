@@ -27,7 +27,7 @@ IMAGE_NAME := decco-operator
 
 # Override with your own Docker registry tag(s)
 REPO_TAG ?= platform9/$(IMAGE_NAME)
-VERSION ?= 1.0.0
+VERSION ?= 1.0.1
 BUILD_NUMBER ?= 000
 BUILD_ID := $(BUILD_NUMBER)
 IMAGE_TAG ?= $(VERSION)-$(BUILD_ID)
