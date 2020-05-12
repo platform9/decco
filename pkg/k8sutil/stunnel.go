@@ -143,7 +143,6 @@ func InsertStunnel(
 	}
 	resourceRequirements := v1.ResourceRequirements{
 		Requests: v1.ResourceList{
-			"cpu":    resource.MustParse(getEnvVarWithDefault("STUNNEL_REQUEST_CPU", "5m")),
 			"memory": resource.MustParse(getEnvVarWithDefault("STUNNEL_REQUEST_MEMORY", "10Mi")),
 		},
 		Limits: limits,
