@@ -24,7 +24,7 @@ import (
 
 	"github.com/platform9/decco/pkg/spec"
 
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -80,45 +80,39 @@ func readSpaceCR(b []byte) (spec.Space, error) {
 }
 
 func CreateCRD(clientset apiextensionsclient.Interface) error {
-	crd := &apiextensionsv1.CustomResourceDefinition{
+	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: spec.CRDName,
 		},
-		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
 			Group:   spec.SchemeGroupVersion.Group,
-			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
-				{
-					Name: spec.SchemeGroupVersion.Version,
-					Served: true,
-					Storage: true,
-				},
-			},
-			Scope:   apiextensionsv1.NamespaceScoped,
-			Names: apiextensionsv1.CustomResourceDefinitionNames{
+			Version: spec.SchemeGroupVersion.Version,
+			Scope:   apiextensionsv1beta1.NamespaceScoped,
+			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
 				Plural:     spec.CRDResourcePlural,
 				Kind:       spec.CRDResourceKind,
 				ShortNames: []string{spec.CRDShortName},
 			},
 		},
 	}
-	_, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(crd)
+	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
 	return err
 }
 
 func WaitCRDReady(clientset apiextensionsclient.Interface) error {
 	err := retryutil.Retry(5*time.Second, 20, func() (bool, error) {
-		crd, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Get(spec.CRDName, metav1.GetOptions{})
+		crd, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(spec.CRDName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
 		for _, cond := range crd.Status.Conditions {
 			switch cond.Type {
-			case apiextensionsv1.Established:
-				if cond.Status == apiextensionsv1.ConditionTrue {
+			case apiextensionsv1beta1.Established:
+				if cond.Status == apiextensionsv1beta1.ConditionTrue {
 					return true, nil
 				}
-			case apiextensionsv1.NamesAccepted:
-				if cond.Status == apiextensionsv1.ConditionFalse {
+			case apiextensionsv1beta1.NamesAccepted:
+				if cond.Status == apiextensionsv1beta1.ConditionFalse {
 					return false, fmt.Errorf("Name conflict: %v", cond.Reason)
 				}
 			}
