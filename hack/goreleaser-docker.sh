@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# goreleaser-docker.sh - run goreleaser within a Docker container.
+
 set -o nounset
 set -o errexit
 set -o pipefail
