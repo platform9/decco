@@ -40,8 +40,17 @@ GORELEASER ?= ${SRC_DIR}/hack/goreleaser-docker.sh
 all: operator springboard
 
 .PHONY: release
-release: verify test ## Build and release Decco, publishing the artifacts on Github and Dockerhub.
+release: release-clean verify test ## Build and release Decco, publishing the artifacts on Github and Dockerhub.
 	$(GORELEASER) release --rm-dist
+	echo -n "platform9/decco-operator:$(VERSION)" > $(BUILD_DIR)/container-full-tag
+
+.PHONY: release-dry-run
+release-dry-run: verify test
+	$(GORELEASER) release --rm-dist --skip-publish --snapshot
+
+.PHONY: release-clean
+release-clean:
+	rm -rf ${SRC_DIR}/dist
 
 .PHONY: test
 test: ## Run all unit tests.
@@ -57,7 +66,7 @@ verify-goreleaser:
 .PHONY: verify-go
 verify-go:
 	# Check if codebase is formatted.
-	@bash -c "[ -z $$(gofmt -l .) ] || (echo 'ERROR: files are not formatted:' && gofmt -l . && false)"
+	@bash -c "[ -z $$(gofmt -l .) ] && echo 'OK' || (echo 'ERROR: files are not formatted:' && gofmt -l . && false)"
 	# Run static checks on codebase.
 	go vet ./...
 
@@ -71,6 +80,10 @@ format: ## Run all formatters on the codebase.
 .PHONY: generate
 generate:
 	# nop
+
+.PHONY: clean
+clean: operator-clean clean-tag-file springboard-clean release-clean
+	rm -rf $(BUILD_DIR)
 
 #
 # Go toolchain
@@ -131,9 +144,6 @@ $(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*
 	go build -o $(OPERATOR_EXE)
 
 operator: $(OPERATOR_EXE)
-
-clean: operator-clean clean-tag-file springboard-clean
-	rm -rf $(BUILD_DIR)
 
 clean-gopath:
 	@echo "GOPATH is $(GOPATH_DIR)"
