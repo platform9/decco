@@ -48,6 +48,6 @@ dockers:
     binaries:
       - decco-operator
     image_templates:
-      - "docker.io/erwinvaneyk/decco-operator:latest" # Change to platform9 repo once verified
-      - "docker.io/erwinvaneyk/decco-operator:{{ .Tag }}" # Change to platform9 repo once verified
+      - "docker.io/platform9/decco-operator:latest"
+      - "docker.io/platform9/decco-operator:{{ .Tag }}"
   # TODO(erwin) add springboard docker
