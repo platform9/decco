@@ -13,11 +13,9 @@ ifneq ($(GO_TOOLCHAIN),"")
 endif
 
 OPERATOR_STAGE_DIR=$(BUILD_DIR)/operator
-DEFAULT_HTTP_STAGE_DIR=$(BUILD_DIR)/default-http
 GO_ENV_TARBALL=$(BUILD_DIR)/decco-go-env.tgz
 OPERATOR_EXE=$(OPERATOR_STAGE_DIR)/decco-operator
 OPERATOR_IMAGE_MARKER=$(OPERATOR_STAGE_DIR)/image-marker
-DEFAULT_HTTP_EXE=$(DEFAULT_HTTP_STAGE_DIR)/decco-default-http
 SPRINGBOARD_STAGE_DIR=$(BUILD_DIR)/springboard-stunnel
 SPRINGBOARD_EXE=$(SPRINGBOARD_STAGE_DIR)/springboard
 SPRINGBOARD_IMAGE_NAME := springboard-stunnel
@@ -38,8 +36,6 @@ STUNNEL_CONTAINER_TAG ?= platform9/stunnel:5.56-102
 SPRINGBOARD_REPO_TAG ?= platform9/$(SPRINGBOARD_IMAGE_NAME)
 SPRINGBOARD_FULL_TAG := $(SPRINGBOARD_REPO_TAG):$(IMAGE_TAG)
 
-DEFAULT_HTTP_IMAGE_TAG ?= platform9systems/decco-default-http
-
 all: operator springboard
 
 $(BUILD_DIR):
@@ -55,9 +51,6 @@ $(GOPATH_DIR):| $(BUILD_DIR) $(GO_TOOLCHAIN)
 	mkdir -p $@
 
 $(OPERATOR_STAGE_DIR):
-	mkdir -p $@
-
-$(DEFAULT_HTTP_STAGE_DIR):
 	mkdir -p $@
 
 $(SPRINGBOARD_STAGE_DIR):
@@ -87,12 +80,6 @@ springboard-clean:
 springboard:
 	cd $(SRC_DIR)/cmd/springboard && go build -o $(SRC_DIR)/support/stunnel-with-springboard/springboard
 
-local-default-http:
-	cd $(SRC_DIR)/cmd/default-http && go build -o $${GOPATH}/bin/decco-default-http
-
-local-dns-test:
-	cd $(SRC_DIR)/cmd/dns-test && go build -o $${GOPATH}/bin/dns-test
-
 $(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(OPERATOR_STAGE_DIR)
 	cd $(SRC_DIR)/cmd/operator && \
 	go build -o $(OPERATOR_EXE)
@@ -105,14 +92,7 @@ $(GO_ENV_TARBALL): $(OPERATOR_EXE)
 
 tarball: $(GO_ENV_TARBALL)
 
-$(DEFAULT_HTTP_EXE): | $(DEFAULT_HTTP_STAGE_DIR)
-	cd $(SRC_DIR)/cmd/default-http && \
-	export GOPATH=$(BUILD_DIR) && \
-	go build -o $(DEFAULT_HTTP_EXE)
-
 operator: $(OPERATOR_EXE)
-
-default-http: $(DEFAULT_HTTP_EXE)
 
 clean: clean-gopath
 	rm -rf $(BUILD_DIR)
@@ -121,14 +101,8 @@ clean-gopath:
 	echo GOPATH is $(GOPATH_DIR)
 	go clean -modcache
 
-clean-vendor:
-	rm -rf $(VENDOR_DIR)
-
 operator-clean:
 	rm -rf $(OPERATOR_STAGE_DIR)
-
-default-http-clean:
-	rm -f $(DEFAULT_HTTP_EXE)
 
 operator-image: $(OPERATOR_IMAGE_MARKER)
 
@@ -143,10 +117,6 @@ operator-push: $(OPERATOR_IMAGE_MARKER)
 		docker push $(FULL_TAG) && docker logout))
 	docker rmi $(FULL_TAG)
 	rm -f $(OPERATOR_IMAGE_MARKER)
-
-default-http-image: $(DEFAULT_HTTP_EXE)
-	docker build --tag $(DEFAULT_HTTP_IMAGE_TAG) -f support/default-http/Dockerfile .
-	docker push $(DEFAULT_HTTP_IMAGE_TAG)
 
 $(TAG_FILE): operator-push
 	echo -n $(FULL_TAG) > $@
