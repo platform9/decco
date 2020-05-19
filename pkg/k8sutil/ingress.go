@@ -1,7 +1,7 @@
 package k8sutil
 
 import (
-	"k8s.io/api/extensions/v1beta1"
+	netv1beta1 "k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
@@ -22,7 +22,7 @@ func CreateHttpIngress(
 	localhostOnly bool,
 	additionalAnnotations map[string]string,
 ) error {
-	ingApi := kubeApi.ExtensionsV1beta1().Ingresses(ns)
+	ingApi := kubeApi.NetworkingV1beta1().Ingresses(ns)
 	annotations := make(map[string]string)
 	// Copy over additional annotations.
 	// Note: this works even if additionalAnnotations is nil
@@ -41,12 +41,12 @@ func CreateHttpIngress(
 	if encryptHttp {
 		annotations["nginx.ingress.kubernetes.io/secure-backends"] = "true"
 	}
-	ruleValue := v1beta1.IngressRuleValue{
-		HTTP: &v1beta1.HTTPIngressRuleValue{
-			Paths: []v1beta1.HTTPIngressPath{
+	ruleValue := netv1beta1.IngressRuleValue{
+		HTTP: &netv1beta1.HTTPIngressRuleValue{
+			Paths: []netv1beta1.HTTPIngressPath{
 				{
 					Path: path,
-					Backend: v1beta1.IngressBackend{
+					Backend: netv1beta1.IngressBackend{
 						ServiceName: svcName,
 						ServicePort: intstr.IntOrString{
 							Type:   intstr.Int,
@@ -57,32 +57,32 @@ func CreateHttpIngress(
 			},
 		},
 	}
-	var tls []v1beta1.IngressTLS
-	rules := []v1beta1.IngressRule{
+	var tls []netv1beta1.IngressTLS
+	rules := []netv1beta1.IngressRule{
 		{
 			Host:             "localhost",
 			IngressRuleValue: ruleValue,
 		},
 	}
 	if !localhostOnly {
-		rules = append(rules, v1beta1.IngressRule{
+		rules = append(rules, netv1beta1.IngressRule{
 			Host:             hostName,
 			IngressRuleValue: ruleValue,
 		})
-		tls = append(tls, v1beta1.IngressTLS{
+		tls = append(tls, netv1beta1.IngressTLS{
 			Hosts: []string{
 				hostName,
 			},
 			SecretName: secretName,
 		})
 	}
-	ing := v1beta1.Ingress{
+	ing := netv1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Labels:      labels,
 			Annotations: annotations,
 		},
-		Spec: v1beta1.IngressSpec{
+		Spec: netv1beta1.IngressSpec{
 			Rules: rules,
 			TLS:   tls,
 		},
