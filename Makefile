@@ -13,7 +13,6 @@ ifneq ($(GO_TOOLCHAIN),"")
 endif
 
 OPERATOR_STAGE_DIR=$(BUILD_DIR)/operator
-GO_ENV_TARBALL=$(BUILD_DIR)/decco-go-env.tgz
 OPERATOR_EXE=$(OPERATOR_STAGE_DIR)/decco-operator
 OPERATOR_IMAGE_MARKER=$(OPERATOR_STAGE_DIR)/image-marker
 SPRINGBOARD_STAGE_DIR=$(BUILD_DIR)/springboard-stunnel
@@ -84,21 +83,13 @@ $(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*
 	cd $(SRC_DIR)/cmd/operator && \
 	go build -o $(OPERATOR_EXE)
 
-$(GO_ENV_TARBALL): $(OPERATOR_EXE)
-	export TMP_TARBALL=$(shell mktemp --tmpdir gopath.XXX.tgz) && \
-	# include symlink targets in tarball, this can fail on some files, ignore errors
-	tar cfz $${TMP_TARBALL} -h --ignore-failed-read -C $(GOPATH) . &> /dev/null || true && \
-	mv $${TMP_TARBALL} $@
-
-tarball: $(GO_ENV_TARBALL)
-
 operator: $(OPERATOR_EXE)
 
-clean: clean-gopath
+clean: clean-gopath operator-clean clean-tag-file springboard-clean
 	rm -rf $(BUILD_DIR)
 
 clean-gopath:
-	echo GOPATH is $(GOPATH_DIR)
+	@echo "GOPATH is $(GOPATH_DIR)"
 	go clean -modcache
 
 operator-clean:
