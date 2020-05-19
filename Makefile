@@ -14,16 +14,15 @@ endif
 
 OPERATOR_STAGE_DIR=$(BUILD_DIR)/operator
 OPERATOR_EXE=$(OPERATOR_STAGE_DIR)/decco-operator
+OPERATOR_IMAGE_NAME := decco-operator
 OPERATOR_IMAGE_MARKER=$(OPERATOR_STAGE_DIR)/image-marker
 SPRINGBOARD_STAGE_DIR=$(BUILD_DIR)/springboard-stunnel
 SPRINGBOARD_EXE=$(SPRINGBOARD_STAGE_DIR)/springboard
 SPRINGBOARD_IMAGE_NAME := springboard-stunnel
 SPRINGBOARD_IMAGE_MARKER=$(SPRINGBOARD_STAGE_DIR)/image-marker
 
-IMAGE_NAME := decco-operator
-
 # Override with your own Docker registry tag(s)
-REPO_TAG ?= platform9/$(IMAGE_NAME)
+REPO_TAG ?= platform9/$(OPERATOR_IMAGE_NAME)
 VERSION ?= 1.0.1
 BUILD_NUMBER ?= 000
 BUILD_ID := $(BUILD_NUMBER)
@@ -37,6 +36,13 @@ SPRINGBOARD_FULL_TAG := $(SPRINGBOARD_REPO_TAG):$(IMAGE_TAG)
 
 all: operator springboard
 
+generate:
+	# nop
+
+#
+# Go toolchain
+#
+
 $(BUILD_DIR):
 	mkdir -p $@
 
@@ -49,8 +55,9 @@ gotoolchain: | $(GO_TOOLCHAIN)
 $(GOPATH_DIR):| $(BUILD_DIR) $(GO_TOOLCHAIN)
 	mkdir -p $@
 
-$(OPERATOR_STAGE_DIR):
-	mkdir -p $@
+#
+# Springboard
+#
 
 $(SPRINGBOARD_STAGE_DIR):
 	mkdir -p $@
@@ -79,13 +86,20 @@ springboard-clean:
 springboard:
 	cd $(SRC_DIR)/cmd/springboard && go build -o $(SRC_DIR)/support/stunnel-with-springboard/springboard
 
+#
+# Decco-operator
+#
+
+$(OPERATOR_STAGE_DIR):
+	mkdir -p $@
+
 $(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(OPERATOR_STAGE_DIR)
 	cd $(SRC_DIR)/cmd/operator && \
 	go build -o $(OPERATOR_EXE)
 
 operator: $(OPERATOR_EXE)
 
-clean: clean-gopath operator-clean clean-tag-file springboard-clean
+clean: operator-clean clean-tag-file springboard-clean
 	rm -rf $(BUILD_DIR)
 
 clean-gopath:
@@ -116,7 +130,3 @@ container-full-tag: $(TAG_FILE)
 
 clean-tag-file:
 	rm -f $(TAG_FILE)
-
-generate:
-	# nop
-
