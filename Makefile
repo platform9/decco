@@ -34,8 +34,41 @@ STUNNEL_CONTAINER_TAG ?= platform9/stunnel:5.56-102
 SPRINGBOARD_REPO_TAG ?= platform9/$(SPRINGBOARD_IMAGE_NAME)
 SPRINGBOARD_FULL_TAG := $(SPRINGBOARD_REPO_TAG):$(IMAGE_TAG)
 
+GORELEASER ?= ${SRC_DIR}/hack/goreleaser-docker.sh
+
+.PHONY: all
 all: operator springboard
 
+.PHONY: release
+release: verify test ## Build and release Decco, publishing the artifacts on Github and Dockerhub.
+	$(GORELEASER) release --rm-dist
+
+.PHONY: test
+test: ## Run all unit tests.
+	go test ./...
+
+.PHONY: verify
+verify: verify-go verify-goreleaser ## Run all static analysis checks.
+
+.PHONY: verify-goreleaser
+verify-goreleaser:
+	$(GORELEASER) check
+
+.PHONY: verify-go
+verify-go:
+	# Check if codebase is formatted.
+	@bash -c "[ -z $$(gofmt -l .) ] || (echo 'ERROR: files are not formatted:' && gofmt -l . && false)"
+	# Run static checks on codebase.
+	go vet ./...
+
+.PHONY: format
+format: ## Run all formatters on the codebase.
+	# Format the Go codebase.
+	gofmt -s -w .
+	# Format the go.mod file.
+	go mod tidy
+
+.PHONY: generate
 generate:
 	# nop
 
