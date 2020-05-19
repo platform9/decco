@@ -235,7 +235,7 @@ func (ctl *Controller) GetItemList() (rv string, items []watcher.Item, err error
 		return
 	}
 	rv = spcList.ResourceVersion
-	for i, _ := range spcList.Items {
+	for i := range spcList.Items {
 		items = append(items, &spaceWrapper{space: &spcList.Items[i]})
 	}
 	return

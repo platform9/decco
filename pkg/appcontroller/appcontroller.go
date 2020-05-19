@@ -152,7 +152,7 @@ func (ctl *InternalController) GetItemList() (
 		return
 	}
 	rv = appList.ResourceVersion
-	for i, _ := range appList.Items {
+	for i := range appList.Items {
 		items = append(items, &appWrapper{&appList.Items[i]})
 	}
 	return
