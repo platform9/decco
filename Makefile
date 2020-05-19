@@ -40,12 +40,14 @@ GORELEASER ?= ${SRC_DIR}/hack/goreleaser-docker.sh
 all: operator springboard
 
 .PHONY: release
-release: release-clean verify test ## Build and release Decco, publishing the artifacts on Github and Dockerhub.
+release: release-clean verify test $(BUILD_DIR) ## Build and release Decco, publishing the artifacts on Github and Dockerhub.
 	$(GORELEASER) release --rm-dist
+
+	# Output a file with the published Docker image tag exactly the same as `make container-full-tag`
 	echo -n "platform9/decco-operator:$(VERSION)" > $(BUILD_DIR)/container-full-tag
 
 .PHONY: release-dry-run
-release-dry-run: verify test
+release-dry-run: release-clean verify test $(BUILD_DIR)
 	$(GORELEASER) release --rm-dist --skip-publish --snapshot
 
 .PHONY: release-clean
