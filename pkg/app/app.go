@@ -244,7 +244,7 @@ func (ar *AppRuntime) insertDomainEnvVar(containers []v1.Container) {
 	if ar.app.Spec.DomainEnvVarName == "" {
 		return
 	}
-	for i, _ := range containers {
+	for i := range containers {
 		containers[i].Env = append(containers[i].Env, v1.EnvVar{
 			Name:  ar.app.Spec.DomainEnvVarName,
 			Value: ar.spaceSpec.DomainName,
