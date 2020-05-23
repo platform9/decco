@@ -23,7 +23,7 @@ SPRINGBOARD_IMAGE_MARKER=$(SPRINGBOARD_STAGE_DIR)/image-marker
 
 # Override with your own Docker registry tag(s)
 REPO_TAG ?= platform9/$(OPERATOR_IMAGE_NAME)
-VERSION ?= v1.1.0
+VERSION ?= $(shell cat ${SRC_DIR}/VERSION)
 BUILD_NUMBER ?= 000
 BUILD_ID := $(BUILD_NUMBER)
 IMAGE_TAG ?= $(VERSION)-$(BUILD_ID)
@@ -87,6 +87,9 @@ generate:
 clean: operator-clean clean-tag-file springboard-clean release-clean
 	rm -rf $(BUILD_DIR)
 
+.PHONY: version
+version: ## Print the version used in the Makefile
+	@echo $(VERSION)
 #
 # Go toolchain
 #
