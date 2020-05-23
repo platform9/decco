@@ -44,7 +44,7 @@ release: release-clean verify test $(BUILD_DIR) ## Build and release Decco, publ
 	$(GORELEASER) release --rm-dist
 
 	# Output a file with the published Docker image tag exactly the same as `make container-full-tag`
-	echo -n "platform9/decco-operator:$(VERSION)" > $(BUILD_DIR)/container-full-tag
+	echo -n "$(REPO_TAG):$(VERSION)" > $(BUILD_DIR)/container-full-tag
 
 .PHONY: release-dry-run
 release-dry-run: release-clean verify test $(BUILD_DIR)
