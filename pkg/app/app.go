@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 
-	deccov1 "github.com/platform9/decco/api/v1beta2"
+	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/watcher"
@@ -30,13 +30,13 @@ var (
 type AppRuntime struct {
 	kubeApi   kubernetes.Interface
 	namespace string
-	spaceSpec deccov1.SpaceSpec
+	spaceSpec deccov1beta2.SpaceSpec
 	log       *logrus.Entry
-	app       deccov1.App
+	app       deccov1beta2.App
 
 	// in memory state of the app
 	// status is the source of truth after AppRuntime struct is materialized.
-	status deccov1.AppStatus
+	status deccov1beta2.AppStatus
 }
 
 // -----------------------------------------------------------------------------
@@ -48,10 +48,10 @@ func (ar *AppRuntime) Name() string {
 // -----------------------------------------------------------------------------
 
 func New(
-	app deccov1.App,
+	app deccov1beta2.App,
 	kubeApi kubernetes.Interface,
 	namespace string,
-	spaceSpec deccov1.SpaceSpec,
+	spaceSpec deccov1beta2.SpaceSpec,
 ) *AppRuntime {
 
 	log := logrus.WithField("pkg", "app").WithField("app", app.Name).WithField("space", namespace)
@@ -67,12 +67,12 @@ func New(
 
 	if setupErr := ar.setup(); setupErr != nil {
 		log.Errorf("app failed to setup: %v", setupErr)
-		if ar.status.Phase != deccov1.AppPhaseFailed {
+		if ar.status.Phase != deccov1beta2.AppPhaseFailed {
 			ar.status.SetReason(setupErr.Error())
-			ar.status.SetPhase(deccov1.AppPhaseFailed)
+			ar.status.SetPhase(deccov1beta2.AppPhaseFailed)
 			if err := ar.updateCRStatus(); err != nil {
 				ar.log.Errorf("failed to update app phase (%v): %v",
-					deccov1.AppPhaseFailed, err)
+					deccov1beta2.AppPhaseFailed, err)
 			}
 		}
 	}
@@ -86,7 +86,7 @@ func (ar *AppRuntime) Update(item watcher.Item) {
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) GetApp() deccov1.App {
+func (ar *AppRuntime) GetApp() deccov1beta2.App {
 	return ar.app
 }
 
@@ -166,11 +166,11 @@ func (ar *AppRuntime) setup() error {
 
 	var shouldCreateResources bool
 	switch ar.status.Phase {
-	case deccov1.AppPhaseNone:
+	case deccov1beta2.AppPhaseNone:
 		shouldCreateResources = true
-	case deccov1.AppPhaseCreating:
+	case deccov1beta2.AppPhaseCreating:
 		return errInCreatingPhase
-	case deccov1.AppPhaseActive:
+	case deccov1beta2.AppPhaseActive:
 		shouldCreateResources = false
 
 	default:
@@ -196,18 +196,18 @@ func (ar *AppRuntime) phaseUpdateError(op string, err error) error {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) create() error {
-	ar.status.SetPhase(deccov1.AppPhaseCreating)
+	ar.status.SetPhase(deccov1beta2.AppPhaseCreating)
 	if err := ar.updateCRStatus(); err != nil {
 		return ar.phaseUpdateError("app create", err)
 	}
 	if err := ar.internalCreate(); err != nil {
 		return err
 	}
-	ar.status.SetPhase(deccov1.AppPhaseActive)
+	ar.status.SetPhase(deccov1beta2.AppPhaseActive)
 	if err := ar.updateCRStatus(); err != nil {
 		return fmt.Errorf(
 			"app create: failed to update app phase (%v): %v",
-			deccov1.AppPhaseActive,
+			deccov1beta2.AppPhaseActive,
 			err,
 		)
 	}
@@ -340,7 +340,7 @@ func (ar *AppRuntime) teardownPermissions() {
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) updateDns(e *deccov1.EndpointSpec, delete bool) error {
+func (ar *AppRuntime) updateDns(e *deccov1beta2.EndpointSpec, delete bool) error {
 	if !e.CreateDnsRecord {
 		return nil
 	}
@@ -374,7 +374,7 @@ func (ar *AppRuntime) logCreation() {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) createStunnel(
-	e *deccov1.EndpointSpec,
+	e *deccov1beta2.EndpointSpec,
 	containers []v1.Container,
 	volumes []v1.Volume,
 	stunnelIndex *int,
@@ -395,7 +395,7 @@ func (ar *AppRuntime) createStunnel(
 	svcPort = e.Port
 	tgtPort = e.Port
 	if tgtPort < 1 {
-		err = deccov1.ErrInvalidPort
+		err = deccov1beta2.ErrInvalidPort
 		return
 	}
 
@@ -566,7 +566,7 @@ func (ar *AppRuntime) createDeployment(
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) createSvc(
-	e *deccov1.EndpointSpec,
+	e *deccov1beta2.EndpointSpec,
 	svcPort int32,
 	tgtPort int32,
 ) error {
@@ -648,7 +648,7 @@ func (ar *AppRuntime) createEndpoints(
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) createHttpIngress(e *deccov1.EndpointSpec) error {
+func (ar *AppRuntime) createHttpIngress(e *deccov1beta2.EndpointSpec) error {
 	if ar.app.Spec.RunAsJob {
 		return nil
 	}
@@ -688,7 +688,7 @@ func (ar *AppRuntime) createHttpIngress(e *deccov1.EndpointSpec) error {
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) deleteIngress(e *deccov1.EndpointSpec) error {
+func (ar *AppRuntime) deleteIngress(e *deccov1beta2.EndpointSpec) error {
 	ingApi := ar.kubeApi.NetworkingV1beta1().Ingresses(ar.namespace)
 	ingName := e.Name
 	return ingApi.Delete(ingName, &metav1.DeleteOptions{})
@@ -697,7 +697,7 @@ func (ar *AppRuntime) deleteIngress(e *deccov1.EndpointSpec) error {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) createTcpIngress(
-	e *deccov1.EndpointSpec,
+	e *deccov1beta2.EndpointSpec,
 	svcPort int32,
 ) error {
 	if e.IsMetricsEndpoint {

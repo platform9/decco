@@ -20,7 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 
-	deccov1 "github.com/platform9/decco/api/v1beta2"
+	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/client"
 	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
@@ -43,17 +43,17 @@ type SpaceRuntime struct {
 
 	// config Config
 
-	Space deccov1.Space
+	Space deccov1beta2.Space
 
 	// in memory state of the spaceRsc
 	// Status is the source of truth after SpaceRuntime struct is materialized.
-	Status deccov1.SpaceStatus
+	Status deccov1beta2.SpaceStatus
 }
 
 // -----------------------------------------------------------------------------
 
 func New(
-	spc deccov1.Space,
+	spc deccov1beta2.Space,
 	kubeApi kubernetes.Interface,
 ) *SpaceRuntime {
 
@@ -68,12 +68,12 @@ func New(
 
 	if err := c.setup(); err != nil {
 		c.log.Errorf("cluster failed to setup: %v", err)
-		if c.Status.Phase != deccov1.SpacePhaseFailed {
+		if c.Status.Phase != deccov1beta2.SpacePhaseFailed {
 			c.Status.SetReason(err.Error())
-			c.Status.SetPhase(deccov1.SpacePhaseFailed)
+			c.Status.SetPhase(deccov1beta2.SpacePhaseFailed)
 			if err := c.updateCRStatus(); err != nil {
 				c.log.Errorf("failed to update space phase (%v): %v",
-					deccov1.SpacePhaseFailed, err)
+					deccov1beta2.SpacePhaseFailed, err)
 			}
 		}
 	}
@@ -82,7 +82,7 @@ func New(
 
 // -----------------------------------------------------------------------------
 
-func (c *SpaceRuntime) Update(spc deccov1.Space) {
+func (c *SpaceRuntime) Update(spc deccov1beta2.Space) {
 }
 
 // -----------------------------------------------------------------------------
@@ -131,11 +131,11 @@ func (c *SpaceRuntime) setup() error {
 
 	var shouldCreateResources bool
 	switch c.Status.Phase {
-	case deccov1.SpacePhaseNone:
+	case deccov1beta2.SpacePhaseNone:
 		shouldCreateResources = true
-	case deccov1.SpacePhaseCreating:
+	case deccov1beta2.SpacePhaseCreating:
 		return errInCreatingPhase
-	case deccov1.SpacePhaseActive:
+	case deccov1beta2.SpacePhaseActive:
 		shouldCreateResources = false
 
 	default:
@@ -162,18 +162,18 @@ func (c *SpaceRuntime) phaseUpdateError(op string, err error) error {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) create() error {
-	c.Status.SetPhase(deccov1.SpacePhaseCreating)
+	c.Status.SetPhase(deccov1beta2.SpacePhaseCreating)
 	if err := c.updateCRStatus(); err != nil {
 		return c.phaseUpdateError("space create", err)
 	}
 	if err := c.internalCreate(); err != nil {
 		return err
 	}
-	c.Status.SetPhase(deccov1.SpacePhaseActive)
+	c.Status.SetPhase(deccov1beta2.SpacePhaseActive)
 	if err := c.updateCRStatus(); err != nil {
 		return fmt.Errorf(
 			"space create: failed to update space phase (%v): %v",
-			deccov1.SpacePhaseActive,
+			deccov1beta2.SpacePhaseActive,
 			err,
 		)
 	}
@@ -280,7 +280,7 @@ func (c *SpaceRuntime) createNetPolicy() error {
 		{
 			NamespaceSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"decco-project": deccov1.ReservedProjectName,
+					"decco-project": deccov1beta2.ReservedProjectName,
 				},
 			},
 		},
@@ -595,7 +595,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		args = append(args, "--v=1")
 	}
 	baseTlsListenPort := int32(k8sutil.TlsPort)
-	endpoints := []deccov1.EndpointSpec{
+	endpoints := []deccov1beta2.EndpointSpec{
 		{
 			Name:                  "nginx-ingress",
 			Port:                  baseTlsListenPort, // nginx itself terminates TLS
@@ -608,7 +608,7 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		},
 	}
 	for _, epName := range c.Space.Spec.PrivateIngressControllerTcpEndpoints {
-		endpoints = append(endpoints, deccov1.EndpointSpec{
+		endpoints = append(endpoints, deccov1beta2.EndpointSpec{
 			Name: "nginx-ingress-sni-" + epName,
 			Port: 80,
 			SniHostname: epName +
@@ -622,11 +622,11 @@ func (c *SpaceRuntime) createPrivateIngressController() error {
 		ingressControllerImage = "platform9/ingress-nginx:0.19.0-006"
 	}
 
-	app := deccov1.App{
+	app := deccov1beta2.App{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "nginx-ingress",
 		},
-		Spec: deccov1.AppSpec{
+		Spec: deccov1beta2.AppSpec{
 			InitialReplicas:         1,
 			FirstEndpointListenPort: baseTlsListenPort + 1, // 'cause nginx itself uses 443
 			PodSpec: v1.PodSpec{

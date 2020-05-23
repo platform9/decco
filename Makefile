@@ -75,7 +75,7 @@ verify-go:
 .PHONY: format
 format: ## Run all formatters on the codebase.
 	# Format the Go codebase.
-	gofmt -s -w ./api/... ./cmd/... ./pkg/...
+	gofmt -s -w api cmd pkg
 	# Format the go.mod file.
 	go mod tidy
 

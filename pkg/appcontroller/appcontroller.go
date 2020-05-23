@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	deccov1 "github.com/platform9/decco/api/v1beta2"
+	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/app"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/watcher"
@@ -39,7 +39,7 @@ type InternalController struct {
 	extensionsApi apiextensionsclient.Interface
 	kubeApi       kubernetes.Interface
 	namespace     string
-	spaceSpec     deccov1.SpaceSpec
+	spaceSpec     deccov1beta2.SpaceSpec
 	stopCh        chan interface{}
 }
 
@@ -48,7 +48,7 @@ type Controller struct {
 	wg        *sync.WaitGroup
 	stopCh    chan interface{}
 	stopOnce  sync.Once
-	spaceSpec deccov1.SpaceSpec
+	spaceSpec deccov1beta2.SpaceSpec
 	namespace string
 }
 
@@ -57,7 +57,7 @@ type Controller struct {
 func New(
 	log *logrus.Entry,
 	namespace string,
-	spaceSpec deccov1.SpaceSpec,
+	spaceSpec deccov1beta2.SpaceSpec,
 	wg *sync.WaitGroup,
 ) *Controller {
 	return &Controller{
@@ -112,7 +112,7 @@ func (ctl *Controller) Stop() {
 
 func NewInternalController(
 	namespace string,
-	spaceSpec deccov1.SpaceSpec,
+	spaceSpec deccov1beta2.SpaceSpec,
 	stopCh chan interface{},
 ) *InternalController {
 	clustConfig := k8sutil.GetClusterConfigOrDie()
@@ -135,7 +135,7 @@ func NewInternalController(
 // ----------------------------------------------------------------------------
 
 type appWrapper struct {
-	app *deccov1.App
+	app *deccov1beta2.App
 }
 
 func (aw *appWrapper) Name() string {
@@ -223,7 +223,7 @@ func (c *InternalController) UnmarshalItem(
 	data []byte,
 ) (watcher.Item, string, error) {
 
-	a := &deccov1.App{}
+	a := &deccov1beta2.App{}
 	err := json.Unmarshal(data, a)
 	if err != nil {
 		s := "failed to unmarshal app object from data (%v): %v"
