@@ -117,10 +117,10 @@ $(SPRINGBOARD_EXE): | $(SPRINGBOARD_STAGE_DIR)
 	go build -o $@ $(SRC_DIR)/cmd/springboard
 
 # Build manager binary
-operator: generate fmt vet
+operator: generate verify
 	go build -o bin/operator ./cmd/operator
 
-operator-debug: generate fmt vet
+operator-debug: generate verify
 	go build -gcflags="all=-N -l" -o bin/operator ./cmd/operator
 
 springboard-image: $(SPRINGBOARD_IMAGE_MARKER)
@@ -180,7 +180,7 @@ clean-tag-file:
 	rm -f $(TAG_FILE)
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
-run: generate fmt vet
+run: generate verify
 	go run ./cmd/operator
 
 # Install CRDs into a cluster

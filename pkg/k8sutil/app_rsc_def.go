@@ -36,8 +36,7 @@ func WatchApps(host string, ns string, httpClient *http.Client, resourceVersion 
 		resourceVersion))
 }
 
-func GetAppList(restcli rest.Interface,
-	ns string) (*deccov1beta2.AppList, error) {
+func GetAppList(restcli rest.Interface, ns string) (*deccov1beta2.AppList, error) {
 	b, err := restcli.Get().RequestURI(listAppsURI(ns)).DoRaw()
 	if err != nil {
 		return nil, err
