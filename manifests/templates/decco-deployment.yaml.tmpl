@@ -1,13 +1,16 @@
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: decco-operator
 spec:
   replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: decco-operator
   template:
     metadata:
       labels:
-        name: decco-operator
+        k8s-app: decco-operator
     spec:
       serviceAccountName: decco-operator
       containers:
