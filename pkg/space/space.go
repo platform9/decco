@@ -11,7 +11,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
-	"k8s.io/api/extensions/v1beta1"
+	appsv1 "k8s.io/api/apps/v1"
 	netv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -415,7 +415,7 @@ func (c *SpaceRuntime) createHttpIngress() error {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) createDefaultHttpDeploy() error {
-	depApi := c.kubeApi.ExtensionsV1beta1().Deployments(c.Space.Name)
+	depApi := c.kubeApi.AppsV1().Deployments(c.Space.Name)
 	var volumes []v1.Volume
 	containers := []v1.Container{
 		{
@@ -478,14 +478,14 @@ func (c *SpaceRuntime) createDefaultHttpDeploy() error {
 			{ContainerPort: defaultHttpInternalPort},
 		}
 	}
-	_, err := depApi.Create(&v1beta1.Deployment{
+	_, err := depApi.Create(&appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "default-http",
 			Labels: map[string]string{
 				"app": "decco",
 			},
 		},
-		Spec: v1beta1.DeploymentSpec{
+		Spec: appsv1.DeploymentSpec{
 			Replicas: nil,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{

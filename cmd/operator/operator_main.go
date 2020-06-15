@@ -21,12 +21,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/platform9/decco/pkg/k8sutil"
+	"github.com/platform9/decco/pkg/spacecontroller"
 	log "github.com/sirupsen/logrus"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-
-	"github.com/platform9/decco/pkg/k8sutil"
-	"github.com/platform9/decco/pkg/spacecontroller"
 )
 
 func main() {
