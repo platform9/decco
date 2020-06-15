@@ -4,23 +4,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
-	"strings"
-
-	"github.com/sirupsen/logrus"
-	batchv1 "k8s.io/api/batch/v1"
-	"k8s.io/api/core/v1"
-	"k8s.io/api/extensions/v1beta1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/kubernetes"
-
 	spec "github.com/platform9/decco/pkg/appspec"
 	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
 	sspec "github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/watcher"
+	"github.com/sirupsen/logrus"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	"k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
+	"reflect"
+	"strings"
+	netv1beta1 "k8s.io/api/networking/v1beta1"
 )
 
 var (
@@ -124,7 +123,7 @@ func (ar *AppRuntime) Delete() {
 			log.Warnf("failed to delete job: %s", err)
 		}
 	} else {
-		deployApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
+		deployApi := ar.kubeApi.AppsV1().Deployments(ar.namespace)
 		err := deployApi.Delete(ar.app.Name, &delOpts)
 		if err != nil {
 			log.Warnf("failed to delete deployment: %s", err)
@@ -545,9 +544,9 @@ func (ar *AppRuntime) createDeployment(
 		})
 		return err
 	} else {
-		depSpec := &v1beta1.Deployment{
+		depSpec := &appsv1.Deployment{
 			ObjectMeta: objMeta,
-			Spec: v1beta1.DeploymentSpec{
+			Spec: appsv1.DeploymentSpec{
 				Replicas: &initialReplicas,
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
@@ -557,7 +556,7 @@ func (ar *AppRuntime) createDeployment(
 				Template: podTemplateSpec,
 			},
 		}
-		depApi := ar.kubeApi.ExtensionsV1beta1().Deployments(ar.namespace)
+		depApi := ar.kubeApi.AppsV1().Deployments(ar.namespace)
 		_, err := depApi.Create(depSpec)
 		return err
 	}
@@ -689,7 +688,7 @@ func (ar *AppRuntime) createHttpIngress(e *spec.EndpointSpec) error {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) deleteIngress(e *spec.EndpointSpec) error {
-	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
+	ingApi := ar.kubeApi.NetworkingV1beta1().Ingresses(ar.namespace)
 	ingName := e.Name
 	return ingApi.Delete(ingName, &metav1.DeleteOptions{})
 }
@@ -718,8 +717,8 @@ func (ar *AppRuntime) createTcpIngress(
 		anno[key] = val
 	}
 	anno["kubernetes.io/ingress.class"] = "k8sniff"
-	ingApi := ar.kubeApi.ExtensionsV1beta1().Ingresses(ar.namespace)
-	ing := v1beta1.Ingress{
+	ingApi := ar.kubeApi.NetworkingV1beta1().Ingresses(ar.namespace)
+	ing := netv1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: e.Name,
 			Labels: map[string]string{
@@ -728,15 +727,15 @@ func (ar *AppRuntime) createTcpIngress(
 			},
 			Annotations: anno,
 		},
-		Spec: v1beta1.IngressSpec{
-			Rules: []v1beta1.IngressRule{
+		Spec: netv1beta1.IngressSpec{
+			Rules: []netv1beta1.IngressRule{
 				{
 					Host: hostName,
-					IngressRuleValue: v1beta1.IngressRuleValue{
-						HTTP: &v1beta1.HTTPIngressRuleValue{
-							Paths: []v1beta1.HTTPIngressPath{
+					IngressRuleValue: netv1beta1.IngressRuleValue{
+						HTTP: &netv1beta1.HTTPIngressRuleValue{
+							Paths: []netv1beta1.HTTPIngressPath{
 								{
-									Backend: v1beta1.IngressBackend{
+									Backend: netv1beta1.IngressBackend{
 										ServiceName: e.Name,
 										ServicePort: intstr.IntOrString{
 											Type:   intstr.Int,

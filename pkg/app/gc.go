@@ -22,7 +22,7 @@ func collectDeployments(kubeApi kubernetes.Interface,
 	isKnownApp func(name string) bool) {
 
 	log = log.WithField("func", "collectDeployments")
-	deplApi := kubeApi.ExtensionsV1beta1().Deployments(namespace)
+	deplApi := kubeApi.AppsV1().Deployments(namespace)
 	nses, err := deplApi.List(metav1.ListOptions{
 		LabelSelector: "decco-derived-from=app",
 	},
@@ -86,7 +86,7 @@ func collectIngresses(kubeApi kubernetes.Interface,
 	isKnownApp func(name string) bool) {
 
 	log = log.WithField("func", "collectIngresses")
-	ingApi := kubeApi.ExtensionsV1beta1().Ingresses(namespace)
+	ingApi := kubeApi.NetworkingV1beta1().Ingresses(namespace)
 	ingList, err := ingApi.List(metav1.ListOptions{
 		LabelSelector: "decco-derived-from=app",
 	},
