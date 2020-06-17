@@ -56,7 +56,7 @@ release-clean:
 
 .PHONY: test
 test: ## Run all unit tests.
-	go test ./api/... ./cmd/... ./pkg/...
+	go test -v ./api/... ./cmd/... ./pkg/... ./test/...
 
 .PHONY: verify
 verify: verify-go verify-goreleaser ## Run all static analysis checks.
@@ -68,9 +68,9 @@ verify-goreleaser:
 .PHONY: verify-go
 verify-go:
 	# Check if codebase is formatted.
-	@bash -c "[ -z $$(gofmt -l ./cmd ./pkg) ] && echo 'OK' || (echo 'ERROR: files are not formatted:' && gofmt -l . && false)"
+	@bash -c "[ -z $$(gofmt -l ./cmd ./pkg ./test) ] && echo 'OK' || (echo 'ERROR: files are not formatted:' && gofmt -l . && false)"
 	# Run static checks on codebase.
-	go vet ./api/... ./cmd/... ./pkg/...
+	go vet ./api/... ./cmd/... ./pkg/... ./test/...
 
 .PHONY: format
 format: ## Run all formatters on the codebase.
