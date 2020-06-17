@@ -145,8 +145,7 @@ $(OPERATOR_STAGE_DIR):
 	mkdir -p $@
 
 $(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(OPERATOR_STAGE_DIR)
-	cd $(SRC_DIR)/cmd/operator && \
-	go build -o $(OPERATOR_EXE)
+	cd $(SRC_DIR)/cmd/operator && go build -o $(OPERATOR_EXE)
 
 operator: $(OPERATOR_EXE)
 
