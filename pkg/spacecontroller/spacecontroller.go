@@ -27,10 +27,10 @@ import (
 	"k8s.io/client-go/rest"
 	restclient "k8s.io/client-go/rest"
 
+	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/appcontroller"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/space"
-	"github.com/platform9/decco/pkg/spec"
 	"github.com/platform9/decco/pkg/watcher"
 )
 
@@ -175,7 +175,7 @@ func (c *Controller) InitItem(item watcher.Item) watcher.ManagedItem {
 	spc := wrapped.space
 	newSpaceRt := space.New(*spc, c.kubeApi)
 	var appCtrl *appcontroller.Controller
-	if newSpaceRt.Status.Phase == spec.SpacePhaseActive {
+	if newSpaceRt.Status.Phase == deccov1beta2.SpacePhaseActive {
 		c.log.Infof("starting app controller for %s", spc.Name)
 		appCtrl = appcontroller.New(
 			c.log, spc.Name,
@@ -208,7 +208,7 @@ func (c *Controller) UnmarshalItem(
 	data []byte,
 ) (watcher.Item, string, error) {
 
-	spc := &spec.Space{}
+	spc := &deccov1beta2.Space{}
 	err := json.Unmarshal(data, spc)
 	if err != nil {
 		return nil, "", fmt.Errorf("fail to unmarshal space object from data (%s): %v", data, err)
@@ -220,7 +220,7 @@ func (c *Controller) UnmarshalItem(
 // ----------------------------------------------------------------------------
 
 type spaceWrapper struct {
-	space *spec.Space
+	space *deccov1beta2.Space
 }
 
 func (sw *spaceWrapper) Name() string {
