@@ -21,18 +21,18 @@ func TestDecco(t *testing.T) {
 }
 
 const (
-	testStagingDir            = "./test_staging"
-	testStagingManifestsDir   = testStagingDir + "/manifests"
-	testDataDir               = "./test_data"
+	testDataDir               = "./testdata"
 	manifestsDir              = "../manifests"
 	testClusterName           = "test-decco" // Note: the name should be lowercase because of constraints in KinD.
-	testClusterKubeconfigPath = testStagingDir + "/kubeconfig"
 	testClusterVersion        = "v1.16.9"
 	testImageTag              = "e2e-test"
 	testDeccoOperatorImage    = "platform9/decco-operator:" + testImageTag
 )
 
 var _ = Describe("Decco", func() {
+	var testTmpDir, testManifestsDir, kubeconfigDir string
+	var err error
+
 	BeforeSuite(func() {
 		//
 		// Perform prerequisite checks
@@ -44,11 +44,13 @@ var _ = Describe("Decco", func() {
 		ensureDirExists(testDataDir)
 		ensureDirExists(manifestsDir)
 
-		By("Ensuring that the test data directory exists: " + testStagingDir)
-		err := os.MkdirAll(testStagingDir, 0755)
-		Expect(err).To(BeNil(), "Failed to create test staging directory %s", testStagingDir)
-		err = os.MkdirAll(testStagingManifestsDir, 0755)
-		Expect(err).To(BeNil(), "Failed to create test staging manifests directory %s", testStagingManifestsDir)
+		By("Creating temporary test directories")
+		testTmpDir, err = ioutil.TempDir(testDataDir, "e2e_test_")
+		log("test directory: %s", testTmpDir)
+		Expect(err).To(BeNil(), "Failed to create temporary test directory %s", testTmpDir)
+		testManifestsDir = path.Join(testTmpDir, "manifests")
+		err = os.MkdirAll(testManifestsDir, 0755)
+		Expect(err).To(BeNil(), "Failed to create temporary test manifests directory %s", testManifestsDir)
 
 		//
 		// Build the test image
@@ -67,15 +69,16 @@ var _ = Describe("Decco", func() {
 		//
 
 		By("Creating a test cluster using KinD")
+		kubeconfigDir = path.Join(testTmpDir, "kubeconfig")
 		out, err = execCommand("kind", "create", "cluster",
 			"--name", testClusterName,
-			"--kubeconfig", testClusterKubeconfigPath,
+			"--kubeconfig", kubeconfigDir,
 			"--image", fmt.Sprintf("kindest/node:%s", testClusterVersion),
 			"--wait", "5m")
 		Expect(err).To(BeNil(), "Failed to create test KinD cluster: %s", string(out))
 
 		By("Setting KUBECONFIG to the kubeconfig of the test cluster")
-		err = os.Setenv("KUBECONFIG", testClusterKubeconfigPath)
+		err = os.Setenv("KUBECONFIG", kubeconfigDir)
 		Expect(err).To(BeNil(), "Failed to set KUBECONFIG")
 
 		By("Ensuring that the test cluster is accessible")
@@ -93,14 +96,14 @@ var _ = Describe("Decco", func() {
 		Expect(err).To(BeNil(), "Failed to build decco-operator: %s", string(out))
 
 		//
-		// Stage the required manifests
+		// Copy the required manifests
 		//
-		stageManifest(path.Join(manifestsDir, "decco-serviceaccount.yaml"))
-		stageManifest(path.Join(manifestsDir, "decco-clusterrolebinding.yaml"))
-		stageManifest(path.Join(testDataDir, "decco-namespace.yaml"))
-		stageManifest(path.Join(testDataDir, "decco-operator-secret.yaml"))
+		copyResource(path.Join(manifestsDir, "decco-serviceaccount.yaml"), testManifestsDir)
+		copyResource(path.Join(manifestsDir, "decco-clusterrolebinding.yaml"), testManifestsDir)
+		copyResource(path.Join(testDataDir, "decco-namespace.yaml"), testManifestsDir)
+		copyResource(path.Join(testDataDir, "decco-operator-secret.yaml"), testManifestsDir)
 
-		By("Completing and staging the Decco deployment manifest template", func() {
+		By("Completing the Decco deployment manifest template", func() {
 			bs, err := ioutil.ReadFile(path.Join(manifestsDir, "templates/decco-deployment.yaml.tmpl"))
 			Expect(err).To(BeNil(), "Failed to read Decco deployment template: %s", string(out))
 
@@ -115,7 +118,7 @@ var _ = Describe("Decco", func() {
 			})
 			Expect(err).To(BeNil(), "Failed to substitute Decco deployment template: %s", string(out))
 
-			err = ioutil.WriteFile(path.Join(testStagingManifestsDir, "decco-deployment.yaml"), []byte(substituted), 0644)
+			err = ioutil.WriteFile(path.Join(testManifestsDir, "decco-deployment.yaml"), []byte(substituted), 0644)
 			Expect(err).To(BeNil(), "Failed to write substituted Decco deployment template: %s", string(out))
 		})
 
@@ -124,12 +127,12 @@ var _ = Describe("Decco", func() {
 		//
 
 		By("Creating the decco namespace in the test cluster", func() {
-			out, err := execCommand("kubectl", "apply", "--namespace", "decco", "-f", path.Join(testStagingManifestsDir, "decco-namespace.yaml"))
+			out, err := execCommand("kubectl", "apply", "--namespace", "decco", "-f", path.Join(testDataDir, "decco-namespace.yaml"))
 			Expect(err).To(BeNil(), "Failed to deploy Decco: %s", string(out))
 		})
 
 		By("Deploying Decco in the test cluster", func() {
-			out, err := execCommand("kubectl", "apply", "--namespace", "decco", "-f", testStagingManifestsDir)
+			out, err := execCommand("kubectl", "apply", "--namespace", "decco", "-f", testManifestsDir)
 			Expect(err).To(BeNil(), "Failed to deploy Decco: %s", string(out))
 		})
 	})
@@ -137,7 +140,7 @@ var _ = Describe("Decco", func() {
 	AfterSuite(func() {
 		if os.Getenv("DECCO_TEST_PRESERVE_CLUSTER") == "" {
 			By("Cleaning up the test cluster (to preserve test cluster set DECCO_TEST_PRESERVE_CLUSTER to a non-empty value)")
-			out, err := execCommand("kind", "delete", "cluster", "--name", testClusterName, "--kubeconfig", testClusterKubeconfigPath)
+			out, err := execCommand("kind", "delete", "cluster", "--name", testClusterName, "--kubeconfig", kubeconfigDir)
 			Expect(err).To(BeNil(), "Failed to delete test KinD cluster: %s", string(out))
 		} else {
 			By("Preserving test KinD cluster: " + testClusterName)
@@ -145,12 +148,11 @@ var _ = Describe("Decco", func() {
 
 		if os.Getenv("DECCO_TEST_PRESERVE_DATA") == "" && os.Getenv("DECCO_TEST_PRESERVE_CLUSTER") == "" {
 			By("Cleaning up temporary test data (to preserve test data set DECCO_TEST_PRESERVE_DATA or DECCO_TEST_PRESERVE_CLUSTER to a non-empty value)")
-			err := os.RemoveAll(testStagingDir)
+			err := os.RemoveAll(testTmpDir)
 			Expect(err).To(BeNil())
 		} else {
-			By("Preserving test data: " + testStagingDir)
+			By("Preserving test data: " + testTmpDir)
 		}
-
 	})
 
 	Context("Decco deployment", func() {
@@ -207,10 +209,10 @@ func ensureCommandExists(name string) {
 	Expect(err).To(BeNil(), "Could not find prerequisite command '%s'", name)
 }
 
-func stageManifest(manifestPath string) {
-	By("Staging manifest: " + manifestPath)
-	out, err := execCommand("cp", manifestPath, testStagingManifestsDir)
-	Expect(err).To(BeNil(), "Failed to stage %s to %s: %s", manifestPath, testStagingManifestsDir, string(out))
+func copyResource(src, dstDir string) {
+	By("Copying resource: " + src + " -> " + dstDir)
+	out, err := execCommand("cp", src, dstDir)
+	Expect(err).To(BeNil(), "Failed to copy %s to %s: %s", src, dstDir, string(out))
 }
 
 func ensureDirExists(path string) {
