@@ -79,11 +79,14 @@ var _ = Describe("Decco", func() {
 		Expect(err).To(BeNil(), "Failed to set KUBECONFIG")
 
 		By("Ensuring that the test cluster is accessible")
-		out, err = execCommand("kubectl", "version")
-		Expect(err).To(BeNil(), "Failed to connect to test KinD cluster: %s", string(out))
-		if err == nil {
-			log(string(out))
-		}
+		Eventually(func() error {
+			out, err = execCommand("kubectl", "version")
+			if err == nil {
+				log(string(out))
+				return err
+			}
+			return nil
+		}, 5*time.Minute, 10*time.Second).Should(BeNil(), "Failed to connect to test KinD cluster: %s", string(out))
 
 		By("Making the Decco image available to the test cluster")
 		out, err = execCommand("kind", "load", "docker-image", "--name", testClusterName, testDeccoOperatorImage)
