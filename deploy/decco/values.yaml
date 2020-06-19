@@ -1,0 +1,22 @@
+---
+decco_operator_image_tag: platform9/decco-operator:1.0.1-104
+k8sniff_replicas: 1
+k8sniff_image_tag: platform9/k8sniff:1.0.0-114
+
+# The following are all required secret values, so you'll find no defaults here!
+
+# aws_access_key_id_b64: ''
+# aws_secret_access_key_b64: ''
+
+# wildcard_tls_cert_b64: ''
+# wildcard_tls_key_b64: ''
+
+# tcp_tls_ca_b64: ''
+# tcp_tls_cert_b64: ''
+# tcp_tls_key_b64: ''
+
+
+# This last value is a secret as well, but is actually optional.
+# slack_webhook_for_dns_update_failure: ''
+
+...

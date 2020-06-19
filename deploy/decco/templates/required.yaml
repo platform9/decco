@@ -1,0 +1,15 @@
+# This template is used to force the evaluation of vars that are required using the
+# `required` function without needing to litter the kube templates themselves.
+# It is a weird pattern but I can't find a better one.
+
+# !!! This file must only contain comments. !!!
+
+# {{ required "aws_access_key_id_b64 is required from values.yaml" .Values.aws_access_key_id_b64 }}
+# {{ required "aws_secret_access_key_b64 is required from values.yaml" .Values.aws_secret_access_key_b64 }}
+
+# {{ required "wildcard_tls_cert_b64 is required from values.yaml" .Values.wildcard_tls_cert_b64 }}
+# {{ required "wildcard_tls_key_b64 is required from values.yaml" .Values.wildcard_tls_key_b64 }}
+
+# {{ required "tcp_tls_ca_b64 is required from values.yaml" .Values.tcp_tls_ca_b64 }}
+# {{ required "tcp_tls_cert_b64 is required from values.yaml" .Values.tcp_tls_cert_b64 }}
+# {{ required "tcp_tls_key_b64 is required from values.yaml" .Values.tcp_tls_key_b64 }}

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8sniff
+  namespace: decco
+  labels:
+    role: k8sniff
+spec:
+  replicas: {{ .Values.k8sniff_replicas }}
+  selector:
+    matchLabels:
+      role: k8sniff
+  template:
+    metadata:
+      labels:
+        role: k8sniff
+    spec:
+      priorityClassName: high-priority
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: role
+                operator: In
+                values:
+                - k8sniff
+            topologyKey: kubernetes.io/hostname
+      serviceAccountName: k8sniff
+      containers:
+      - image: {{ .Values.k8sniff_image_tag }}
+        name: k8sniff
+        imagePullPolicy: IfNotPresent
+        command:
+          - /bin/sh
+          - -c
+          - -x
+          - "/pipeline/source/k8sniff -logtostderr --v=3 --config /etc/config/k8sniff.json"
+        ports:
+        - name: https
+          containerPort: 8443
+        - name: metrics
+          containerPort: 9091
+        resources:
+          requests:
+             cpu: 750m
+             memory: 256Mi
+        volumeMounts:
+        - name: k8sniff-config
+          mountPath: /etc/config
+          readOnly: true
+      volumes:
+        - name: k8sniff-config
+          configMap:
+            name: k8sniff-configmap

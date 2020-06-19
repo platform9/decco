@@ -1,0 +1,11 @@
+apiVersion: v1
+data:
+  ca.pem: {{ .Values.tcp_tls_ca_b64 }}
+  tls.crt: {{ .Values.tcp_tls_cert_b64 }}
+  tls.key: {{ .Values.tcp_tls_key_b64 }}
+kind: Secret
+metadata:
+  creationTimestamp: null
+  name: tcp-cert
+  namespace: decco
+type: Opaque
