@@ -21,12 +21,12 @@ func TestDecco(t *testing.T) {
 }
 
 const (
-	testDataDir               = "./testdata"
-	manifestsDir              = "../manifests"
-	testClusterName           = "test-decco" // Note: the name should be lowercase because of constraints in KinD.
-	testClusterVersion        = "v1.16.9"
-	testImageTag              = "e2e-test"
-	testDeccoOperatorImage    = "platform9/decco-operator:" + testImageTag
+	testDataDir            = "./testdata"
+	manifestsDir           = "../manifests"
+	testClusterName        = "test-decco" // Note: the name should be lowercase because of constraints in KinD.
+	testClusterVersion     = "v1.16.9"
+	testImageTag           = "e2e-test"
+	testDeccoOperatorImage = "platform9/decco-operator:" + testImageTag
 )
 
 var _ = Describe("Decco", func() {
