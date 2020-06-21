@@ -7,9 +7,9 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/coreos/etcd-operator v0.9.4
 	github.com/drone/envsubst v1.0.2
+	github.com/go-logr/logr v0.1.0
 	github.com/onsi/ginkgo v1.12.1
 	github.com/onsi/gomega v1.10.0
-	github.com/go-logr/logr v0.1.0
 	github.com/sirupsen/logrus v1.4.2
 	golang.org/x/sys v0.0.0-20200116001909-b77594299b42 // indirect
 	k8s.io/api v0.17.3

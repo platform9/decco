@@ -18,6 +18,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -269,7 +270,6 @@ func (r *AppReconciler) reconcileDeployment(ctx context.Context, app *deccov1bet
 	return nil
 }
 
-
 func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1beta2.App) error {
 	if app.Spec.Permissions == nil {
 		return nil
@@ -333,7 +333,6 @@ func (r *AppReconciler) reconcileRBAC(ctx context.Context, app *deccov1beta2.App
 
 	return nil
 }
-
 
 func (r *AppReconciler) prepareApp(ctx context.Context, app *deccov1beta2.App) error {
 	// insertDomainEnvVar into each container
