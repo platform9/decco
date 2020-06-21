@@ -56,7 +56,7 @@ release-clean:
 
 .PHONY: test
 test: ## Run all unit tests.
-	go test ./api/... ./cmd/... ./pkg/...
+	go test -v ./api/... ./cmd/... ./pkg/... ./test/...
 
 .PHONY: verify
 verify: verify-go verify-goreleaser ## Run all static analysis checks.
@@ -68,14 +68,14 @@ verify-goreleaser:
 .PHONY: verify-go
 verify-go:
 	# Check if codebase is formatted.
-	@bash -c "[ -z $$(gofmt -l ./cmd ./pkg) ] && echo 'OK' || (echo 'ERROR: files are not formatted:' && gofmt -l . && false)"
+	@bash -c "[ -z $$(gofmt -l ./api ./cmd ./pkg ./test) ] && echo 'OK' || (echo 'ERROR: files are not formatted:' && gofmt -l . && false)"
 	# Run static checks on codebase.
-	go vet ./api/... ./cmd/... ./pkg/...
+	go vet ./api/... ./cmd/... ./pkg/... ./test/...
 
 .PHONY: format
 format: ## Run all formatters on the codebase.
 	# Format the Go codebase.
-	gofmt -s -w api cmd pkg
+	gofmt -s -w api cmd pkg test
 	# Format the go.mod file.
 	go mod tidy
 
@@ -114,7 +114,7 @@ $(SPRINGBOARD_STAGE_DIR):
 	mkdir -p $@
 
 $(SPRINGBOARD_EXE): | $(SPRINGBOARD_STAGE_DIR)
-	cd $(SRC_DIR)/cmd/springboard && go build -o $@
+	go build -o $@ $(SRC_DIR)/cmd/springboard
 
 $(SPRINGBOARD_IMAGE_MARKER): $(SPRINGBOARD_EXE)
 	cp -f $(SRC_DIR)/support/stunnel-instrumented-with-springboard/* $(SPRINGBOARD_STAGE_DIR)
@@ -135,7 +135,7 @@ springboard-clean:
 	rm -rf $(SPRINGBOARD_STAGE_DIR)
 
 springboard:
-	cd $(SRC_DIR)/cmd/springboard && go build -o $(SRC_DIR)/support/stunnel-with-springboard/springboard
+	go build -o $(SRC_DIR)/support/stunnel-with-springboard/springboard $(SRC_DIR)/cmd/springboard
 
 #
 # Decco-operator
@@ -145,8 +145,7 @@ $(OPERATOR_STAGE_DIR):
 	mkdir -p $@
 
 $(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(OPERATOR_STAGE_DIR)
-	cd $(SRC_DIR)/cmd/operator && \
-	go build -o $(OPERATOR_EXE)
+	go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
 
 operator: $(OPERATOR_EXE)
 
