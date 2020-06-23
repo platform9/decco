@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: decco-operator
+  namespace: decco
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: decco-operator
+  template:
+    metadata:
+      labels:
+        k8s-app: decco-operator
+    spec:
+      priorityClassName: high-priority
+      serviceAccountName: decco-operator
+      containers:
+      - name: decco-operator
+        image: {{ .Values.decco_operator_image_tag }}
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+             memory: 40Mi
+        env:
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: DNS_PROVIDER_NAME
+          value: aws-route53
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: decco-operator-secret
+              key: awsAccessKeyId
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: decco-operator-secret
+              key: awsSecretAccessKey
+        - name: SLACK_WEBHOOK_FOR_DNS_UPDATE_FAILURE
+          valueFrom:
+            secretKeyRef:
+              name: decco-operator-secret
+              key: slackWebhookForDnsUpdateFailure

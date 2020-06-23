@@ -1,0 +1,10 @@
+apiVersion: v1
+data:
+  tls.crt: {{ .Values.wildcard_tls_cert_b64 }}
+  tls.key: {{ .Values.wildcard_tls_key_b64 }}
+kind: Secret
+metadata:
+  creationTimestamp: null
+  name: http-wildcard-cert
+  namespace: decco
+type: Opaque
