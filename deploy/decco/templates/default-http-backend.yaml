@@ -17,7 +17,7 @@ spec:
         k8s-app: default-http-backend
     spec:
       containers:
-      - image: gcr.io/google_containers/defaultbackend:1.0
+      - image: {{ .Values.default_http_backend_image_tag }}
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 3

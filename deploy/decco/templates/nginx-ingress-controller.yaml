@@ -34,7 +34,7 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
-        image: quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.19.0
+        image: {{ .Values.nginx_ingress_image_tag }}
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 3
