@@ -26,6 +26,7 @@ import (
 	kwatch "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/app"
@@ -115,7 +116,7 @@ func NewInternalController(
 	spaceSpec deccov1beta2.SpaceSpec,
 	stopCh chan interface{},
 ) *InternalController {
-	clustConfig := k8sutil.GetClusterConfigOrDie()
+	clusterConfig := config.GetConfigOrDie()
 	logger := logrus.WithFields(logrus.Fields{
 		"pkg":       "appcontroller",
 		"namespace": namespace,
@@ -123,9 +124,9 @@ func NewInternalController(
 	logger.Logger.SetLevel(logrus.DebugLevel)
 	return &InternalController{
 		log:           logger,
-		apiHost:       clustConfig.Host,
-		extensionsApi: k8sutil.MustNewKubeExtClient(),
-		kubeApi:       kubernetes.NewForConfigOrDie(clustConfig),
+		apiHost:       clusterConfig.Host,
+		extensionsApi: apiextensionsclient.NewForConfigOrDie(clusterConfig),
+		kubeApi:       kubernetes.NewForConfigOrDie(clusterConfig),
 		namespace:     namespace,
 		spaceSpec:     spaceSpec,
 		stopCh:        stopCh,

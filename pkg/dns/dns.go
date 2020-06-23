@@ -30,6 +30,16 @@ func Enabled() bool {
 	return dnsProvider != nil
 }
 
+func DeleteRecord(domainName string, name string, ipOrHostname string,
+	isHostname bool) error {
+	return UpdateRecord(domainName, name, ipOrHostname, isHostname, true)
+}
+
+func CreateOrUpdateRecord(domainName string, name string, ipOrHostname string,
+	isHostname bool) error {
+	return UpdateRecord(domainName, name, ipOrHostname, isHostname, false)
+}
+
 func UpdateRecord(domainName string, name string, ipOrHostname string,
 	isHostname bool, delete bool) error {
 	if dnsProvider == nil {

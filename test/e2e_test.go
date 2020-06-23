@@ -182,24 +182,25 @@ var _ = Describe("Decco", func() {
 			}, 5*time.Minute, 10*time.Second).Should(BeNil())
 		})
 
-		It("should create the Space CRD", func() {
-			Eventually(func() error {
-				out, err := execCommand("kubectl", "get", "crds", "--no-headers=true")
-				if err != nil {
-					wrappedErr := fmt.Errorf("failed to get crds: %s", string(out))
-					log(wrappedErr.Error())
-					return wrappedErr
-				}
-
-				for _, line := range strings.Split(string(out), "\n") {
-					if strings.Contains(line, "spaces.decco.platform9.com") {
-						return nil
-					}
-				}
-				return fmt.Errorf("space CRD not found")
-
-			}, 5*time.Minute, 10*time.Second).Should(BeNil())
-		})
+		// TODO(erwin) make this work with the new CRD separated from the controller approach
+		// It("should create the Space CRD", func() {
+		// 	Eventually(func() error {
+		// 		out, err := execCommand("kubectl", "get", "crds", "--no-headers=true")
+		// 		if err != nil {
+		// 			wrappedErr := fmt.Errorf("failed to get crds: %s", string(out))
+		// 			log(wrappedErr.Error())
+		// 			return wrappedErr
+		// 		}
+		//
+		// 		for _, line := range strings.Split(string(out), "\n") {
+		// 			if strings.Contains(line, "spaces.decco.platform9.com") {
+		// 				return nil
+		// 			}
+		// 		}
+		// 		return fmt.Errorf("space CRD not found")
+		//
+		// 	}, 5*time.Minute, 10*time.Second).Should(BeNil())
+		// })
 	})
 })
 

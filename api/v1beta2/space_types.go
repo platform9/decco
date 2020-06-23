@@ -48,24 +48,25 @@ const (
 	SpacePhaseCreating            = "Creating"
 	SpacePhaseActive              = "Active"
 	SpacePhaseFailed              = "Failed"
+	SpacePhaseDeleting            = "Deleting"
 )
 
 // SpaceSpec defines the desired state of Space
 type SpaceSpec struct {
 	DomainName                           string   `json:"domainName"`
-	Project                              string   `json:"project"`
+	Project                              string   `json:"project,omitempty"`
 	HttpCertSecretName                   string   `json:"httpCertSecretName"`
-	TcpCertAndCaSecretName               string   `json:"tcpCertAndCaSecretName"`
-	EncryptHttp                          bool     `json:"encryptHttp"`
-	DeleteHttpCertSecretAfterCopy        bool     `json:"deleteHttpCertSecretAfterCopy"`
-	DeleteTcpCertAndCaSecretAfterCopy    bool     `json:"deleteTcpCertAndCaSecretAfterCopy"`
-	DisablePrivateIngressController      bool     `json:"disablePrivateIngressController"`
-	VerboseIngressControllerLogging      bool     `json:"verboseIngressControllerLogging"`
-	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints"`
+	TcpCertAndCaSecretName               string   `json:"tcpCertAndCaSecretName,omitempty"`
+	EncryptHttp                          bool     `json:"encryptHttp,omitempty"`
+	DeleteHttpCertSecretAfterCopy        bool     `json:"deleteHttpCertSecretAfterCopy,omitempty"`
+	DeleteTcpCertAndCaSecretAfterCopy    bool     `json:"deleteTcpCertAndCaSecretAfterCopy,omitempty"`
+	DisablePrivateIngressController      bool     `json:"disablePrivateIngressController,omitempty"`
+	VerboseIngressControllerLogging      bool     `json:"verboseIngressControllerLogging,omitempty"`
+	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints,omitempty"`
 	// Optional suffix to append to host names of private ingress controller's tcp endpoints
-	PrivateIngressControllerTcpHostnameSuffix string            `json:"privateIngressControllerTcpHostnameSuffix"`
-	Permissions                               *SpacePermissions `json:"permissions"`
-	CreateDefaultHttpDeploymentAndIngress     bool              `json:"createDefaultHttpDeploymentAndIngress"`
+	PrivateIngressControllerTcpHostnameSuffix string            `json:"privateIngressControllerTcpHostnameSuffix,omitempty"`
+	Permissions                               *SpacePermissions `json:"permissions,omitempty"`
+	CreateDefaultHttpDeploymentAndIngress     bool              `json:"createDefaultHttpDeploymentAndIngress,omitempty"`
 }
 
 func (in *SpaceSpec) Validate() error {
@@ -99,8 +100,10 @@ func (in *SpaceSpec) Cleanup() {
 
 // SpaceStatus defines the observed state of Space
 type SpaceStatus struct {
-	Phase  SpacePhase `json:"phase"`
-	Reason string     `json:"reason"`
+	Phase         SpacePhase `json:"phase"`
+	Reason        string     `json:"reason"`
+	Namespace     string     `json:"namespace"`
+	DNSConfigured bool       `json:"dnsConfigured"`
 }
 
 func (in *SpaceStatus) IsFailed() bool {
@@ -110,15 +113,16 @@ func (in *SpaceStatus) IsFailed() bool {
 	return in.Phase == SpacePhaseFailed
 }
 
-func (in *SpaceStatus) SetPhase(p SpacePhase) {
-	in.Phase = p
-}
-
-func (in *SpaceStatus) SetReason(r string) {
-	in.Reason = r
+func (in *SpaceStatus) SetPhase(phase SpacePhase, reason string) {
+	in.Phase = phase
+	in.Reason = reason
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:printcolumn:name="Domain",type="string",JSONPath=".spec.domainName"
+// +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.namespace"
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // Space is the Schema for the spaces API
 type Space struct {

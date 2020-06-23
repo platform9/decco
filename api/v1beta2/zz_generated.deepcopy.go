@@ -21,7 +21,7 @@ limitations under the License.
 package v1beta2
 
 import (
-	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/api/rbac/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -117,7 +117,7 @@ func (in *AppSpec) DeepCopyInto(out *AppSpec) {
 	}
 	if in.Permissions != nil {
 		in, out := &in.Permissions, &out.Permissions
-		*out = make([]rbacv1.PolicyRule, len(*in))
+		*out = make([]v1.PolicyRule, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -251,7 +251,7 @@ func (in *SpacePermissions) DeepCopyInto(out *SpacePermissions) {
 	out.Subject = in.Subject
 	if in.Rules != nil {
 		in, out := &in.Rules, &out.Rules
-		*out = make([]rbacv1.PolicyRule, len(*in))
+		*out = make([]v1.PolicyRule, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}

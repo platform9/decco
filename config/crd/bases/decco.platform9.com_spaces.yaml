@@ -1,0 +1,195 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.3.0
+  creationTimestamp: null
+  name: spaces.decco.platform9.com
+spec:
+  additionalPrinterColumns:
+  - JSONPath: .spec.domainName
+    name: Domain
+    type: string
+  - JSONPath: .status.namespace
+    name: Namespace
+    type: string
+  - JSONPath: .status.phase
+    name: Status
+    type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: Age
+    type: date
+  group: decco.platform9.com
+  names:
+    kind: Space
+    listKind: SpaceList
+    plural: spaces
+    singular: space
+  scope: Namespaced
+  subresources: {}
+  validation:
+    openAPIV3Schema:
+      description: Space is the Schema for the spaces API
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: SpaceSpec defines the desired state of Space
+          properties:
+            createDefaultHttpDeploymentAndIngress:
+              type: boolean
+            deleteHttpCertSecretAfterCopy:
+              type: boolean
+            deleteTcpCertAndCaSecretAfterCopy:
+              type: boolean
+            disablePrivateIngressController:
+              type: boolean
+            domainName:
+              type: string
+            encryptHttp:
+              type: boolean
+            httpCertSecretName:
+              type: string
+            permissions:
+              properties:
+                rules:
+                  items:
+                    description: PolicyRule holds information that describes a policy
+                      rule, but does not contain information about who the rule applies
+                      to or which namespace the rule applies to.
+                    properties:
+                      apiGroups:
+                        description: APIGroups is the name of the APIGroup that contains
+                          the resources.  If multiple API groups are specified, any
+                          action requested against one of the enumerated resources
+                          in any API group will be allowed.
+                        items:
+                          type: string
+                        type: array
+                      nonResourceURLs:
+                        description: NonResourceURLs is a set of partial urls that
+                          a user should have access to.  *s are allowed, but only
+                          as the full, final step in the path Since non-resource URLs
+                          are not namespaced, this field is only applicable for ClusterRoles
+                          referenced from a ClusterRoleBinding. Rules can either apply
+                          to API resources (such as "pods" or "secrets") or non-resource
+                          URL paths (such as "/api"),  but not both.
+                        items:
+                          type: string
+                        type: array
+                      resourceNames:
+                        description: ResourceNames is an optional white list of names
+                          that the rule applies to.  An empty set means that everything
+                          is allowed.
+                        items:
+                          type: string
+                        type: array
+                      resources:
+                        description: Resources is a list of resources this rule applies
+                          to.  ResourceAll represents all resources.
+                        items:
+                          type: string
+                        type: array
+                      verbs:
+                        description: Verbs is a list of Verbs that apply to ALL the
+                          ResourceKinds and AttributeRestrictions contained in this
+                          rule.  VerbAll represents all kinds.
+                        items:
+                          type: string
+                        type: array
+                    required:
+                    - verbs
+                    type: object
+                  type: array
+                subject:
+                  description: Subject contains a reference to the object or user
+                    identities a role binding applies to.  This can either hold a
+                    direct API object reference, or a value for non-objects such as
+                    user and group names.
+                  properties:
+                    apiGroup:
+                      description: APIGroup holds the API group of the referenced
+                        subject. Defaults to "" for ServiceAccount subjects. Defaults
+                        to "rbac.authorization.k8s.io" for User and Group subjects.
+                      type: string
+                    kind:
+                      description: Kind of object being referenced. Values defined
+                        by this API group are "User", "Group", and "ServiceAccount".
+                        If the Authorizer does not recognized the kind value, the
+                        Authorizer should report an error.
+                      type: string
+                    name:
+                      description: Name of the object being referenced.
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced object.  If the object
+                        kind is non-namespace, such as "User" or "Group", and this
+                        value is not empty the Authorizer should report an error.
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
+              required:
+              - rules
+              - subject
+              type: object
+            privateIngressControllerTcpEndpoints:
+              items:
+                type: string
+              type: array
+            privateIngressControllerTcpHostnameSuffix:
+              description: Optional suffix to append to host names of private ingress
+                controller's tcp endpoints
+              type: string
+            project:
+              type: string
+            tcpCertAndCaSecretName:
+              type: string
+            verboseIngressControllerLogging:
+              type: boolean
+          required:
+          - domainName
+          - httpCertSecretName
+          type: object
+        status:
+          description: SpaceStatus defines the observed state of Space
+          properties:
+            dnsConfigured:
+              type: boolean
+            namespace:
+              type: string
+            phase:
+              type: string
+            reason:
+              type: string
+          required:
+          - dnsConfigured
+          - namespace
+          - phase
+          - reason
+          type: object
+      type: object
+  version: v1beta2
+  versions:
+  - name: v1beta2
+    served: true
+    storage: true
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

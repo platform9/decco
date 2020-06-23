@@ -39,20 +39,21 @@ const (
 	AppPhaseCreating          = "Creating"
 	AppPhaseActive            = "Active"
 	AppPhaseFailed            = "Failed"
+	AppPhaseError             = "Error"
 )
 
 // AppSpec defines the desired state of App
 // Important: Run "make" to regenerate code after modifying this file
 type AppSpec struct {
 	PodSpec                 corev1.PodSpec      `json:"pod"`
-	InitialReplicas         int32               `json:"initialReplicas"`
-	Egresses                []TlsEgress         `json:"egresses"`
-	RunAsJob                bool                `json:"runAsJob"`
-	JobBackoffLimit         int32               `json:"jobBackoffLimit"`
-	Endpoints               []EndpointSpec      `json:"endpoints"`
-	FirstEndpointListenPort int32               `json:"firstEndpointListenPort"`
-	Permissions             []rbacv1.PolicyRule `json:"permissions"`
-	DomainEnvVarName        string              `json:"domainEnvVarName"`
+	InitialReplicas         int32               `json:"initialReplicas,omitempty"`
+	Egresses                []TlsEgress         `json:"egresses,omitempty"`
+	RunAsJob                bool                `json:"runAsJob,omitempty"`
+	JobBackoffLimit         int32               `json:"jobBackoffLimit,omitempty"`
+	Endpoints               []EndpointSpec      `json:"endpoints,omitempty"`
+	FirstEndpointListenPort int32               `json:"firstEndpointListenPort,omitempty"`
+	Permissions             []rbacv1.PolicyRule `json:"permissions,omitempty"`
+	DomainEnvVarName        string              `json:"domainEnvVarName,omitempty"`
 }
 
 func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {

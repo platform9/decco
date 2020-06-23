@@ -666,7 +666,7 @@ func (ar *AppRuntime) createHttpIngress(e *deccov1beta2.EndpointSpec) error {
 	if secName == "" {
 		secName = ar.spaceSpec.HttpCertSecretName
 	}
-	return k8sutil.CreateHttpIngress(
+	return k8sutil.CreateHTTPIngress(
 		ar.kubeApi,
 		ar.namespace,
 		ingName,

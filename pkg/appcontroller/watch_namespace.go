@@ -13,8 +13,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
-	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/watcher"
 )
 
@@ -39,7 +39,7 @@ func (ctl *Controller) shutdownWhenNamespaceGone() {
 	defer ctl.Stop()
 
 	log := ctl.log.WithField("func", "shutdownWhenNamespaceGone")
-	clustConfig := k8sutil.GetClusterConfigOrDie()
+	clustConfig := config.GetConfigOrDie()
 	kubeApi := kubernetes.NewForConfigOrDie(clustConfig)
 	nsApi := kubeApi.CoreV1().Namespaces()
 	restClient := kubeApi.CoreV1().RESTClient()

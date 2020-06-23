@@ -125,8 +125,3 @@ func WaitCRDReady(clientset apiextensionsclient.Interface) error {
 	}
 	return nil
 }
-
-func MustNewKubeExtClient() apiextensionsclient.Interface {
-	cfg := GetClusterConfigOrDie()
-	return apiextensionsclient.NewForConfigOrDie(cfg)
-}
