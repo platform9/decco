@@ -17,7 +17,7 @@ const TlsPort = 443
 func init() {
 	springboardStunnelImageTag = os.Getenv("SPRINGBOARD_STUNNEL_IMAGE_TAG")
 	if springboardStunnelImageTag == "" {
-		springboardStunnelImageTag = "platform9/springboard-stunnel:1.0.0-002"
+		springboardStunnelImageTag = "platform9/springboard-stunnel:v1.1.0-008"
 	}
 }
 

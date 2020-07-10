@@ -9,6 +9,7 @@ foreground=yes
 accept=${STUNNEL_ACCEPT_PORT}
 client=${STUNNEL_CLIENT_MODE}
 connect=${STUNNEL_CONNECT}
+delay=yes
 cert=${STUNNEL_CERT_FILE}
 key=${STUNNEL_KEY_FILE}
 verifyChain=${STUNNEL_VERIFY_CHAIN}
