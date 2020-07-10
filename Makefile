@@ -23,7 +23,7 @@ SPRINGBOARD_IMAGE_MARKER=$(SPRINGBOARD_STAGE_DIR)/image-marker
 
 # Override with your own Docker registry tag(s)
 REPO_TAG ?= platform9/$(OPERATOR_IMAGE_NAME)
-VERSION ?= v1.0.2
+VERSION ?= v1.0.3
 BUILD_NUMBER ?= 000
 BUILD_ID := $(BUILD_NUMBER)
 IMAGE_TAG ?= $(VERSION)-$(BUILD_ID)
