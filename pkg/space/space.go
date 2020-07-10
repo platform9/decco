@@ -10,8 +10,8 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/sirupsen/logrus"
-	"k8s.io/api/core/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
