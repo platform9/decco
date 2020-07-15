@@ -1,5 +1,6 @@
-# decco
-Deployment cluster configuration and operations for Kubernetes
+# Decco
+
+Deployment cluster configuration and operations for Kubernetes.
 
 ## Overview
 
@@ -20,10 +21,11 @@ Decco solves and automates the following problems:
 - Routing network requests to the correct application endpoints
 - Collecting and aggregating log files
 
-
-
 ## Developing
-Littering print statements throughout your code in order to debug complicated reconcilation loops can become difficult to reason about. With that said, this repo offers at least 1 opinionated way of setting break points for iterative development.
+Littering print statements throughout your code in order to debug complicated 
+reconcilation loops can become difficult to reason about. With that said, this 
+repo offers at least 1 opinionated way of setting break points for iterative 
+development.
 
 1. Create a file named `kubeconfig` at the root of this repo (same place as the Makefile)
 2. Have [vscode](https://code.visualstudio.com/) installed
@@ -55,3 +57,31 @@ just export an empty GO_TOOLCHAIN:
 ```bash
 export GO_TOOLCHAIN=""
 ```
+
+## Release Workflow
+
+Decco uses semantic versioning. To release a new version of Decco. 
+
+1. (a) If you are releasing a **major** or **minor** version, such as v1.0.0 or 
+   v1.3.0, you create a new branch, named `release-x.y`, where `x` and `y` are 
+   the major and minor version respectively. Or,
+   (b) if you are releasing a **patch**, such as 1.3.5, you check out the existing 
+   branch with the appropriate major and minor version. For example, fo 1.3.5
+   check out `release-1.3`.
+
+2. On the release branch, create and push a commit that bumps 
+   [VERSION](./VERSION) to your desired version. Do not push this commit to the 
+   master branch.
+
+3. If needed, thoroughly test the release branch.
+
+4. Then, run the (Platform9 internal) `decco-release` TeamCity build. This will
+   effectively run the release script: [./hack/ci-release.sh](./hack/ci-release.sh).
+   In a preconfigured environment you could run `make release` instead.   
+
+5. If everything succeeds, the version commit will be tagged, Github release 
+   will be created and Docker images will be published for the given version.
+   
+In case you need to revert a release, you will need to manually delete the git 
+tag, the github release, and delete the created Docker images. You will also 
+need to re-tag the previous images to `latest`.   
