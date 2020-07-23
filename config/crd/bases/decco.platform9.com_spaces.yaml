@@ -9,8 +9,8 @@ metadata:
   name: spaces.decco.platform9.com
 spec:
   additionalPrinterColumns:
-  - JSONPath: .spec.domainName
-    name: Domain
+  - JSONPath: .status.hostname
+    name: Hostname
     type: string
   - JSONPath: .status.namespace
     name: Namespace
@@ -46,23 +46,45 @@ spec:
         metadata:
           type: object
         spec:
-          description: SpaceSpec defines the desired state of Space
+          description: SpaceSpec defines the desired state of Space TODO(erwin) add
+            option to prefix namespaces. TODO(erwin) add option deploy kube resources
+            from ConfigMap or URL.
           properties:
             createDefaultHttpDeploymentAndIngress:
+              description: CreateDefaultHttpDeploymentAndIngress will create and configure
+                the Space's ingress to include the default-http service.
               type: boolean
             deleteHttpCertSecretAfterCopy:
+              description: DeleteHttpCertSecretAfterCopy, if true, signals Decco to
+                delete the original TLS secret specified by HttpCertSecretName after
+                it has been copied.
               type: boolean
             deleteTcpCertAndCaSecretAfterCopy:
+              description: DeleteTcpCertAndCaSecretAfterCopy, if true, signals Decco
+                to delete the original TLS secret specified by TcpCertAndCaSecretName
+                after it has been copied.
               type: boolean
             disablePrivateIngressController:
+              description: DisablePrivateIngressController will disable the creation
+                of a Space-specific Ingress controller.
               type: boolean
             domainName:
+              description: "DomainName is the base domain used for this space. (required)
+                \n Decco will use this base domain for any FDQNs registered for Space-specific
+                services. For example: space42.platform9.horse"
               type: string
             encryptHttp:
+              description: EncryptHttp, if enabled, the ingress will use HTTPS instead
+                of HTTP to communicate with the backend services. TODO(erwin) unsure
+                what it is used for. But it is used by kplane
               type: boolean
             httpCertSecretName:
+              description: "HttpCertSecretName should point to a TLS secret (in the
+                current namespace) to use for the default-http service. (required)
+                \n The secret will be copied to the Space's namespace."
               type: string
             permissions:
+              description: '?'
               properties:
                 rules:
                   items:
@@ -147,18 +169,26 @@ spec:
               - subject
               type: object
             privateIngressControllerTcpEndpoints:
+              description: '?'
               items:
                 type: string
               type: array
             privateIngressControllerTcpHostnameSuffix:
-              description: Optional suffix to append to host names of private ingress
-                controller's tcp endpoints
+              description: PrivateIngressControllerTcpHostnameSuffix is an optional
+                suffix to append to host names of private ingress controller's TCP
+                endpoints.
               type: string
             project:
+              description: Project can be used to group Spaces.
               type: string
             tcpCertAndCaSecretName:
+              description: TcpCertAndCaSecretName should point to a TLS secret (in
+                the current namespace) to use for stunnel. TODO(erwin) unsure what
+                it is used for. But it is used by kplane
               type: string
             verboseIngressControllerLogging:
+              description: VerboseIngressControllerLogging increases log verbosity
+                if set to true.
               type: boolean
           required:
           - domainName
@@ -167,17 +197,27 @@ spec:
         status:
           description: SpaceStatus defines the observed state of Space
           properties:
-            dnsConfigured:
-              type: boolean
-            namespace:
+            hostname:
+              description: Hostname contains the domain name under which traffic will
+                be redirected to the ingress of the Space.
               type: string
+            namespace:
+              description: Namespace is the Kubernetes namespace associated with this
+                space.
+              type: string
+            namespaceProvisioned:
+              type: boolean
             phase:
+              description: Phase indicates the current state of the Space.
               type: string
             reason:
+              description: Reason is an optional, short, and human-readable explanation
+                for the current phase of the Space.
               type: string
           required:
-          - dnsConfigured
+          - hostname
           - namespace
+          - namespaceProvisioned
           - phase
           - reason
           type: object

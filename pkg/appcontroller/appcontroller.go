@@ -30,6 +30,8 @@ import (
 
 	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/app"
+	"github.com/platform9/decco/pkg/decco"
+	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/watcher"
 )
@@ -42,9 +44,13 @@ type InternalController struct {
 	namespace     string
 	spaceSpec     deccov1beta2.SpaceSpec
 	stopCh        chan interface{}
+	dns           dns.Provider
+	ingress       decco.Ingress
 }
 
 type Controller struct {
+	dns       dns.Provider
+	ingress   decco.Ingress
 	log       *logrus.Entry
 	wg        *sync.WaitGroup
 	stopCh    chan interface{}
@@ -60,6 +66,8 @@ func New(
 	namespace string,
 	spaceSpec deccov1beta2.SpaceSpec,
 	wg *sync.WaitGroup,
+	dns dns.Provider,
+	ingress decco.Ingress,
 ) *Controller {
 	return &Controller{
 		log: log.WithFields(logrus.Fields{
@@ -70,6 +78,8 @@ func New(
 		wg:        wg,
 		spaceSpec: spaceSpec,
 		stopCh:    make(chan interface{}),
+		dns:       dns,
+		ingress:   ingress,
 	}
 }
 
@@ -82,7 +92,7 @@ func (ctl *Controller) Start() {
 	go func() {
 		defer ctl.wg.Done()
 		for {
-			c := NewInternalController(ctl.namespace, ctl.spaceSpec, ctl.stopCh)
+			c := NewInternalController(ctl.namespace, ctl.spaceSpec, ctl.stopCh, ctl.dns, ctl.ingress)
 			err := c.Run()
 			switch err {
 			case watcher.ErrTerminated:
@@ -115,6 +125,8 @@ func NewInternalController(
 	namespace string,
 	spaceSpec deccov1beta2.SpaceSpec,
 	stopCh chan interface{},
+	dns dns.Provider,
+	ingress decco.Ingress,
 ) *InternalController {
 	clusterConfig := config.GetConfigOrDie()
 	logger := logrus.WithFields(logrus.Fields{
@@ -130,6 +142,8 @@ func NewInternalController(
 		namespace:     namespace,
 		spaceSpec:     spaceSpec,
 		stopCh:        stopCh,
+		dns:           dns,
+		ingress:       ingress,
 	}
 }
 
@@ -162,7 +176,7 @@ func (ctl *InternalController) InitItem(item watcher.Item) watcher.ManagedItem {
 	wrapped := item.(*appWrapper)
 	a := wrapped.app
 	a.Spec.Cleanup()
-	newApp := app.New(*a, ctl.kubeApi, ctl.namespace, ctl.spaceSpec)
+	newApp := app.New(*a, ctl.kubeApi, ctl.namespace, ctl.spaceSpec, ctl.dns, ctl.ingress)
 	return newApp
 }
 

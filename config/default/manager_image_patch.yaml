@@ -7,5 +7,5 @@ spec:
   template:
     spec:
       containers:
-      - image: platform9/decco-operator:latest
+      - image: platform9/decco-operator:v1.2.0-SNAPSHOT-000
         name: manager

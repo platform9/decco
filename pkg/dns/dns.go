@@ -2,50 +2,93 @@ package dns
 
 import (
 	"fmt"
-	"os"
+	"net"
 
+	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
 	"k8s.io/federation/pkg/dnsprovider"
 	_ "k8s.io/federation/pkg/dnsprovider/providers/aws/route53"
 	"k8s.io/federation/pkg/dnsprovider/rrstype"
+	ctrl "sigs.k8s.io/controller-runtime"
+)
+
+const (
+	ProviderRoute53 = "route53"
+	ProviderFake    = "fake"
 )
 
 var (
-	dnsProvider dnsprovider.Interface
-	log         = logrus.WithField("pkg", "dns")
+	log = logrus.WithField("pkg", "dns")
 )
 
-func init() {
-	dnsProviderName := os.Getenv("DNS_PROVIDER_NAME")
-	if len(dnsProviderName) > 0 {
-		var err error
-		dnsProvider, err = dnsprovider.GetDnsProvider(dnsProviderName, nil)
+type Provider interface {
+	DeleteRecord(domainName string, name string, ipOrHostname string) error
+	CreateOrUpdateRecord(domainName string, name string, ipOrHostname string) error
+	UpdateRecord(domainName string, name string, ipOrHostname string, delete bool) error
+}
+
+// CreateProvider creates a provider for the given DNS service provider.
+// Supported values for dnsProviderName: [fake, route53]
+func CreateProviderFromName(dnsProviderName string) (Provider, error) {
+	switch dnsProviderName {
+	case ProviderFake:
+		return NewFakeProvider(nil), nil
+	case ProviderRoute53:
+		externalDNSProvider, err := dnsprovider.GetDnsProvider(dnsProviderName, nil)
 		if err != nil {
-			logrus.Panicf("failed to get dns provider %s", dnsProviderName)
+			return nil, fmt.Errorf("failed to get dns provider %s", dnsProviderName)
 		}
+		return &KubeFedDNSProvider{
+			externalDNSProvider: externalDNSProvider,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown DNS provider name: %s", dnsProviderName)
 	}
 }
 
-func Enabled() bool {
-	return dnsProvider != nil
+type FakeProvider struct {
+	log logr.Logger
 }
 
-func DeleteRecord(domainName string, name string, ipOrHostname string,
-	isHostname bool) error {
-	return UpdateRecord(domainName, name, ipOrHostname, isHostname, true)
-}
-
-func CreateOrUpdateRecord(domainName string, name string, ipOrHostname string,
-	isHostname bool) error {
-	return UpdateRecord(domainName, name, ipOrHostname, isHostname, false)
-}
-
-func UpdateRecord(domainName string, name string, ipOrHostname string,
-	isHostname bool, delete bool) error {
-	if dnsProvider == nil {
-		return fmt.Errorf("DNS provider not enabled")
+func NewFakeProvider(log logr.Logger) *FakeProvider {
+	if log == nil {
+		log = ctrl.Log
 	}
-	zonesApi, _ := dnsProvider.Zones()
+
+	return &FakeProvider{
+		log: log.WithName("dns.FakeProvider"),
+	}
+}
+
+func (m *FakeProvider) DeleteRecord(domainName string, name string, ipOrHostname string) error {
+	m.log.Info("[MOCK] Delete DNS record(s). ", "name", name, "domainName", domainName, "ipOrHostname", ipOrHostname)
+	return nil
+}
+
+func (m *FakeProvider) CreateOrUpdateRecord(domainName string, name string, ipOrHostname string) error {
+	m.log.Info("[MOCK] Create or update DNS record(s). ", "name", name, "domainName", domainName, "ipOrHostname", ipOrHostname)
+	return nil
+}
+
+func (m *FakeProvider) UpdateRecord(domainName string, name string, ipOrHostname string, delete bool) error {
+	m.log.Info("[MOCK] Update DNS record(s). ", "name", name, "domainName", domainName, "ipOrHostname", ipOrHostname, "delete", delete)
+	return nil
+}
+
+type KubeFedDNSProvider struct {
+	externalDNSProvider dnsprovider.Interface
+}
+
+func (p *KubeFedDNSProvider) DeleteRecord(domainName string, name string, ipOrHostname string) error {
+	return p.UpdateRecord(domainName, name, ipOrHostname, true)
+}
+
+func (p *KubeFedDNSProvider) CreateOrUpdateRecord(domainName string, name string, ipOrHostname string) error {
+	return p.UpdateRecord(domainName, name, ipOrHostname, false)
+}
+
+func (p *KubeFedDNSProvider) UpdateRecord(domainName string, name string, ipOrHostname string, delete bool) error {
+	zonesApi, _ := p.externalDNSProvider.Zones()
 	zones, err := zonesApi.List()
 	if err != nil {
 		return fmt.Errorf("failed to list dns zones: %s", err)
@@ -73,9 +116,12 @@ func UpdateRecord(domainName string, name string, ipOrHostname string,
 					changeSet.Remove(rrSetList[0])
 				}
 			} else {
-				rscType := rrstype.A
-				if isHostname {
+				var rscType rrstype.RrsType
+				addr := net.ParseIP(ipOrHostname)
+				if addr == nil {
 					rscType = rrstype.CNAME
+				} else {
+					rscType = rrstype.A
 				}
 				rrSet := rrSets.New(rrName, []string{ipOrHostname}, 180, rscType)
 				if len(rrSetList) == 0 {

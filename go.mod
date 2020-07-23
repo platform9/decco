@@ -6,10 +6,12 @@ require (
 	github.com/aws/aws-sdk-go v1.29.5 // indirect
 	github.com/coreos/etcd-operator v0.9.4
 	github.com/drone/envsubst v1.0.2
+	github.com/erwinvaneyk/cobras v0.0.0-20200610150702-9e7b3fed53bf
 	github.com/go-logr/logr v0.1.0
 	github.com/onsi/ginkgo v1.12.1
 	github.com/onsi/gomega v1.10.1
 	github.com/sirupsen/logrus v1.4.2
+	github.com/spf13/cobra v0.0.7
 	k8s.io/api v0.17.7
 	k8s.io/apiextensions-apiserver v0.17.7
 	k8s.io/apimachinery v0.17.7

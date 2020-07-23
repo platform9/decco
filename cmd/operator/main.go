@@ -19,57 +19,77 @@ import (
 	"flag"
 	"os"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
+	"github.com/platform9/decco/pkg/client"
 	"github.com/platform9/decco/pkg/controllers"
+	"github.com/platform9/decco/pkg/decco"
+	"github.com/platform9/decco/pkg/dns"
 	// +kubebuilder:scaffold:imports
 )
 
 var (
-	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("main")
 )
-
-func init() {
-	_ = clientgoscheme.AddToScheme(scheme)
-
-	_ = deccov1beta2.AddToScheme(scheme)
-	// +kubebuilder:scaffold:scheme
-}
 
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var disableAppReconciling bool
 	var disableSpaceReconciling bool
+	var dnsProviderName string
+	var ingressIPOrHostname string
+
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&disableAppReconciling, "disable-app-controller", false, "Disable the App controller.")
 	flag.BoolVar(&disableSpaceReconciling, "disable-space-controller", false, "Disable the Space controller.")
+	flag.StringVar(&dnsProviderName, "dns-provider", "fake", "Set the DNS provider. Options: [fake,route53].")
+	flag.StringVar(&ingressIPOrHostname, "ingress-addr", "", "Set a static ip or hostname for the cluster-wide ingress. If not set, Decco will look for decco/k8sniff.")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:             scheme,
+		Scheme:             client.GetScheme(),
 		MetricsBindAddress: metricsAddr,
 		LeaderElection:     enableLeaderElection,
+		LeaderElectionID:   "decco.platform9.com",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
+	k8sRESTClient, err := client.New(config.GetConfigOrDie())
+	if err != nil {
+		setupLog.Error(err, "unable to create k8sRESTClient")
+		os.Exit(1)
+	}
+
+	dnsProvider, err := dns.CreateProviderFromName(dnsProviderName)
+	if err != nil {
+		setupLog.Error(err, "unable to create dns provider", "controller", "Space")
+		os.Exit(1)
+	}
+
+	var ingressClient decco.Ingress
+	if len(ingressIPOrHostname) > 0 {
+		setupLog.Info("Using static ingress to register DNS entries for.", "addr", ingressIPOrHostname)
+		ingressClient = decco.NewStaticIngress(ingressIPOrHostname)
+	} else {
+		setupLog.Info("Using k8s service ingress to look up the address for registering DNS entries.", "svc", "decco/"+decco.DefaultK8sniffServiceName)
+		ingressClient = decco.NewK8sServiceIngress("decco", decco.DefaultK8sniffServiceName, kubernetes.New(k8sRESTClient))
+	}
+
 	if !disableSpaceReconciling {
-		if err = (&controllers.SpaceReconciler{
-			Client: mgr.GetClient(),
-			Log:    ctrl.Log.WithName("controllers").WithName("Space"),
-		}).SetupWithManager(mgr); err != nil {
+		spaceLogger := ctrl.Log.WithName("controllers").WithName("Space")
+
+		if err = controllers.NewSpaceReconciler(mgr.GetClient(), dnsProvider, ingressClient, spaceLogger).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "Space")
 			os.Exit(1)
 		}

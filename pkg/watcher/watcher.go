@@ -201,7 +201,6 @@ func (wl *watchLoop) processWatchResponse(
 			return "", err
 		}
 
-		// logrus.Infof("next watch version: %s", nextWatchVersion)
 		if item == nil {
 			// Shouldn't happen in theory but has been seen once in practice.
 			// It shouldn't happen because if item were nil, then err should

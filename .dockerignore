@@ -1,0 +1,7 @@
+*.md
+.goreleaser.yaml
+.reviewboardrc
+example/
+LICENSE
+NOTICE
+PROJECT

@@ -114,16 +114,6 @@ $(GOPATH_DIR):| $(BUILD_DIR) $(GO_TOOLCHAIN)
 $(SPRINGBOARD_STAGE_DIR):
 	mkdir -p $@
 
-$(SPRINGBOARD_EXE): | $(SPRINGBOARD_STAGE_DIR)
-	go build -o $@ $(SRC_DIR)/cmd/springboard
-
-# Build manager binary
-operator: generate verify
-	go build -o bin/operator ./cmd/operator
-
-operator-debug: generate verify
-	go build -gcflags="all=-N -l" -o bin/operator ./cmd/operator
-
 springboard-image: $(SPRINGBOARD_IMAGE_MARKER)
 
 springboard-push: $(SPRINGBOARD_IMAGE_MARKER)
@@ -151,6 +141,15 @@ $(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*
 	go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
 
 operator: $(OPERATOR_EXE)
+operator-linux: generate verify
+
+	GOOS=linux GOARCH=amd64 go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
+
+operator: generate verify
+	go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
+
+operator-debug: generate verify
+	go build -gcflags="all=-N -l" -o bin/operator ./cmd/operator
 
 clean-gopath:
 	@echo "GOPATH is $(GOPATH_DIR)"
@@ -161,7 +160,7 @@ operator-clean:
 
 operator-image: $(OPERATOR_IMAGE_MARKER)
 
-$(OPERATOR_IMAGE_MARKER): $(OPERATOR_EXE)
+$(OPERATOR_IMAGE_MARKER): operator-linux
 	cp -f support/operator/Dockerfile $(OPERATOR_STAGE_DIR)
 	docker build --tag $(FULL_TAG) $(OPERATOR_STAGE_DIR)
 	touch $@

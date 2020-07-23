@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
+	"github.com/platform9/decco/pkg/decco"
 	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/watcher"
@@ -33,6 +35,8 @@ type AppRuntime struct {
 	spaceSpec deccov1beta2.SpaceSpec
 	log       *logrus.Entry
 	app       deccov1beta2.App
+	dns       dns.Provider
+	ingress   decco.Ingress
 
 	// in memory state of the app
 	// status is the source of truth after AppRuntime struct is materialized.
@@ -52,6 +56,8 @@ func New(
 	kubeApi kubernetes.Interface,
 	namespace string,
 	spaceSpec deccov1beta2.SpaceSpec,
+	dns dns.Provider,
+	ingress decco.Ingress,
 ) *AppRuntime {
 
 	log := logrus.WithField("pkg", "app").WithField("app", app.Name).WithField("space", namespace)
@@ -63,6 +69,8 @@ func New(
 		status:    *app.Status.DeepCopy(),
 		namespace: namespace,
 		spaceSpec: spaceSpec,
+		dns:       dns,
+		ingress:   ingress,
 	}
 
 	if setupErr := ar.setup(); setupErr != nil {
@@ -217,6 +225,7 @@ func (ar *AppRuntime) create() error {
 
 // -----------------------------------------------------------------------------
 
+// TODO(erwin) convert to GenerateResources(app *App) (v1.List, error)
 func (ar *AppRuntime) internalCreate() error {
 	podSpec := ar.app.Spec.PodSpec
 	containers := podSpec.Containers
@@ -344,16 +353,15 @@ func (ar *AppRuntime) updateDns(e *deccov1beta2.EndpointSpec, delete bool) error
 	if !e.CreateDnsRecord {
 		return nil
 	}
-	if !dns.Enabled() {
+	if ar.dns == nil {
 		return fmt.Errorf("CreateDnsRecord set but no DNS provider exists")
 	}
-	ipOrHostname, isHostname, err := k8sutil.GetTcpIngressIpOrHostname(ar.kubeApi)
+	ipOrHostname, err := ar.ingress.GetIPOrHostname(context.TODO())
 	if err != nil {
 		return fmt.Errorf("failed to get TCP ingress IP or hostname: %s", err)
 	}
 	name := fmt.Sprintf("%s.%s", e.Name, ar.namespace)
-	return dns.UpdateRecord(ar.spaceSpec.DomainName, name,
-		ipOrHostname, isHostname, delete)
+	return ar.dns.UpdateRecord(ar.spaceSpec.DomainName, name, ipOrHostname, delete)
 }
 
 // -----------------------------------------------------------------------------

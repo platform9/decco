@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -33,25 +32,46 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
+	"github.com/platform9/decco/pkg/decco"
 	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/slack"
+	"github.com/platform9/decco/pkg/validate"
 )
 
 const (
-	defaultHttpInternalPort int32  = 8081
-	metricsPort             int32  = 10254
-	finalizerSpaceDNS       string = "dns.space.decco.platform9.com"
-	finalizerSpaceNamespace string = "namespace.space.decco.platform9.com"
+	defaultHttpInternalPort int32 = 8081
+	metricsPort             int32 = 10254
+	spaceCreatorRole              = "space-creator"
+	httpDefaultName               = "default-http"
+	namespace                     = "decco.platform9.com"
+	finalizerSpaceDNS             = "dns." + namespace
+	finalizerSpaceNamespace       = "namespace." + namespace
+	labelSpaceName                = namespace + "/name"
+	labelSpaceNamespace           = namespace + "/namespace"
 )
 
 // SpaceReconciler reconciles a Space object
 type SpaceReconciler struct {
-	client.Client
-	Log logr.Logger
+	dns     dns.Provider
+	client  ctrlclient.Client
+	ingress decco.Ingress
+	log     logr.Logger
+}
+
+func NewSpaceReconciler(client ctrlclient.Client, dns dns.Provider, ingress decco.Ingress, log logr.Logger) *SpaceReconciler {
+	if log == nil {
+		log = ctrl.Log
+	}
+	return &SpaceReconciler{
+		client:  client,
+		dns:     dns,
+		ingress: ingress,
+		log:     log.WithName("controllers").WithName("Space"),
+	}
 }
 
 // TODO(erwin) Narrow down RBAC rules
@@ -66,26 +86,37 @@ type SpaceReconciler struct {
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+//
+// RBAC permissions necessary for the ingress role:
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create
+// +kubebuilder:rbac:groups="",resources=ingress/status,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 
+// TODO(erwin) fix "ready" check, let every reconciler do so themselves
 func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
-	log := r.Log.WithValues("space", req.NamespacedName)
+	log := r.log.WithValues("space", req.NamespacedName)
 
 	// Lookup the current Space
 	space := &deccov1beta2.Space{}
-	err := r.Client.Get(ctx, req.NamespacedName, space)
+	err := r.client.Get(ctx, req.NamespacedName, space)
 	if err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return ctrl.Result{}, ctrlclient.IgnoreNotFound(err)
 	}
 
-	// Always update the space at the end of the reconcilation loop
+	// Always update the space at the end of the reconciliation loop
 	defer func() {
-		err := r.Client.Update(ctx, space)
+		err := r.client.Update(ctx, space)
 		if err != nil {
 			log.Error(err, "Failed to update the Space.")
 		}
 	}()
+
+	if err := validate.SpaceSpec(space.Spec); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// Update the phase of the Space.
 	r.updatePhase(space)
@@ -103,6 +134,20 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 			fmt.Errorf("failed to reconcile the namespace: %w", err)
 	}
 
+	log.Info("Reconciling certificates")
+	err = r.reconcileCertificates(ctx, space)
+	if err != nil {
+		return ctrl.Result{},
+			fmt.Errorf("failed to reconcile certificates: %w", err)
+	}
+
+	log.Info("Reconciling DNS records")
+	err = r.reconcileDNS(ctx, space)
+	if err != nil {
+		return ctrl.Result{},
+			fmt.Errorf("failed to reconcile the DNS records: %w", err)
+	}
+
 	log.Info("Reconciling RBAC rules")
 	err = r.reconcileRBAC(ctx, space)
 	if err != nil {
@@ -115,20 +160,6 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	if err != nil {
 		return ctrl.Result{},
 			fmt.Errorf("failed to reconcile networkpolicy: %w", err)
-	}
-
-	log.Info("Reconciling RBAC rules")
-	err = r.reconcileRBAC(ctx, space)
-	if err != nil {
-		return ctrl.Result{},
-			fmt.Errorf("failed to reconcile RBAC rules: %w", err)
-	}
-
-	log.Info("Reconciling certificates")
-	err = r.reconcileCertificates(ctx, space)
-	if err != nil {
-		return ctrl.Result{},
-			fmt.Errorf("failed to reconcile certificates: %w", err)
 	}
 
 	log.Info("Reconciling default HTTP deployment and ingress")
@@ -145,13 +176,6 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 			fmt.Errorf("failed to reconcile private ingress controller: %w", err)
 	}
 
-	log.Info("Reconciling DNS records")
-	err = r.reconcileDNS(ctx, space)
-	if err != nil {
-		return ctrl.Result{},
-			fmt.Errorf("failed to reconcile the DNS records: %w", err)
-	}
-
 	// Hack: while actively deleting we might need to wait a bit for
 	// other resources to be deleted. To avoid having to wait for the next
 	// periodic update, we forcefully requeue the space every couple of seconds.
@@ -165,8 +189,9 @@ func (r *SpaceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 	// If all reconciliation loops succeeded and everything is ready,
 	// set the phase to active.
-	if space.Status.Phase == deccov1beta2.AppPhaseCreating && space.Status.
-		Namespace != "" && (!dns.Enabled() || space.Status.DNSConfigured) {
+	if space.Status.Phase == deccov1beta2.AppPhaseCreating &&
+		space.Status.Namespace != "" &&
+		(r.dns == nil || space.Status.Hostname != "") {
 		// TODO status check resources inside the space
 		log.Info("Updating the space status to Active, because all resources have been successfully reconciled.")
 		space.Status.SetPhase(deccov1beta2.SpacePhaseActive, "Space successfully created")
@@ -187,11 +212,11 @@ func (r *SpaceReconciler) updatePhase(space *deccov1beta2.Space) {
 	switch {
 	case space.Status.Phase == "":
 		log.Info("Setting the space phase to Creating, because the space has no phase set.")
-		space.Status.Phase = deccov1beta2.SpacePhaseCreating
+		space.Status.SetPhase(deccov1beta2.SpacePhaseCreating, "")
 	case isDeleting(space):
 		log.Info("Setting the space phase to Deleting, because the space has been scheduled for deletion.")
-		space.Status.Phase = deccov1beta2.SpacePhaseDeleting
-	case space.Status.Phase == deccov1beta2.AppPhaseCreating && space.Status.Namespace != "" && (!dns.Enabled() || space.Status.DNSConfigured):
+		space.Status.SetPhase(deccov1beta2.SpacePhaseDeleting, "")
+	case space.Status.Phase == deccov1beta2.AppPhaseCreating && space.Status.Namespace != "" && (r.dns == nil || space.Status.Hostname != ""):
 		// TODO status check resources inside the space
 		log.Info("Updating the space status to Active, because all resources have been successfully reconciled.")
 		space.Status.SetPhase(deccov1beta2.SpacePhaseActive, "Space successfully created")
@@ -204,15 +229,15 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 
 	// Check what the current status is of the namespace.
 	ns := &corev1.Namespace{}
-	err := r.Client.Get(ctx, types.NamespacedName{
+	err := r.client.Get(ctx, types.NamespacedName{
 		Name: namespace,
 	}, ns)
 	if err == nil {
 
 		// Namespace already exists.
 		//
-		// Check if we are not reusing an existing space not owned by the space.
-		if !hasSpaceAsOwner(ns.OwnerReferences, space) {
+		// Check if we are not reusing an existing space owned by the space.
+		if !hasSpaceAsOwnerInLabels(ns.Labels, space) {
 			return fmt.Errorf("namespace %s already exists", namespace)
 		}
 
@@ -220,7 +245,7 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 		if isDeleting(space) {
 			if ns.DeletionTimestamp.IsZero() {
 				log.Info("Deleting the namespace.", "namespace", namespace)
-				err := r.Client.Delete(ctx, ns)
+				err := r.client.Delete(ctx, ns)
 				if err != nil {
 					return err
 				}
@@ -255,19 +280,16 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 
 		// Attempt to create the namespace.
 		log.Info("Creating the namespace for the space.", "namespace", namespace)
-		err = r.Client.Create(ctx, &corev1.Namespace{
+		err = r.client.Create(ctx, &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: namespace,
-				OwnerReferences: []metav1.OwnerReference{
-					createSpaceOwnerRef(space),
-				},
 				Labels: map[string]string{
 					"app":                "decco",
 					"decco-space-rsc-ns": namespace,
 					// Hack: add labels to be able to locate the space
 					// associated to this namespace.
-					"space.decco.platform9.com/name":      space.Name,
-					"space.decco.platform9.com/namespace": space.Namespace,
+					labelSpaceName:      space.Name,
+					labelSpaceNamespace: space.Namespace,
 				},
 			},
 		})
@@ -283,7 +305,6 @@ func (r *SpaceReconciler) reconcileNamespace(ctx context.Context, space *deccov1
 
 func (r *SpaceReconciler) reconcileNetPolicy(ctx context.Context, space *deccov1beta2.Space) error {
 	// note(erwin): from original code, not sure why this condition is here.
-	// This probably should be part of the overall validation?
 	if space.Spec.Project == "" {
 		r.getLoggerFor(space).Info("Skipping network policy " +
 			"because no project was provided in the space.")
@@ -299,13 +320,11 @@ func (r *SpaceReconciler) reconcileNetPolicy(ctx context.Context, space *deccov1
 		return err
 	}
 
-	err := r.Client.Create(ctx, &netv1.NetworkPolicy{
+	r.getLoggerFor(space).Info("Creating NetworkPolicy", "name", space.Name, "namespace", space.Status.Namespace)
+	err := r.client.Create(ctx, &netv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      space.Name,
 			Namespace: space.Status.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(space, deccov1beta2.GroupVersion.WithKind("Space")),
-			},
 		},
 		Spec: netv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{},
@@ -355,13 +374,11 @@ func (r *SpaceReconciler) reconcileRBAC(ctx context.Context, space *deccov1beta2
 	}
 
 	// Ensure that the "space-creator" role is created.
-	err := r.Client.Create(ctx, &rbacv1.Role{
+	r.getLoggerFor(space).Info("Creating Role", "name", spaceCreatorRole, "namespace", space.Status.Namespace)
+	err := r.client.Create(ctx, &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "space-creator",
+			Name:      spaceCreatorRole,
 			Namespace: space.Status.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				createSpaceOwnerRef(space),
-			},
 		},
 		Rules: perms.Rules,
 	})
@@ -370,13 +387,11 @@ func (r *SpaceReconciler) reconcileRBAC(ctx context.Context, space *deccov1beta2
 	}
 
 	// Bind the space-creator role to the target subject defined in the space.
-	err = r.Client.Create(ctx, &rbacv1.RoleBinding{
+	r.getLoggerFor(space).Info("Creating RoleBinding", "name", spaceCreatorRole, "namespace", space.Status.Namespace)
+	err = r.client.Create(ctx, &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "space-creator",
+			Name:      spaceCreatorRole,
 			Namespace: space.Status.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				createSpaceOwnerRef(space),
-			},
 		},
 		Subjects: []rbacv1.Subject{
 			perms.Subject,
@@ -384,7 +399,7 @@ func (r *SpaceReconciler) reconcileRBAC(ctx context.Context, space *deccov1beta2
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
-			Name:     "space-creator",
+			Name:     spaceCreatorRole,
 		},
 	})
 	if err != nil && !errors.IsAlreadyExists(err) {
@@ -403,14 +418,14 @@ func (r *SpaceReconciler) reconcileCertificates(ctx context.Context, space *decc
 	}
 
 	// Copy the HTTP certificate to the space and delete the original one.
-	log.Info("Reconciling HTTP certificate")
+	log.Info("Checking HTTP certificate")
 	err := r.reconcileHTTPCertificate(ctx, space)
 	if err != nil {
 		return err
 	}
 
 	// Copy the TCP certificate to the space and delete the original one.
-	log.Info("Reconciling TCP certificate")
+	log.Info("Checking TCP certificate")
 	err = r.reconcileTCPCertificate(ctx, space)
 	if err != nil {
 		return err
@@ -420,13 +435,23 @@ func (r *SpaceReconciler) reconcileCertificates(ctx context.Context, space *decc
 }
 
 func (r *SpaceReconciler) reconcileHTTPCertificate(ctx context.Context, space *deccov1beta2.Space) error {
+	if space.Spec.HttpCertSecretName == "" {
+		return nil
+	}
+
+	// hack: rely on the namespace deletion to clean up these resources.
+	if isDeleting(space) {
+		r.getLoggerFor(space).Info("Skipping HTTP cert reconciler; relying on the namespace reconciler to delete all resources.")
+		return nil
+	}
+
 	if err := ensureNamespaceIsCreated(space); err != nil {
 		return err
 	}
 
 	// Skip if secret is already present in namespace
 	existingSecret := &corev1.Secret{}
-	err := r.Client.Get(ctx, types.NamespacedName{
+	err := r.client.Get(ctx, types.NamespacedName{
 		Name:      space.Spec.TcpCertAndCaSecretName,
 		Namespace: space.Status.Namespace,
 	}, existingSecret)
@@ -438,34 +463,36 @@ func (r *SpaceReconciler) reconcileHTTPCertificate(ctx context.Context, space *d
 
 	// Fetch the expected secret
 	httpSecret := &corev1.Secret{}
-	err = r.Client.Get(ctx, types.NamespacedName{
+	namespacedName := types.NamespacedName{
 		Name:      space.Spec.HttpCertSecretName,
 		Namespace: space.Namespace,
-	}, httpSecret)
+	}
+	err = r.client.Get(ctx, namespacedName, httpSecret)
 	if err != nil {
 		return fmt.Errorf("failed to read http cert: %w", err)
 	}
 
+	// Validate the secret
+	if err := validate.TLSSecret(httpSecret); err != nil {
+		return fmt.Errorf("HttpCertSecret (%s) is invalid: %w", namespacedName, err)
+	}
+
 	// Copy the secret to the space's namespace
-	err = r.Client.Create(ctx, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      httpSecret.Name,
-			Namespace: space.Status.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				createSpaceOwnerRef(space),
-			},
-		},
-		Data:       httpSecret.Data,
-		StringData: httpSecret.StringData,
-	})
+	httpSecret.ObjectMeta = k8sutil.StripClusterDataFromObjectMeta(httpSecret.ObjectMeta)
+	httpSecret.Namespace = space.Status.Namespace
+	r.getLoggerFor(space).Info("Copying HTTPCertSecret to Space", "src", namespacedName, "dst", space.Status.Namespace)
+	err = r.client.Create(ctx, httpSecret)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to copy http cert: %w", err)
 	}
 
 	// Delete the original secret
-	err = r.Client.Delete(ctx, httpSecret)
-	if err != nil {
-		return fmt.Errorf("failed to delete http cert: %w", err)
+	if space.Spec.DeleteHttpCertSecretAfterCopy {
+		r.getLoggerFor(space).Info("Deleting the HTTP secret because DeleteHttpCertSecretAfterCopy was set")
+		err = r.client.Delete(ctx, httpSecret)
+		if err != nil {
+			return fmt.Errorf("failed to delete http cert: %w", err)
+		}
 	}
 	return nil
 }
@@ -475,13 +502,19 @@ func (r *SpaceReconciler) reconcileTCPCertificate(ctx context.Context, space *de
 		return nil
 	}
 
+	// hack: rely on the namespace deletion to clean up these resources.
+	if isDeleting(space) {
+		r.getLoggerFor(space).Info("Skipping TCP cert reconciler; relying on the namespace reconciler to delete all resources.")
+		return nil
+	}
+
 	if err := ensureNamespaceIsCreated(space); err != nil {
 		return err
 	}
 
 	// Skip if secret is already present in namespace
 	existingSecret := &corev1.Secret{}
-	err := r.Client.Get(ctx, types.NamespacedName{
+	err := r.client.Get(ctx, types.NamespacedName{
 		Name:      space.Spec.TcpCertAndCaSecretName,
 		Namespace: space.Status.Namespace,
 	}, existingSecret)
@@ -493,23 +526,23 @@ func (r *SpaceReconciler) reconcileTCPCertificate(ctx context.Context, space *de
 
 	// Fetch the expected secret
 	httpSecret := &corev1.Secret{}
-	err = r.Client.Get(ctx, types.NamespacedName{
+	namespacedName := types.NamespacedName{
 		Name:      space.Spec.TcpCertAndCaSecretName,
 		Namespace: space.Namespace,
-	}, httpSecret)
+	}
+	err = r.client.Get(ctx, namespacedName, httpSecret)
 	if err != nil {
 		return fmt.Errorf("failed to read TCP cert and CA: %s", err)
 	}
 
 	// Copy the secret to the space's namespace
-	err = r.Client.Create(ctx, &corev1.Secret{
+	r.getLoggerFor(space).Info("Copying TcpCertAndCaSecret to Space", "src", namespacedName, "dst", space.Status.Namespace)
+	err = r.client.Create(ctx, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      httpSecret.Name,
 			Namespace: space.Status.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				createSpaceOwnerRef(space),
-			},
 		},
+		Type:       httpSecret.Type,
 		Data:       httpSecret.Data,
 		StringData: httpSecret.StringData,
 	})
@@ -517,10 +550,13 @@ func (r *SpaceReconciler) reconcileTCPCertificate(ctx context.Context, space *de
 		return fmt.Errorf("failed to copy TCP cert and CA: %w", err)
 	}
 
-	// Delete the original secret
-	err = r.Client.Delete(ctx, httpSecret)
-	if err != nil {
-		return fmt.Errorf("failed to delete TCP cert and CA: %w", err)
+	// Delete the original secret if requested
+	if space.Spec.DeleteTcpCertAndCaSecretAfterCopy {
+		r.getLoggerFor(space).Info("Deleting the TCP secret because DeleteTcpCertAndCaSecretAfterCopy was set")
+		err = r.client.Delete(ctx, httpSecret)
+		if err != nil {
+			return fmt.Errorf("failed to delete TCP cert and CA: %w", err)
+		}
 	}
 	return nil
 }
@@ -529,13 +565,14 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1be
 	if err := ensureNamespaceIsCreated(space); err != nil {
 		return err
 	}
+	log := r.getLoggerFor(space)
 
 	// hack: rely on the namespace deletion to clean up these resources.
 	if isDeleting(space) {
+		log.Info("Skipping ingress reconciler; relying on the namespace reconciler to delete all resources.")
 		return nil
 	}
 
-	log := r.getLoggerFor(space)
 	if !space.Spec.CreateDefaultHttpDeploymentAndIngress {
 		log.Info("Skipping reconciling HTTP ingress, because it is disabled.")
 		return nil
@@ -554,7 +591,7 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1be
 		map[string]string{"app": "decco"},
 		hostName,
 		"/",
-		"default-http",
+		httpDefaultName,
 		defaultHttpSvcPort,
 		"",
 		space.Spec.EncryptHttp,
@@ -562,8 +599,8 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1be
 		false,
 		nil,
 	)
-	ingress.OwnerReferences = append(ingress.OwnerReferences, createSpaceOwnerRef(space))
-	err := r.Client.Create(ctx, ingress)
+	r.getLoggerFor(space).Info("Creating Ingress", "name", ingress.Name, "namespace", ingress.Namespace)
+	err := r.client.Create(ctx, ingress)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to create http-ingress: %w", err)
 	}
@@ -572,7 +609,7 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1be
 	var volumes []corev1.Volume
 	containers := []corev1.Container{
 		{
-			Name:  "default-http",
+			Name:  httpDefaultName,
 			Image: "platform9systems/decco-default-http",
 			Env: []corev1.EnvVar{
 				{
@@ -630,9 +667,10 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1be
 			{ContainerPort: defaultHttpInternalPort},
 		}
 	}
-	err = r.Client.Create(ctx, &appsv1.Deployment{
+	r.getLoggerFor(space).Info("Creating Deployment", "name", httpDefaultName, "namespace", space.Status.Namespace)
+	err = r.client.Create(ctx, &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default-http",
+			Name:      httpDefaultName,
 			Namespace: space.Status.Namespace,
 			Labels: map[string]string{
 				"app": "decco",
@@ -642,14 +680,14 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1be
 			Replicas: nil,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app": "default-http",
+					"app": httpDefaultName,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "default-http",
+					Name: httpDefaultName,
 					Labels: map[string]string{
-						"app": "default-http",
+						"app": httpDefaultName,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -670,9 +708,10 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1be
 		svcPort = k8sutil.TlsPort
 		targetPort = k8sutil.TlsPort
 	}
-	err = r.Client.Create(ctx, &corev1.Service{
+	r.getLoggerFor(space).Info("Creating Service", "name", httpDefaultName, "namespace", space.Status.Namespace)
+	err = r.client.Create(ctx, &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default-http",
+			Name:      httpDefaultName,
 			Namespace: space.Status.Namespace,
 		},
 		Spec: corev1.ServiceSpec{
@@ -686,7 +725,7 @@ func (r *SpaceReconciler) reconcileIngress(ctx context.Context, space *deccov1be
 				},
 			},
 			Selector: map[string]string{
-				"app": "default-http",
+				"app": httpDefaultName,
 			},
 		},
 	})
@@ -700,13 +739,14 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 	if err := ensureNamespaceIsCreated(space); err != nil {
 		return err
 	}
+	log := r.getLoggerFor(space)
 
 	// hack: rely on the namespace deletion to clean up these resources.
 	if isDeleting(space) {
+		log.Info("Skipping private ingress controller reconciler; relying on the namespace reconciler to delete all resources.")
 		return nil
 	}
 
-	log := r.getLoggerFor(space)
 	if space.Spec.DisablePrivateIngressController {
 		log.Info("Skipping reconciling of private ingress controller; it has" +
 			" been disabled.")
@@ -714,13 +754,11 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 	}
 
 	// Create the ingress service account.
-	err := r.Client.Create(ctx, &corev1.ServiceAccount{
+	log.Info("Creating ServiceAccount", "name", "nginx-ingress", "namespace", space.Status.Namespace)
+	err := r.client.Create(ctx, &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "nginx-ingress",
 			Namespace: space.Status.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				createSpaceOwnerRef(space),
-			},
 		},
 	})
 	if err != nil && !errors.IsAlreadyExists(err) {
@@ -728,13 +766,11 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 	}
 
 	// Create the ingress RBAC role.
-	err = r.Client.Create(ctx, &rbacv1.Role{
+	log.Info("Creating Role", "name", "ingress-controller", "namespace", space.Status.Namespace)
+	err = r.client.Create(ctx, &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ingress-controller",
 			Namespace: space.Status.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				createSpaceOwnerRef(space),
-			},
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
@@ -765,13 +801,11 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 	}
 
 	// Bind the ingress role to the service account
-	err = r.Client.Create(ctx, &rbacv1.RoleBinding{
+	log.Info("Creating RoleBinding", "name", "nginx-ingress", "namespace", space.Status.Namespace)
+	err = r.client.Create(ctx, &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "nginx-ingress",
 			Namespace: space.Status.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				createSpaceOwnerRef(space),
-			},
 		},
 		Subjects: []rbacv1.Subject{
 			{
@@ -829,69 +863,87 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 		ingressControllerImage = "platform9/ingress-nginx:0.19.0-006"
 	}
 
-	err = r.Client.Create(ctx, &deccov1beta2.App{
+	// TODO(erwin) replace nginx-ingress APP with a deployment (make completely Apps optional from Decco's pov)
+	log.Info("Creating App", "name", "nginx-ingress", "namespace", space.Status.Namespace)
+	replicas := int32(1)
+	err = r.client.Create(ctx, &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "nginx-ingress",
 			Namespace: space.Status.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				createSpaceOwnerRef(space),
+			Labels: map[string]string{
+				// TODO(erwin) kept for backward-compatibility, remove if possible
+				"decco-derived-from": "app",
 			},
 		},
-		Spec: deccov1beta2.AppSpec{
-			InitialReplicas:         1,
-			FirstEndpointListenPort: baseTlsListenPort + 1, // 'cause nginx itself uses 443
-			Permissions:             []rbacv1.PolicyRule{},
-			PodSpec: corev1.PodSpec{
-				ServiceAccountName: "nginx-ingress",
-				Containers: []corev1.Container{
-					{
-						Name: "nginx-ingress",
-						Args: args,
-						Env: []corev1.EnvVar{
-							{
-								Name: "POD_NAME",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										APIVersion: "v1",
-										FieldPath:  "metadata.name",
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			// FirstEndpointListenPort: baseTlsListenPort + 1, // 'cause nginx itself uses 443
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					// TODO(erwin) kept for backward-compatibility, remove if possible
+					Annotations: map[string]string{
+						"linkerd.io/inject": "enabled",
+						// https://linkerd.io/2/features/protocol-detection/#configuring-protocol-detection
+						// Skip linkerd proxy when making outbound connections to mysql
+						"config.linkerd.io/skip-outbound-ports": "3306",
+					},
+					Labels: map[string]string{
+						"app":       "decco",
+						"decco-app": "nginx-ingress",
+					},
+				},
+				Spec: corev1.PodSpec{
+					ServiceAccountName: "nginx-ingress",
+					Containers: []corev1.Container{
+						{
+							Name: "nginx-ingress",
+							Args: args,
+							Env: []corev1.EnvVar{
+								{
+									Name: "POD_NAME",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											APIVersion: "v1",
+											FieldPath:  "metadata.name",
+										},
+									},
+								},
+								{
+									Name: "POD_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											APIVersion: "v1",
+											FieldPath:  "metadata.namespace",
+										},
 									},
 								},
 							},
-							{
-								Name: "POD_NAMESPACE",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										APIVersion: "v1",
-										FieldPath:  "metadata.namespace",
-									},
+							Image: ingressControllerImage,
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: int32(443),
+								},
+								{
+									Name:          "metrics",
+									ContainerPort: metricsPort,
 								},
 							},
-						},
-						Image: ingressControllerImage,
-						Ports: []corev1.ContainerPort{
-							{
-								ContainerPort: int32(443),
-							},
-							{
-								Name:          "metrics",
-								ContainerPort: metricsPort,
-							},
-						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								"cpu":    resource.MustParse("100m"),
-								"memory": resource.MustParse("200Mi"),
-							},
-							Limits: corev1.ResourceList{
-								"cpu":    resource.MustParse("1000m"),
-								"memory": resource.MustParse("200Mi"),
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									"cpu":    resource.MustParse("100m"),
+									"memory": resource.MustParse("200Mi"),
+								},
+								Limits: corev1.ResourceList{
+									"cpu":    resource.MustParse("1000m"),
+									"memory": resource.MustParse("200Mi"),
+								},
 							},
 						},
 					},
 				},
 			},
-			Endpoints: endpoints,
 		},
+		Status: appsv1.DeploymentStatus{},
 	})
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to create nginx-ingress app: %w", err)
@@ -901,12 +953,12 @@ func (r *SpaceReconciler) reconcilePrivateIngressController(ctx context.Context,
 
 func (r *SpaceReconciler) reconcileDNS(ctx context.Context, space *deccov1beta2.Space) error {
 	log := r.getLoggerFor(space)
-	if !dns.Enabled() {
+	if r.dns == nil {
 		log.Info("skipping DNS update: no registered provider")
 		return nil
 	}
 
-	ipOrHostname, isHostname, err := k8sutil.GetTcpIngressIPOrHostnameWithControllerClient(ctx, r.Client)
+	ipOrHostname, err := r.ingress.GetIPOrHostname(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get TCP ingress ipOrHostname: %s", err)
 	}
@@ -915,11 +967,11 @@ func (r *SpaceReconciler) reconcileDNS(ctx context.Context, space *deccov1beta2.
 	if isDeleting(space) {
 		// Skip deleting DNS if it is not configured
 		// TODO(erwin) replace with an actual check if it has been configured
-		if !space.Status.DNSConfigured {
+		if space.Status.Hostname == "" {
 			return nil
 		}
 
-		err = dns.DeleteRecord(space.Spec.DomainName, space.Name, ipOrHostname, isHostname)
+		err = r.dns.DeleteRecord(space.Spec.DomainName, space.Name, ipOrHostname)
 		if err != nil {
 			if url != "" {
 				msg := fmt.Sprintf("attempt to delete DNS for %s failed: %s", space.Name, err)
@@ -936,11 +988,11 @@ func (r *SpaceReconciler) reconcileDNS(ctx context.Context, space *deccov1beta2.
 	} else {
 		// Check if the DNS has already been configured
 		// TODO(erwin) replace with an actual check if it is configured
-		if space.Status.DNSConfigured {
+		if space.Status.Hostname != "" {
 			return nil
 		}
 
-		err = dns.CreateOrUpdateRecord(space.Spec.DomainName, space.Name, ipOrHostname, isHostname)
+		err = r.dns.CreateOrUpdateRecord(space.Spec.DomainName, space.Name, ipOrHostname)
 		if err != nil {
 			if url != "" {
 				msg := fmt.Sprintf("attempt to create DNS for %s failed: %s", space.Name, err)
@@ -954,36 +1006,16 @@ func (r *SpaceReconciler) reconcileDNS(ctx context.Context, space *deccov1beta2.
 		}
 
 		addFinalizer(space, finalizerSpaceNamespace)
-		space.Status.DNSConfigured = true
+		space.Status.Hostname = fmt.Sprintf("%s.%s", space.Name, space.Spec.DomainName)
 	}
 	return err
 }
 
 func (r *SpaceReconciler) getLoggerFor(space *deccov1beta2.Space) logr.Logger {
-	return r.Log.WithValues("space", types.NamespacedName{
+	return r.log.WithValues("space", types.NamespacedName{
 		Namespace: space.Namespace,
 		Name:      space.Name,
 	})
-}
-
-// Helper functions to check and remove string from a slice of strings.
-func containsString(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
-}
-
-func removeString(slice []string, s string) (result []string) {
-	for _, item := range slice {
-		if item == s {
-			continue
-		}
-		result = append(result, item)
-	}
-	return
 }
 
 func ensureNamespaceIsCreated(space *deccov1beta2.Space) error {
@@ -993,18 +1025,8 @@ func ensureNamespaceIsCreated(space *deccov1beta2.Space) error {
 	return nil
 }
 
-func hasSpaceAsOwner(owners []metav1.OwnerReference, space *deccov1beta2.Space) bool {
-	needle := createSpaceOwnerRef(space)
-	for _, owner := range owners {
-		if reflect.DeepEqual(owner, needle) {
-			return true
-		}
-	}
-	return false
-}
-
-func createSpaceOwnerRef(space *deccov1beta2.Space) metav1.OwnerReference {
-	return *metav1.NewControllerRef(space, deccov1beta2.GroupVersion.WithKind("Space"))
+func hasSpaceAsOwnerInLabels(labels map[string]string, space *deccov1beta2.Space) bool {
+	return labels[labelSpaceName] == space.Name && labels[labelSpaceNamespace] == space.Namespace
 }
 
 func isDeleting(space *deccov1beta2.Space) bool {

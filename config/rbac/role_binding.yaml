@@ -5,7 +5,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: manager-role
+  name: cluster-admin # TODO(erwin) replace with "manager-role" if we want to narrow RBAC (needs to be regenerated too)
 subjects:
 - kind: ServiceAccount
   name: default
