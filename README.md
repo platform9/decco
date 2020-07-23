@@ -66,7 +66,7 @@ Decco uses semantic versioning. To release a new version of Decco.
    v1.3.0, you create a new branch, named `release-x.y`, where `x` and `y` are 
    the major and minor version respectively. Or,
    (b) if you are releasing a **patch**, such as 1.3.5, you check out the existing 
-   branch with the appropriate major and minor version. For example, fo 1.3.5
+   branch with the appropriate major and minor version. For example, for 1.3.5
    check out `release-1.3`.
 
 2. On the release branch, create and push a commit that bumps 
@@ -77,7 +77,8 @@ Decco uses semantic versioning. To release a new version of Decco.
 
 4. Then, run the (Platform9 internal) `decco-release` TeamCity build. This will
    effectively run the release script: [./hack/ci-release.sh](./hack/ci-release.sh).
-   In a preconfigured environment you could run `make release` instead.   
+   Alternatively, in a preconfigured environment you could run `make release` 
+   instead.   
 
 5. If everything succeeds, the version commit will be tagged, Github release 
    will be created and Docker images will be published for the given version.

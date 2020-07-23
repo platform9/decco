@@ -67,7 +67,7 @@ then
   git status -b
   git tag -a "${VERSION}" -m "${VERSION}"
 
-	make release
+  make release
 else
-	make release-dry-run
+  make release-dry-run
 fi
