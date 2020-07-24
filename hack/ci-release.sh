@@ -16,7 +16,6 @@ set -o pipefail
 #
 # - DOCKER_PASSWORD       The password for the Docker account to push the images too.
 # - DOCKER_USERNAME       The username for the Docker account to push the images too.
-# - DOCKER_REGISTRY       The Docker registry to push the images too.
 # - DRY_RUN               If non-empty, no resulting artifacts will actually be published.
 # - GIT_USER_EMAIL        The email of the user creating the git tag.
 # - GIT_USER_NAME         The name of the user creating the git tag.
