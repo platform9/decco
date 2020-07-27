@@ -68,7 +68,7 @@ verify-goreleaser:
 .PHONY: verify-go
 verify-go:
 	# Check if codebase is formatted.
-	@bash -c "[ -z $$(gofmt -l ./api ./cmd ./pkg ./test) ] && echo 'OK' || (echo 'ERROR: files are not formatted:' && gofmt -l . && false)"
+	@bash -c "[ -z \"$$(gofmt -l ./api ./cmd ./pkg ./test)\" ] && echo 'OK' || (echo 'ERROR: files are not formatted:' && gofmt -l . && echo -e \"\nRun 'make format' or manually fix the formatting issues.\n\" && false)"
 	# Run static checks on codebase.
 	go vet ./api/... ./cmd/... ./pkg/... ./test/...
 
