@@ -22,7 +22,27 @@ func CreateHttpIngress(
 	localhostOnly bool,
 	additionalAnnotations map[string]string,
 ) error {
-	ingApi := kubeApi.NetworkingV1beta1().Ingresses(ns)
+	_, err := kubeApi.NetworkingV1beta1().Ingresses(ns).Create(NewHttpIngress(
+		ns, name, labels, hostName, path, svcName, svcPort, rewritePath,
+		encryptHttp, secretName, localhostOnly, additionalAnnotations,
+	))
+	return err
+}
+
+func NewHttpIngress(
+	ns string,
+	name string,
+	labels map[string]string,
+	hostName string,
+	path string,
+	svcName string,
+	svcPort int32,
+	rewritePath string,
+	encryptHttp bool,
+	secretName string,
+	localhostOnly bool,
+	additionalAnnotations map[string]string,
+) *netv1beta1.Ingress {
 	annotations := make(map[string]string)
 	// Copy over additional annotations.
 	// Note: this works even if additionalAnnotations is nil
@@ -76,7 +96,11 @@ func CreateHttpIngress(
 			SecretName: secretName,
 		})
 	}
-	ing := netv1beta1.Ingress{
+	return &netv1beta1.Ingress{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: netv1beta1.SchemeGroupVersion.String(),
+			Kind:       "Ingress",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Labels:      labels,
@@ -87,6 +111,4 @@ func CreateHttpIngress(
 			TLS:   tls,
 		},
 	}
-	_, err := ingApi.Create(&ing)
-	return err
 }

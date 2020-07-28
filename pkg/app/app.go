@@ -8,13 +8,7 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
-	"k8s.io/api/core/v1"
-	netv1beta1 "k8s.io/api/networking/v1beta1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 
 	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
@@ -111,12 +105,13 @@ func (ar *AppRuntime) Delete() {
 		if err != nil {
 			log.Warnf("failed to delete ingress '%s': %s", e.Name, err)
 		}
-		err = ar.updateDns(&e, true)
-		if err != nil {
-			log.Warnf("failed to delete dns record for '%s': %s",
-				e.Name, err)
-		}
 	}
+
+	err := ar.configureDNS(true)
+	if err != nil {
+		log.Warnf("failed to delete dns records: %s", err)
+	}
+
 	if ar.app.Spec.RunAsJob {
 		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
 		err := batchApi.Delete(ar.app.Name, &delOpts)
@@ -218,94 +213,28 @@ func (ar *AppRuntime) create() error {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) internalCreate() error {
-	podSpec := ar.app.Spec.PodSpec
-	containers := podSpec.Containers
-	volumes := podSpec.Volumes
-	stunnelIndex := 0
-	ar.insertDomainEnvVar(containers)
-	err := ar.setupPermissions(&podSpec)
+	// Generate the Kubernetes resources
+	objs, err := GenerateResources(&ar.spaceSpec, &ar.app)
 	if err != nil {
-		return fmt.Errorf("failed to set up permissions: %s", err)
+		return err
 	}
-	containers, volumes, err = ar.createEndpoints(containers, volumes, &stunnelIndex)
-	if err != nil {
-		return fmt.Errorf("failed to create endpoints: %s", err)
-	}
-	err = ar.createDeployment(podSpec, containers, volumes, stunnelIndex)
-	if err != nil {
-		return fmt.Errorf("failed to create deployment: %s", err)
-	}
-	return nil
-}
 
-// -----------------------------------------------------------------------------
-
-func (ar *AppRuntime) insertDomainEnvVar(containers []v1.Container) {
-	if ar.app.Spec.DomainEnvVarName == "" {
-		return
-	}
-	for i := range containers {
-		containers[i].Env = append(containers[i].Env, v1.EnvVar{
-			Name:  ar.app.Spec.DomainEnvVarName,
-			Value: ar.spaceSpec.DomainName,
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-
-func (ar *AppRuntime) setupPermissions(podSpec *v1.PodSpec) error {
-	sp := ar.app.Spec
-	rules := sp.Permissions
-	if rules == nil || len(rules) == 0 {
-		return nil
-	}
-	saName := podSpec.ServiceAccountName
-	if saName == "" {
-		saName = ar.app.Name
-		sa := v1.ServiceAccount{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: saName,
-			},
-		}
-		saApi := ar.kubeApi.CoreV1().ServiceAccounts(ar.namespace)
-		_, err := saApi.Create(&sa)
+	// Attempt to create each of the generated resources
+	// TODO(erwin) test if this works, otherwise revert to the dynamic client.
+	for _, obj := range objs {
+		err := ar.kubeApi.Discovery().RESTClient().Put().
+			Namespace(ar.namespace).
+			Resource(obj.GetObjectKind().GroupVersionKind().GroupVersion().String()).
+			Body(obj).
+			Do().
+			Error()
 		if err != nil {
-			return fmt.Errorf("failed to create svcaccount: %s", err)
+			return fmt.Errorf("failed to create object %s: %w", obj.GetObjectKind().GroupVersionKind(), err)
 		}
 	}
 
-	role := rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{Name: saName},
-		Rules:      rules,
-	}
-	rolesApi := ar.kubeApi.RbacV1().Roles(ar.namespace)
-	_, err := rolesApi.Create(&role)
-	if err != nil {
-		return fmt.Errorf("failed to create role: %s", err)
-	}
-	rb := rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: saName},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      saName,
-				Namespace: ar.namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     saName,
-		},
-	}
-	rbApi := ar.kubeApi.RbacV1().RoleBindings(ar.namespace)
-	_, err = rbApi.Create(&rb)
-	if err != nil {
-		return fmt.Errorf("failed to create role binding: %s", err)
-	}
-	podSpec.ServiceAccountName = saName
-	return nil
+	// Finally, configure the DNS for tha App.
+	return ar.configureDNS(false)
 }
 
 // -----------------------------------------------------------------------------
@@ -340,7 +269,7 @@ func (ar *AppRuntime) teardownPermissions() {
 
 // -----------------------------------------------------------------------------
 
-func (ar *AppRuntime) updateDns(e *deccov1beta2.EndpointSpec, delete bool) error {
+func (ar *AppRuntime) updateDNSForEndpoint(e *deccov1beta2.EndpointSpec, delete bool) error {
 	if !e.CreateDnsRecord {
 		return nil
 	}
@@ -371,319 +300,14 @@ func (ar *AppRuntime) logCreation() {
 	}
 }
 
-// -----------------------------------------------------------------------------
-
-func (ar *AppRuntime) createStunnel(
-	e *deccov1beta2.EndpointSpec,
-	containers []v1.Container,
-	volumes []v1.Volume,
-	stunnelIndex *int,
-) (
-	outCntrs []v1.Container,
-	outVols []v1.Volume,
-	svcPort int32,
-	tgtPort int32,
-	err error,
-) {
-
-	outCntrs = containers
-	outVols = volumes
-	verifyChain := "yes"
-	tlsSecretName := ""
-	isNginxIngressStyleCertSecret := false
-
-	svcPort = e.Port
-	tgtPort = e.Port
-	if tgtPort < 1 {
-		err = deccov1beta2.ErrInvalidPort
-		return
-	}
-
-	// Determine if we need ingress TLS termination
-	if e.IsMetricsEndpoint {
-		// Metrics endpoint. No TLS for now until I figure out how
-		// to configure Prometheus to scrape using https -leb
-		return
-	} else if e.HttpPath == "" {
-		// This is a TCP service.
-		if e.DisableTlsTermination {
-			// No stunnel needed
-		} else {
-			tlsSecretName = e.CertAndCaSecretName
-			if tlsSecretName == "" {
-				tlsSecretName = ar.spaceSpec.TcpCertAndCaSecretName
-				if tlsSecretName == "" {
-					err = fmt.Errorf("space does not have cert for TCP service")
-					return
-				}
-			}
-			if e.DisableTcpClientTlsVerification {
-				verifyChain = "no"
-			}
-		}
-	} else if ar.spaceSpec.EncryptHttp {
-		// This is an encrypted HTTP service.
-		tlsSecretName = e.CertAndCaSecretName
-		if tlsSecretName == "" {
-			tlsSecretName = ar.spaceSpec.HttpCertSecretName
-			if tlsSecretName == "" {
-				err = fmt.Errorf("space does not have cert for HTTP service")
-				return
-			}
-			// for now, we don't verify clients when using the space default
-			// cert because it was most likely designed for web browser clients
-			// which typically don't send a client cert.
-			// FIXME: use default TCP cert instead with mutual authentication
-			//        for connections b/w ingress controller and service
-			verifyChain = "no"
-		}
-		isNginxIngressStyleCertSecret = true
-	}
-
-	if tlsSecretName != "" {
-		svcPort = k8sutil.TlsPort
-		destHostAndPort := fmt.Sprintf("%d", tgtPort)
-		tgtPort = e.TlsListenPort
-		if tgtPort == 0 {
-			basePort := ar.app.Spec.FirstEndpointListenPort
-			if basePort == 0 {
-				basePort = k8sutil.TlsPort
-			}
-			tgtPort = basePort + int32(*stunnelIndex)
-		}
-		containerName := fmt.Sprintf("stunnel-ingress-%d", *stunnelIndex)
-		outVols, outCntrs = k8sutil.InsertStunnel(
-			containerName, tgtPort, verifyChain,
-			destHostAndPort, "",
-			tlsSecretName, isNginxIngressStyleCertSecret, false,
-			outVols, outCntrs,
-			0, *stunnelIndex,
-		)
-		*stunnelIndex += 1
-	}
-	return
-}
-
-// -----------------------------------------------------------------------------
-
-func (ar *AppRuntime) createDeployment(
-	podSpec v1.PodSpec,
-	containers []v1.Container,
-	volumes []v1.Volume,
-	stunnelIndex int,
-) error {
-
-	initialReplicas := ar.app.Spec.InitialReplicas
-
-	// egress TLS initiation
-	for i, egress := range ar.app.Spec.Egresses {
-		clientTlsSecretName := egress.CertAndCaSecretName
-		if clientTlsSecretName == "" {
-			clientTlsSecretName = ar.spaceSpec.TcpCertAndCaSecretName
-			if clientTlsSecretName == "" {
-				return fmt.Errorf("tls secret not specified and there is no default for the space")
-			}
-		}
-		containerName := fmt.Sprintf("stunnel-egress-%d", i)
-		destHost := egress.Fqdn
-		if destHost == "" {
-			endpoint := egress.Endpoint
-			if endpoint == "" {
-				return fmt.Errorf("tlsEgress entry: Fqdn and Endpoint cannot both be empty")
-			}
-			spaceName := egress.SpaceName
-			if spaceName == "" {
-				spaceName = ar.namespace
-			}
-			destHost = fmt.Sprintf("%s.%s.svc.cluster.local",
-				endpoint, spaceName)
-		}
-		targetPort := egress.TargetPort
-		if targetPort == 0 {
-			targetPort = 443
-		}
-		destHostAndPort := fmt.Sprintf("%s:%d", destHost, targetPort)
-		verifyChain := "yes"
-		if egress.DisableServerCertVerification {
-			verifyChain = "no"
-		}
-		volumes, containers = k8sutil.InsertStunnel(
-			containerName, egress.LocalPort, verifyChain,
-			destHostAndPort, destHost,
-			clientTlsSecretName, false, true,
-			volumes, containers, egress.SpringBoardDelaySeconds, stunnelIndex,
-		)
-		stunnelIndex += 1
-	}
-	podSpec.Containers = containers
-	podSpec.Volumes = volumes
-	objMeta := metav1.ObjectMeta{
-		Name: ar.app.Name,
-		Labels: map[string]string{
-			"decco-derived-from": "app",
-		},
-	}
-	podTemplateSpec := v1.PodTemplateSpec{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: ar.app.Name,
-			Labels: map[string]string{
-				"app":       "decco",
-				"decco-app": ar.app.Name,
-			},
-		},
-		Spec: podSpec,
-	}
-	if ar.app.Spec.RunAsJob {
-		batchApi := ar.kubeApi.BatchV1().Jobs(ar.namespace)
-		backoffLimit := ar.app.Spec.JobBackoffLimit
-		_, err := batchApi.Create(&batchv1.Job{
-			ObjectMeta: objMeta,
-			Spec: batchv1.JobSpec{
-				Template:     podTemplateSpec,
-				BackoffLimit: &backoffLimit,
-			},
-		})
-		return err
-	} else {
-		depSpec := &appsv1.Deployment{
-			ObjectMeta: objMeta,
-			Spec: appsv1.DeploymentSpec{
-				Replicas: &initialReplicas,
-				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"decco-app": ar.app.Name,
-					},
-				},
-				Template: podTemplateSpec,
-			},
-		}
-		depApi := ar.kubeApi.AppsV1().Deployments(ar.namespace)
-		_, err := depApi.Create(depSpec)
-		return err
-	}
-}
-
-// -----------------------------------------------------------------------------
-
-func (ar *AppRuntime) createSvc(
-	e *deccov1beta2.EndpointSpec,
-	svcPort int32,
-	tgtPort int32,
-) error {
-	appName := ar.Name()
-	svcName := e.Name
-	portName := svcName
-	svcApi := ar.kubeApi.CoreV1().Services(ar.namespace)
-	labels := map[string]string{
-		"decco-derived-from": "app",
-		"decco-app":          appName,
-	}
-	if e.IsMetricsEndpoint {
-		labels["monitoring-group"] = "decco"
-		portName = "metrics"
-	}
-	_, err := svcApi.Create(&v1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   svcName,
-			Labels: labels,
-		},
-		Spec: v1.ServiceSpec{
-			Ports: []v1.ServicePort{
-				{
-					Port: svcPort,
-					Name: portName,
-					TargetPort: intstr.IntOrString{
-						Type:   intstr.Int,
-						IntVal: tgtPort,
-					},
-				},
-			},
-			Selector: map[string]string{
-				"decco-app": appName,
-			},
-		},
-	})
-	return err
-}
-
-// -----------------------------------------------------------------------------
-
-func (ar *AppRuntime) createEndpoints(
-	containers []v1.Container,
-	volumes []v1.Volume,
-	stunnelIndex *int,
-) ([]v1.Container, []v1.Volume, error) {
-	if ar.app.Spec.RunAsJob {
-		return containers, volumes, nil // no service endpoints for a job
-	}
+func (ar *AppRuntime) configureDNS(delete bool) error {
 	for _, e := range ar.app.Spec.Endpoints {
-		var err error
-		var svcPort, tgtPort int32
-		containers, volumes, svcPort, tgtPort, err = ar.createStunnel(&e,
-			containers, volumes, stunnelIndex)
+		err := ar.updateDNSForEndpoint(&e, delete)
 		if err != nil {
-			f := "failed to create stunnel for endpoint '%s': %s"
-			return nil, nil, fmt.Errorf(f, e.Name, err)
-		}
-		if err := ar.createSvc(&e, svcPort, tgtPort); err != nil {
-			f := "failed to create service for endpoint '%s': %s"
-			return nil, nil, fmt.Errorf(f, e.Name, err)
-		}
-		if err := ar.createHttpIngress(&e); err != nil {
-			f := "failed to create http ingress for endpoint '%s': %s"
-			return nil, nil, fmt.Errorf(f, e.Name, err)
-		}
-		if err := ar.createTcpIngress(&e, svcPort); err != nil {
-			f := "failed to create tcp ingress for endpoint '%s': %s"
-			return nil, nil, fmt.Errorf(f, e.Name, err)
-		}
-		err = ar.updateDns(&e, false)
-		if err != nil {
-			f := "failed to update dns for endpoint '%s': %s"
-			return nil, nil, fmt.Errorf(f, e.Name, err)
+			return err
 		}
 	}
-	return containers, volumes, nil
-}
-
-// -----------------------------------------------------------------------------
-
-func (ar *AppRuntime) createHttpIngress(e *deccov1beta2.EndpointSpec) error {
-	if ar.app.Spec.RunAsJob {
-		return nil
-	}
-	path := e.HttpPath
-	if path == "" {
-		return nil
-	}
-	port := e.Port
-	if ar.spaceSpec.EncryptHttp {
-		port = k8sutil.TlsPort
-	}
-	ingName := e.Name
-	hostName := fmt.Sprintf("%s.%s", ar.namespace, ar.spaceSpec.DomainName)
-	secName := e.CertAndCaSecretName
-	if secName == "" {
-		secName = ar.spaceSpec.HttpCertSecretName
-	}
-	return k8sutil.CreateHttpIngress(
-		ar.kubeApi,
-		ar.namespace,
-		ingName,
-		map[string]string{
-			"decco-derived-from": "app",
-			"decco-app":          ar.Name(),
-		},
-		hostName,
-		path,
-		e.Name,
-		port,
-		e.RewritePath,
-		ar.spaceSpec.EncryptHttp,
-		secName,
-		e.HttpLocalhostOnly,
-		e.AdditionalIngressAnnotations,
-	)
+	return nil
 }
 
 // -----------------------------------------------------------------------------
@@ -692,65 +316,4 @@ func (ar *AppRuntime) deleteIngress(e *deccov1beta2.EndpointSpec) error {
 	ingApi := ar.kubeApi.NetworkingV1beta1().Ingresses(ar.namespace)
 	ingName := e.Name
 	return ingApi.Delete(ingName, &metav1.DeleteOptions{})
-}
-
-// -----------------------------------------------------------------------------
-
-func (ar *AppRuntime) createTcpIngress(
-	e *deccov1beta2.EndpointSpec,
-	svcPort int32,
-) error {
-	if e.IsMetricsEndpoint {
-		return nil
-	}
-	path := e.HttpPath
-	if path != "" {
-		return nil
-	}
-	hostName := e.SniHostname
-	if hostName == "" {
-		hostName = e.Name + e.TcpHostnameSuffix + "." +
-			ar.namespace + "." + ar.spaceSpec.DomainName
-	}
-	anno := make(map[string]string)
-	// Copy additional annotations. Note: this works if the source map is nil
-	for key, val := range e.AdditionalIngressAnnotations {
-		anno[key] = val
-	}
-	anno["kubernetes.io/ingress.class"] = "k8sniff"
-	ingApi := ar.kubeApi.NetworkingV1beta1().Ingresses(ar.namespace)
-	ing := netv1beta1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: e.Name,
-			Labels: map[string]string{
-				"decco-derived-from": "app",
-				"decco-app":          ar.Name(),
-			},
-			Annotations: anno,
-		},
-		Spec: netv1beta1.IngressSpec{
-			Rules: []netv1beta1.IngressRule{
-				{
-					Host: hostName,
-					IngressRuleValue: netv1beta1.IngressRuleValue{
-						HTTP: &netv1beta1.HTTPIngressRuleValue{
-							Paths: []netv1beta1.HTTPIngressPath{
-								{
-									Backend: netv1beta1.IngressBackend{
-										ServiceName: e.Name,
-										ServicePort: intstr.IntOrString{
-											Type:   intstr.Int,
-											IntVal: svcPort,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	_, err := ingApi.Create(&ing)
-	return err
 }
