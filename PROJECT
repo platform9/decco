@@ -3,8 +3,8 @@ domain: platform9.com
 repo: github.com/platform9/decco
 resources:
 - group: decco
-  version: v1
+  version: v1beta2
   kind: App
 - group: decco
-  version: v1
+  version: v1beta2
   kind: Space
