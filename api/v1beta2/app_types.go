@@ -17,18 +17,9 @@ limitations under the License.
 package v1beta2
 
 import (
-	"errors"
-
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-var (
-	ErrInvalidPort                    = errors.New("spec: endpoint has invalid port value")
-	ErrInvalidUrlPath                 = errors.New("spec: invalid url path")
-	ErrBothUrlPathAndDisableTcpVerify = errors.New("spec: url path and disable tcp verify cannot both be set")
-	ErrNoTcpCert                      = errors.New("spec: space does not support TCP apps because cert info missing")
 )
 
 type AppPhase string
@@ -53,22 +44,6 @@ type AppSpec struct {
 	FirstEndpointListenPort int32               `json:"firstEndpointListenPort"`
 	Permissions             []rbacv1.PolicyRule `json:"permissions"`
 	DomainEnvVarName        string              `json:"domainEnvVarName"`
-}
-
-func (c *AppSpec) Validate(tcpCertAndCaSecretName string) error {
-
-	for _, e := range c.Endpoints {
-		if e.Port == 0 {
-			return ErrInvalidPort
-		}
-		if e.HttpPath == "" && tcpCertAndCaSecretName == "" {
-			return ErrNoTcpCert
-		}
-		if e.HttpPath != "" && e.DisableTcpClientTlsVerification {
-			return ErrBothUrlPathAndDisableTcpVerify
-		}
-	}
-	return nil
 }
 
 // Cleanup cleans up user passed spec, e.g. defaulting, transforming fields.

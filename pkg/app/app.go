@@ -20,6 +20,7 @@ import (
 	deccov1beta2 "github.com/platform9/decco/api/v1beta2"
 	"github.com/platform9/decco/pkg/dns"
 	"github.com/platform9/decco/pkg/k8sutil"
+	"github.com/platform9/decco/pkg/validate"
 	"github.com/platform9/decco/pkg/watcher"
 )
 
@@ -159,7 +160,9 @@ func (ar *AppRuntime) updateCRStatus() error {
 // -----------------------------------------------------------------------------
 
 func (ar *AppRuntime) setup() error {
-	err := ar.app.Spec.Validate(ar.spaceSpec.TcpCertAndCaSecretName)
+	err := validate.AppSpec(ar.app.Spec, ar.spaceSpec.TcpCertAndCaSecretName)
+
+	// err := ar.app.Spec.Validate(ar.spaceSpec.TcpCertAndCaSecretName)
 	if err != nil {
 		return fmt.Errorf("app failed to validate: %s", err)
 	}
@@ -395,7 +398,7 @@ func (ar *AppRuntime) createStunnel(
 	svcPort = e.Port
 	tgtPort = e.Port
 	if tgtPort < 1 {
-		err = deccov1beta2.ErrInvalidPort
+		err = validate.ErrInvalidPort
 		return
 	}
 

@@ -26,6 +26,7 @@ import (
 	"github.com/platform9/decco/pkg/k8sutil"
 	"github.com/platform9/decco/pkg/misc"
 	"github.com/platform9/decco/pkg/slack"
+	"github.com/platform9/decco/pkg/validate"
 )
 
 var (
@@ -124,7 +125,7 @@ func (c *SpaceRuntime) updateCRStatus() error {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) setup() error {
-	err := c.Space.Spec.Validate()
+	err := validate.SpaceSpec(c.Space.Spec)
 	if err != nil {
 		return err
 	}
