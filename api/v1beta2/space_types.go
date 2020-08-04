@@ -1,12 +1,9 @@
 /*
 Copyright 2017-2020 The decco Authors
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,8 +14,6 @@ limitations under the License.
 package v1beta2
 
 import (
-	"errors"
-
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -27,80 +22,104 @@ const (
 	ReservedProjectName = "system"
 )
 
-var (
-	ErrDomainNameMissing         = errors.New("spec: missing domain name")
-	ErrHttpCertSecretNameMissing = errors.New("spec: missing certificate secret name")
-	ErrInvalidProjectName        = errors.New("spec: invalid project name")
-)
-
 type SpacePhase string
-
-type SpaceCondition struct {
-	Type           SpaceConditionType `json:"type"`
-	Reason         string             `json:"reason"`
-	TransitionTime string             `json:"transitionTime"`
-}
-
-type SpaceConditionType string
 
 const (
 	SpacePhaseNone     SpacePhase = ""
-	SpacePhaseCreating            = "Creating"
-	SpacePhaseActive              = "Active"
-	SpacePhaseFailed              = "Failed"
+	SpacePhaseCreating SpacePhase = "Creating"
+	SpacePhaseActive   SpacePhase = "Active"
+	SpacePhaseFailed   SpacePhase = "Failed"
+	SpacePhaseDeleting SpacePhase = "Deleting"
 )
 
 // SpaceSpec defines the desired state of Space
+// TODO(erwin) add option to prefix namespaces.
+// TODO(erwin) add option deploy kube resources from ConfigMap or URL.
 type SpaceSpec struct {
-	DomainName                           string   `json:"domainName"`
-	Project                              string   `json:"project"`
-	HttpCertSecretName                   string   `json:"httpCertSecretName"`
-	TcpCertAndCaSecretName               string   `json:"tcpCertAndCaSecretName"`
-	EncryptHttp                          bool     `json:"encryptHttp"`
-	DeleteHttpCertSecretAfterCopy        bool     `json:"deleteHttpCertSecretAfterCopy"`
-	DeleteTcpCertAndCaSecretAfterCopy    bool     `json:"deleteTcpCertAndCaSecretAfterCopy"`
-	DisablePrivateIngressController      bool     `json:"disablePrivateIngressController"`
-	VerboseIngressControllerLogging      bool     `json:"verboseIngressControllerLogging"`
-	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints"`
-	// Optional suffix to append to host names of private ingress controller's tcp endpoints
-	PrivateIngressControllerTcpHostnameSuffix string            `json:"privateIngressControllerTcpHostnameSuffix"`
-	Permissions                               *SpacePermissions `json:"permissions"`
-	CreateDefaultHttpDeploymentAndIngress     bool              `json:"createDefaultHttpDeploymentAndIngress"`
+
+	// DomainName is the base domain used for this space. (required)
+	//
+	// Decco will use this base domain for any FDQNs registered for
+	// Space-specific services. For example: space42.platform9.horse
+	DomainName string `json:"domainName"`
+
+	// HttpCertSecretName should point to a TLS secret (in the current
+	// namespace) to use for the default-http service. (required)
+	//
+	// The secret will be copied to the Space's namespace.
+	HttpCertSecretName string `json:"httpCertSecretName"`
+
+	// Project can be used to group Spaces.
+	Project string `json:"project,omitempty"`
+
+	// TcpCertAndCaSecretName should point to a TLS secret (in the current
+	// namespace) to use for stunnel.
+	// TODO(erwin) unsure what it is used for. But it is used by kplane
+	TcpCertAndCaSecretName string `json:"tcpCertAndCaSecretName,omitempty"`
+
+	// EncryptHttp, if enabled, the ingress will use HTTPS instead of HTTP to
+	// communicate with the backend services.
+	// TODO(erwin) unsure what it is used for. But it is used by kplane
+	EncryptHttp bool `json:"encryptHttp,omitempty"`
+
+	// DeleteHttpCertSecretAfterCopy, if true, signals Decco to delete the
+	// original TLS secret specified by HttpCertSecretName after it has been copied.
+	DeleteHttpCertSecretAfterCopy bool `json:"deleteHttpCertSecretAfterCopy,omitempty"`
+
+	// DeleteTcpCertAndCaSecretAfterCopy, if true, signals Decco to delete the
+	// original TLS secret specified by TcpCertAndCaSecretName after it has been copied.
+	DeleteTcpCertAndCaSecretAfterCopy bool `json:"deleteTcpCertAndCaSecretAfterCopy,omitempty"`
+
+	// DisablePrivateIngressController will disable the creation of a
+	// Space-specific Ingress controller.
+	DisablePrivateIngressController bool `json:"disablePrivateIngressController,omitempty"`
+
+	// VerboseIngressControllerLogging increases log verbosity if set to true.
+	VerboseIngressControllerLogging bool `json:"verboseIngressControllerLogging,omitempty"`
+
+	// ?
+	PrivateIngressControllerTcpEndpoints []string `json:"privateIngressControllerTcpEndpoints,omitempty"`
+
+	// PrivateIngressControllerTcpHostnameSuffix is an optional suffix to append
+	// to host names of private ingress controller's TCP endpoints.
+	PrivateIngressControllerTcpHostnameSuffix string `json:"privateIngressControllerTcpHostnameSuffix,omitempty"`
+
+	// CreateDefaultHttpDeploymentAndIngress will create and configure the
+	// Space's ingress to include the default-http service.
+	CreateDefaultHttpDeploymentAndIngress bool `json:"createDefaultHttpDeploymentAndIngress,omitempty"`
+
+	// ?
+	Permissions *SpacePermissions `json:"permissions,omitempty"`
 }
 
-func (in *SpaceSpec) Validate() error {
-	if in.DomainName == "" {
-		return ErrDomainNameMissing
-	}
-	if in.HttpCertSecretName == "" {
-		return ErrHttpCertSecretNameMissing
-	}
-	if in.Project == ReservedProjectName {
-		return ErrInvalidProjectName
-	}
-	return nil
-}
+// Type: [plain, kustomize]
+type Template struct {
+	// Type specifies the type of the template. Currently the following options
+	// are supported: [plain, kustomize]
+	Type string `json:"type"`
 
-// Cleanup cleans up user passed spec, e.g. defaulting, transforming fields.
-// TODO: move this to admission controller
-func (in *SpaceSpec) Cleanup() {
-	/*
-		if len(c.BaseImage) == 0 {
-			c.BaseImage = defaultBaseImage
-		}
-
-		if len(c.Version) == 0 {
-			c.Version = defaultVersion
-		}
-
-		c.Version = strings.TrimLeft(c.Version, "v")
-	*/
+	// URL contains the path to the kubernetes resource or resource directory.
+	URL string `json:"url"`
+	// TODO git repo, ConfigMap string `json:"configMap"`
 }
 
 // SpaceStatus defines the observed state of Space
 type SpaceStatus struct {
-	Phase  SpacePhase `json:"phase"`
-	Reason string     `json:"reason"`
+	// Phase indicates the current state of the Space.
+	Phase SpacePhase `json:"phase"`
+
+	// Reason is an optional, short, and human-readable explanation for the
+	// current phase of the Space.
+	Reason string `json:"reason"`
+
+	// Namespace is the Kubernetes namespace associated with this space.
+	Namespace string `json:"namespace"`
+
+	// Hostname contains the domain name under which traffic will be redirected
+	// to the ingress of the Space.
+	Hostname string `json:"hostname"`
+
+	NamespaceProvisioned bool `json:"namespaceProvisioned"`
 }
 
 func (in *SpaceStatus) IsFailed() bool {
@@ -110,15 +129,16 @@ func (in *SpaceStatus) IsFailed() bool {
 	return in.Phase == SpacePhaseFailed
 }
 
-func (in *SpaceStatus) SetPhase(p SpacePhase) {
-	in.Phase = p
-}
-
-func (in *SpaceStatus) SetReason(r string) {
-	in.Reason = r
+func (in *SpaceStatus) SetPhase(phase SpacePhase, reason string) {
+	in.Phase = phase
+	in.Reason = reason
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:printcolumn:name="Hostname",type="string",JSONPath=".status.hostname"
+// +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.namespace"
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // Space is the Schema for the spaces API
 type Space struct {

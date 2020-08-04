@@ -70,8 +70,7 @@ func New(
 	if err := c.setup(); err != nil {
 		c.log.Errorf("cluster failed to setup: %v", err)
 		if c.Status.Phase != deccov1beta2.SpacePhaseFailed {
-			c.Status.SetReason(err.Error())
-			c.Status.SetPhase(deccov1beta2.SpacePhaseFailed)
+			c.Status.SetPhase(deccov1beta2.SpacePhaseFailed, err.Error())
 			if err := c.updateCRStatus(); err != nil {
 				c.log.Errorf("failed to update space phase (%v): %v",
 					deccov1beta2.SpacePhaseFailed, err)
@@ -163,14 +162,14 @@ func (c *SpaceRuntime) phaseUpdateError(op string, err error) error {
 // -----------------------------------------------------------------------------
 
 func (c *SpaceRuntime) create() error {
-	c.Status.SetPhase(deccov1beta2.SpacePhaseCreating)
+	c.Status.SetPhase(deccov1beta2.SpacePhaseCreating, "")
 	if err := c.updateCRStatus(); err != nil {
 		return c.phaseUpdateError("space create", err)
 	}
 	if err := c.internalCreate(); err != nil {
 		return err
 	}
-	c.Status.SetPhase(deccov1beta2.SpacePhaseActive)
+	c.Status.SetPhase(deccov1beta2.SpacePhaseActive, "")
 	if err := c.updateCRStatus(); err != nil {
 		return fmt.Errorf(
 			"space create: failed to update space phase (%v): %v",

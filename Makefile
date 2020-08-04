@@ -35,6 +35,7 @@ SPRINGBOARD_REPO_TAG ?= platform9/$(SPRINGBOARD_IMAGE_NAME)
 SPRINGBOARD_FULL_TAG := $(SPRINGBOARD_REPO_TAG):$(IMAGE_TAG)
 
 GORELEASER ?= ${SRC_DIR}/hack/goreleaser-docker.sh
+CONTROLLER_GEN := "controller-gen"
 
 .PHONY: all
 all: operator springboard
@@ -80,8 +81,7 @@ format: ## Run all formatters on the codebase.
 	go mod tidy
 
 .PHONY: generate
-generate:
-	# nop
+generate: generate-crds manifests
 
 .PHONY: clean
 clean: operator-clean clean-tag-file springboard-clean release-clean
@@ -113,15 +113,6 @@ $(GOPATH_DIR):| $(BUILD_DIR) $(GO_TOOLCHAIN)
 $(SPRINGBOARD_STAGE_DIR):
 	mkdir -p $@
 
-$(SPRINGBOARD_EXE): | $(SPRINGBOARD_STAGE_DIR)
-	go build -o $@ $(SRC_DIR)/cmd/springboard
-
-$(SPRINGBOARD_IMAGE_MARKER): $(SPRINGBOARD_EXE)
-	cp -f $(SRC_DIR)/support/stunnel-instrumented-with-springboard/* $(SPRINGBOARD_STAGE_DIR)
-	sed -i 's|__STUNNEL_CONTAINER_TAG__|$(STUNNEL_CONTAINER_TAG)|g' $(SPRINGBOARD_STAGE_DIR)/Dockerfile
-	docker build --tag $(SPRINGBOARD_FULL_TAG) $(SPRINGBOARD_STAGE_DIR)
-	touch $@
-
 springboard-image: $(SPRINGBOARD_IMAGE_MARKER)
 
 springboard-push: $(SPRINGBOARD_IMAGE_MARKER)
@@ -133,6 +124,7 @@ springboard-push: $(SPRINGBOARD_IMAGE_MARKER)
 
 springboard-clean:
 	rm -rf $(SPRINGBOARD_STAGE_DIR)
+	rm -f $(SRC_DIR)/support/stunnel-with-springboard/springboard
 
 springboard:
 	go build -o $(SRC_DIR)/support/stunnel-with-springboard/springboard $(SRC_DIR)/cmd/springboard
@@ -148,6 +140,12 @@ $(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*
 	go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
 
 operator: $(OPERATOR_EXE)
+operator-linux: generate verify
+
+	GOOS=linux GOARCH=amd64 go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
+
+operator: generate verify
+	go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
 
 clean-gopath:
 	@echo "GOPATH is $(GOPATH_DIR)"
@@ -158,7 +156,7 @@ operator-clean:
 
 operator-image: $(OPERATOR_IMAGE_MARKER)
 
-$(OPERATOR_IMAGE_MARKER): $(OPERATOR_EXE)
+$(OPERATOR_IMAGE_MARKER): operator-linux
 	cp -f support/operator/Dockerfile $(OPERATOR_STAGE_DIR)
 	docker build --tag $(FULL_TAG) $(OPERATOR_STAGE_DIR)
 	touch $@
@@ -177,3 +175,57 @@ container-full-tag: $(TAG_FILE)
 
 clean-tag-file:
 	rm -f $(TAG_FILE)
+
+.PHONY: run
+run: generate ## Run against the configured Kubernetes cluster in ~/.kube/config
+	go run ./cmd/operator
+
+
+.PHONY: install
+install: ## Install CRDs into a cluster
+	kubectl apply -f config/crd/bases
+
+.PHONY: deploy
+deploy: manifests ## Deploy controller in the configured Kubernetes cluster in ~/.kube/config
+	kubectl apply -f config/crd/bases
+	kustomize build config/default | kubectl apply -f -
+
+.PHONY: manifests
+manifests: controller-gen ## Generate manifests e.g. CRD, RBAC, etc.
+	$(CONTROLLER_GEN) crd:trivialVersions=true \
+		rbac:roleName=manager-role \
+		webhook \
+		paths="./api/..." \
+		output:crd:artifacts:config=config/crd/bases
+
+		# Work around an upstream bug that generates an invalid PodSpec validation set.
+		sed -i'.tmp' -E 's/^                        - protocol/#                        - protocol/g' config/crd/bases/decco.platform9.com_apps.yaml
+		rm -f config/crd/bases/decco.platform9.com_apps.yaml.tmp
+
+.PHONY: generate-crds
+generate-crds: controller-gen ## generates code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+	$(CONTROLLER_GEN) object:headerFile=./hack/boilerplate.go.txt paths="./..."
+
+# Build the docker image
+# TODO(erwin) reconcile commented out kubebuilder docker-build with existing
+#docker-build: test
+#	docker build . -t ${IMG}
+#	@echo "updating kustomize image patch file for manager resource"
+#	sed -i'' -e 's@image: .*@image: '"${IMG}"'@' ./config/default/manager_image_patch.yaml
+
+# find or download controller-gen
+# download controller-gen if necessary
+controller-gen:
+ifeq (, $(shell which controller-gen))
+        @{ \
+        set -e ;\
+        CONTROLLER_GEN_TMP_DIR=$$(mktemp -d) ;\
+        cd $$CONTROLLER_GEN_TMP_DIR ;\
+        go mod init tmp ;\
+        go get sigs.k8s.io/controller-tools/cmd/controller-gen@v0.3.0 ;\
+        rm -rf $$CONTROLLER_GEN_TMP_DIR ;\
+        }
+CONTROLLER_GEN=$(GOBIN)/controller-gen
+else
+CONTROLLER_GEN=$(shell which controller-gen)
+endif
