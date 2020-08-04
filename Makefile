@@ -136,7 +136,7 @@ springboard:
 $(OPERATOR_STAGE_DIR):
 	mkdir -p $@
 
-$(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(OPERATOR_STAGE_DIR)
+$(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/*/*.go $(SRC_DIR)/pkg/*/*.go | $(OPERATOR_STAGE_DIR)
 	go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
 
 operator: $(OPERATOR_EXE)
@@ -156,9 +156,11 @@ operator-clean:
 
 operator-image: $(OPERATOR_IMAGE_MARKER)
 
-$(OPERATOR_IMAGE_MARKER): operator-linux
-	cp -f support/operator/Dockerfile $(OPERATOR_STAGE_DIR)
-	docker build --tag $(FULL_TAG) $(OPERATOR_STAGE_DIR)
+$(OPERATOR_IMAGE_MARKER): $(BUILD_DIR)
+	docker build -f support/operator/Dockerfile -t $(FULL_TAG) .
+#	@echo "updating kustomize image patch file for manager resource"
+#	sed -i'' -e 's@image: .*@image: '"$(FULL_TAG)"'@' ./config/default/manager_image_patch.yaml
+	mkdir -p $(OPERATOR_STAGE_DIR)
 	touch $@
 
 operator-push: $(OPERATOR_IMAGE_MARKER)
@@ -205,13 +207,6 @@ manifests: controller-gen ## Generate manifests e.g. CRD, RBAC, etc.
 .PHONY: generate-crds
 generate-crds: controller-gen ## generates code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile=./hack/boilerplate.go.txt paths="./..."
-
-# Build the docker image
-# TODO(erwin) reconcile commented out kubebuilder docker-build with existing
-#docker-build: test
-#	docker build . -t ${IMG}
-#	@echo "updating kustomize image patch file for manager resource"
-#	sed -i'' -e 's@image: .*@image: '"${IMG}"'@' ./config/default/manager_image_patch.yaml
 
 # find or download controller-gen
 # download controller-gen if necessary

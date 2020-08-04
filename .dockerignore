@@ -1,0 +1,5 @@
+.goreleaser.yaml
+.reviewboardrc
+example/
+bin/
+build/go/
