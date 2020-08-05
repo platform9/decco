@@ -9,19 +9,59 @@ Decco is a lightweight framework that simplifies the deployment,
  applications in a highly multi-tenant environment.
  
 The documentation is under construction, but in the meantime,
-this Kubecon Austin 2017 presentation gives a good overview and
+this KubeCon Austin 2017 presentation gives a good overview and
 demonstration:
 
 https://www.youtube.com/watch?v=tFdcrncaxD4&list=PLj6h78yzYM2P-3-xqvmWaZbbI1sW-ulZb&index=32
 
 Decco solves and automates the following problems:
-- Confining applications to well-defined boundaries which could be based on customer or geographical region
-- Exposing applications on the Internet via automatic DNS and LoadBalancer configuration
+- Confining applications to well-defined boundaries which could be based on 
+  customers or geographical regions.
+- Exposing applications on the Internet via automatic DNS and LoadBalancer
+  configuration.
 - Securing communications using end-to-end TLS and Kubernetes Network Policies.
-- Routing network requests to the correct application endpoints
-- Collecting and aggregating log files
+- Routing network requests to the correct application endpoints.
+- Collecting and aggregating log files.
+
+## Installation and Usage
+
+To install the Decco operator with the default configuration into your cluster: 
+
+```bash
+kubectl apply -k github.com/platform9/decco/config/default
+```
+
+This will install the CRDs and deploy the Decco components in the `decco` namespace. 
+
+To install the CRDs separately in your cluster:
+
+```bash
+kubectl apply -k github.com/platform9/decco/config/crd
+```
 
 ## Developing
+To develop Decco you will need to have the following binaries on your PATH:
+- go (>1.13)
+- kubectl (along with a live Kubernetes cluster) 
+- controller-gen (>2.0.0, which is part of the [kubebuilder](https://github.com/kubernetes-sigs/kubebuilder) project)
+- [goreleaser](goreleaser.com) (if you want to create a new release)
+
+To test your modified Decco operator in the development cluster:
+```bash
+make run
+```
+
+If you change kubebuilder annotations (e.g. `// +kubebuilder:object:root=true`)
+you will need to re-generate 
+```bash
+# Generate Go files, such as zz_generated.deepcopy.go
+make generate 
+
+# Generate Kubernetes manifests
+make manifests
+```
+
+### Developing with VSCode
 Littering print statements throughout your code in order to debug complicated 
 reconcilation loops can become difficult to reason about. With that said, this 
 repo offers at least 1 opinionated way of setting break points for iterative 
@@ -35,6 +75,7 @@ Ex: `pkg/controllers/app_controller.go` --> click to the left of a line number t
 **NOTE:** if you get errors relating to controller-gen, try running `hack/setup_kubebuilder.sh`
 
 5. Click on vscode's Debug tab and click the green button near the top-left  
+
 This repo includes a launch.json configured to work with the above steps. 
 
 ### Go toolchain configuration
@@ -56,33 +97,11 @@ just export an empty GO_TOOLCHAIN:
 
 ```bash
 export GO_TOOLCHAIN=""
-```
+``` 
 
-## Release Workflow
+### Release process
 
-Decco uses semantic versioning. To release a new version of Decco. 
-
-1. (a) If you are releasing a **major** or **minor** version, such as v1.0.0 or 
-   v1.3.0, you create a new branch, named `release-x.y`, where `x` and `y` are 
-   the major and minor version respectively. Or,
-   (b) if you are releasing a **patch**, such as 1.3.5, you check out the existing 
-   branch with the appropriate major and minor version. For example, for 1.3.5
-   check out `release-1.3`.
-
-2. On the release branch, create and push a commit that bumps 
-   [VERSION](./VERSION) to your desired version. Do not push this commit to the 
-   master branch.
-
-3. If needed, thoroughly test the release branch.
-
-4. Then, run the (Platform9 internal) `decco-release` TeamCity build. This will
-   effectively run the release script: [./hack/ci-release.sh](./hack/ci-release.sh).
-   Alternatively, in a preconfigured environment you could run `make release` 
-   instead.   
-
-5. If everything succeeds, the version commit will be tagged, Github release 
-   will be created and Docker images will be published for the given version.
-   
-In case you need to revert a release, you will need to manually delete the git 
-tag, the github release, and delete the created Docker images. You will also 
-need to re-tag the previous images to `latest`.   
+Decco uses goreleaser to automate the release process. It generates the 
+binaries for all target platforms, builds the Docker images, publishes the
+Docker images, generates the changelog, and creates a new release on Github. 
+For detailed instructions see the [docs](https://goreleaser.com).
