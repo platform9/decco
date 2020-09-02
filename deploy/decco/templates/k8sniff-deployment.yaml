@@ -15,7 +15,7 @@ spec:
       labels:
         role: k8sniff
     spec:
-      priorityClassName: high-priority
+      priorityClassName: system-cluster-critical
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
