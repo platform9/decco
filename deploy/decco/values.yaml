@@ -8,15 +8,15 @@ default_http_backend_image_tag: gcr.io/google_containers/defaultbackend:1.0
 
 # The following are all required secret values, so you'll find no defaults here!
 
-# aws_access_key_id_b64: ''
-# aws_secret_access_key_b64: ''
+# aws_access_key_id: ''
+# aws_secret_access_key: ''
 
-# wildcard_tls_cert_b64: ''
-# wildcard_tls_key_b64: ''
+# wildcard_tls_cert: ''
+# wildcard_tls_key: ''
 
-# tcp_tls_ca_b64: ''
-# tcp_tls_cert_b64: ''
-# tcp_tls_key_b64: ''
+# tcp_tls_ca: ''
+# tcp_tls_cert: ''
+# tcp_tls_key: ''
 
 
 # This last value is a secret as well, but is actually optional.

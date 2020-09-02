@@ -4,12 +4,12 @@
 
 # !!! This file must only contain comments. !!!
 
-# {{ required "aws_access_key_id_b64 is required from values.yaml" .Values.aws_access_key_id_b64 }}
-# {{ required "aws_secret_access_key_b64 is required from values.yaml" .Values.aws_secret_access_key_b64 }}
+# {{ required "aws_access_key_id is required from values.yaml" .Values.aws_access_key_id }}
+# {{ required "aws_secret_access_key is required from values.yaml" .Values.aws_secret_access_key }}
 
-# {{ required "wildcard_tls_cert_b64 is required from values.yaml" .Values.wildcard_tls_cert_b64 }}
-# {{ required "wildcard_tls_key_b64 is required from values.yaml" .Values.wildcard_tls_key_b64 }}
+# {{ required "wildcard_tls_cert is required from values.yaml" .Values.wildcard_tls_cert }}
+# {{ required "wildcard_tls_key is required from values.yaml" .Values.wildcard_tls_key }}
 
-# {{ required "tcp_tls_ca_b64 is required from values.yaml" .Values.tcp_tls_ca_b64 }}
-# {{ required "tcp_tls_cert_b64 is required from values.yaml" .Values.tcp_tls_cert_b64 }}
-# {{ required "tcp_tls_key_b64 is required from values.yaml" .Values.tcp_tls_key_b64 }}
+# {{ required "tcp_tls_ca is required from values.yaml" .Values.tcp_tls_ca }}
+# {{ required "tcp_tls_cert is required from values.yaml" .Values.tcp_tls_cert }}
+# {{ required "tcp_tls_key is required from values.yaml" .Values.tcp_tls_key }}
