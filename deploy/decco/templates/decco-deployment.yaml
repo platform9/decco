@@ -13,7 +13,7 @@ spec:
       labels:
         k8s-app: decco-operator
     spec:
-      priorityClassName: system-cluster-critical
+      priorityClassName: decco-high-priority
       serviceAccountName: decco-operator
       containers:
       - name: decco-operator

@@ -15,7 +15,7 @@ spec:
       labels:
         role: k8sniff
     spec:
-      priorityClassName: system-cluster-critical
+      priorityClassName: decco-high-priority
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
