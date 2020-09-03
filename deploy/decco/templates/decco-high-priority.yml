@@ -1,0 +1,7 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: decco-high-priority
+value: 1000000
+globalDefault: false
+description: "Ensure decco is scheduled before normal pods but after infra pods"

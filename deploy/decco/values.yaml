@@ -6,17 +6,21 @@ k8sniff_image_tag: platform9/k8sniff:1.0.0-114
 nginx_ingress_image_tag: quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.19.0
 default_http_backend_image_tag: gcr.io/google_containers/defaultbackend:1.0
 
+# This chart comes with a StorageClass for PVs on AWS EBS that includes a 'default'
+# annotation. Setting this value to false will stop its installation.
+install_default_ebs_storageclass: true
+
 # The following are all required secret values, so you'll find no defaults here!
 
-# aws_access_key_id_b64: ''
-# aws_secret_access_key_b64: ''
+# aws_access_key_id: ''
+# aws_secret_access_key: ''
 
-# wildcard_tls_cert_b64: ''
-# wildcard_tls_key_b64: ''
+# wildcard_tls_cert: ''
+# wildcard_tls_key: ''
 
-# tcp_tls_ca_b64: ''
-# tcp_tls_cert_b64: ''
-# tcp_tls_key_b64: ''
+# tcp_tls_ca: ''
+# tcp_tls_cert: ''
+# tcp_tls_key: ''
 
 
 # This last value is a secret as well, but is actually optional.
