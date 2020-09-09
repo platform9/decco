@@ -32,7 +32,7 @@ spec:
             fieldRef:
               fieldPath: metadata.name
         - name: DNS_PROVIDER_NAME
-          value: aws-route53
+          value: {{ .Values.decco_dns_provider_name }}
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:

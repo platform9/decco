@@ -10,6 +10,13 @@ default_http_backend_image_tag: gcr.io/google_containers/defaultbackend:1.0
 # annotation. Setting this value to false will stop its installation.
 install_default_ebs_storageclass: true
 
+# Possible DNS provider values:
+# - aws-route53: Route53
+# - (empty string): disable the decco operator's automatic DNS entry creation.
+decco_dns_provider_name: ''
+
+# aws_access_key_id: ''
+
 # The following are all required secret values, so you'll find no defaults here!
 
 # aws_access_key_id: ''
