@@ -15,8 +15,6 @@ install_default_ebs_storageclass: true
 # - (empty string): disable the decco operator's automatic DNS entry creation.
 decco_dns_provider_name: ''
 
-# aws_access_key_id: ''
-
 # The following are all required secret values, so you'll find no defaults here!
 
 # aws_access_key_id: ''
