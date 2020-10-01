@@ -18,17 +18,27 @@ limitations under the License.
 package main
 
 import (
+	"flag"
 	"os"
+	"path/filepath"
 	"time"
 
-	"github.com/platform9/decco/pkg/k8sutil"
-	"github.com/platform9/decco/pkg/spacecontroller"
 	log "github.com/sirupsen/logrus"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+
+	"github.com/platform9/decco/pkg/k8sutil"
+	"github.com/platform9/decco/pkg/spacecontroller"
 )
 
 func main() {
+	var kubeconfigFlagDefault string
+	if home := homeDir(); home != "" {
+		kubeconfigFlagDefault = filepath.Join(home, ".kube", "config")
+	}
+	flag.StringVar(&k8sutil.DefaultKubeconfigPath, "kubeconfig", kubeconfigFlagDefault, "(optional) absolute path to the kubeconfig file")
+	flag.Parse()
+
 	log.Println("decco operator started!")
 
 	logLevelStr := os.Getenv("LOG_LEVEL")
@@ -51,4 +61,11 @@ func main() {
 			time.Sleep(2 * time.Second)
 		}
 	}
+}
+
+func homeDir() string {
+	if h := os.Getenv("HOME"); h != "" {
+		return h
+	}
+	return os.Getenv("USERPROFILE") // windows
 }

@@ -99,6 +99,33 @@ func stunnelEnvVars(
 
 // -----------------------------------------------------------------------------
 
+func AddStunnelToPod(containerName string,
+	listenPort int32,
+	verifyChain string,
+	destHostAndPort string,
+	checkHost string,
+	tlsSecretName string,
+	isNginxIngressStyleCertSecret bool,
+	isClientMode bool,
+	podSpec *v1.PodSpec, // This is mutated
+	clientModeSpringBoardDelaySeconds int32,
+	index int,
+) {
+	InsertStunnel(
+		containerName,
+		listenPort,
+		verifyChain,
+		destHostAndPort,
+		checkHost,
+		tlsSecretName,
+		isNginxIngressStyleCertSecret,
+		isClientMode,
+		podSpec.Volumes,
+		podSpec.Containers,
+		clientModeSpringBoardDelaySeconds,
+		index)
+}
+
 func InsertStunnel(
 	containerName string,
 	listenPort int32,
