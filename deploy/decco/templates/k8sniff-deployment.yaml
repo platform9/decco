@@ -1,6 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+{{- if .Values.k8sniff_deployment_annotations }}
+  annotations:
+{{- range $key, $value := .Values.k8sniff_deployment_annotations }}
+    {{ $key }}: {{ $value }}
+{{- end }}
+{{- end }}
   name: k8sniff
   namespace: decco
   labels:
