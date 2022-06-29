@@ -3,6 +3,12 @@ kind: Service
 metadata:
   name: k8sniff
   namespace: decco
+{{- if .Values.k8sniff_service_annotations }}
+  annotations:
+{{- range $key, $value := .Values.k8sniff_service_annotations }}
+    {{ $key }}: {{ $value }}
+{{- end }}
+{{- end }}
 spec:
   type: LoadBalancer
   ports:
