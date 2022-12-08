@@ -12,6 +12,8 @@ ifneq ($(GO_TOOLCHAIN),"")
 	export PATH:=$(GO_TOOLCHAIN)/bin:$(PATH)
 endif
 
+HELM_BIN := "$(or $(HELM), helm)"
+
 OPERATOR_STAGE_DIR=$(BUILD_DIR)/operator
 OPERATOR_EXE=$(OPERATOR_STAGE_DIR)/decco-operator
 OPERATOR_IMAGE_NAME := decco-operator
@@ -33,6 +35,8 @@ TAG_FILE := $(BUILD_DIR)/container-full-tag
 STUNNEL_CONTAINER_TAG ?= platform9/stunnel:5.56-102
 SPRINGBOARD_REPO_TAG ?= platform9/$(SPRINGBOARD_IMAGE_NAME)
 SPRINGBOARD_FULL_TAG := $(SPRINGBOARD_REPO_TAG):$(IMAGE_TAG)
+
+CHART_DIR := deploy/
 
 GORELEASER ?= ${SRC_DIR}/hack/goreleaser-docker.sh
 
@@ -148,6 +152,10 @@ $(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*
 	go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
 
 operator: $(OPERATOR_EXE)
+
+charts:
+	cd $(CHART_DIR) && \
+	    ${HELM_BIN} package decco/ -d "../build/charts/"
 
 clean-gopath:
 	@echo "GOPATH is $(GOPATH_DIR)"
