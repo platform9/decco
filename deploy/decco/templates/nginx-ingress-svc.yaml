@@ -12,3 +12,4 @@ spec:
     k8s-app: nginx-ingress
   sessionAffinity: None
   type: ClusterIP
+  ipFamilyPolicy: PreferDualStack

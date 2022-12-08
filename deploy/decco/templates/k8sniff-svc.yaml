@@ -11,6 +11,7 @@ metadata:
 {{- end }}
 spec:
   type: LoadBalancer
+  ipFamilyPolicy: PreferDualStack
   ports:
     - port: 443
       targetPort: 8443
