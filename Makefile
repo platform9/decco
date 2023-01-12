@@ -149,7 +149,7 @@ $(OPERATOR_STAGE_DIR):
 	mkdir -p $@
 
 $(OPERATOR_EXE): $(GO_TOOLCHAIN) $(SRC_DIR)/cmd/operator/*.go $(SRC_DIR)/pkg/*/*.go | $(OPERATOR_STAGE_DIR)
-	go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
+	CGO_ENABLED=0 go build -o $(OPERATOR_EXE) $(SRC_DIR)/cmd/operator
 
 operator: $(OPERATOR_EXE)
 
