@@ -4,7 +4,7 @@ SRC_DIR=$(shell pwd)
 BUILD_DIR=$(SRC_DIR)/build
 
 GO_TOOLCHAIN ?= $(BUILD_DIR)/go
-GO_VERSION := 1.13.7
+GO_VERSION := 1.17.13
 GO_DOWNLOAD_URL=https://dl.google.com/go/go$(GO_VERSION).$(shell uname)-amd64.tar.gz
 
 ifneq ($(GO_TOOLCHAIN),"")
