@@ -9,10 +9,10 @@ require (
 	github.com/onsi/ginkgo v1.12.1
 	github.com/onsi/gomega v1.10.0
 	github.com/sirupsen/logrus v1.4.2
-	k8s.io/api v0.17.3
+	k8s.io/api v0.17.16
 	k8s.io/apiextensions-apiserver v0.17.3
-	k8s.io/apimachinery v0.17.3
-	k8s.io/client-go v0.17.3
+	k8s.io/apimachinery v0.17.16
+	k8s.io/client-go v0.17.16
 	k8s.io/federation v1.10.0-alpha.0
 	sigs.k8s.io/controller-runtime v0.5.2
 	sigs.k8s.io/yaml v1.1.0
