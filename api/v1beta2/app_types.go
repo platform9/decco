@@ -155,14 +155,19 @@ type EndpointSpec struct {
 // Specifies the stunnel client configuration for connecting to another app
 // The following destination specifications are allowed:
 // Fqdn not empty : fully qualified domain name for destination
-//                  Endpoint and SpaceName ignored.
-//                  Example: appname.spacename.svc.cluster.local
+//
+//	Endpoint and SpaceName ignored.
+//	Example: appname.spacename.svc.cluster.local
+//
 // Endpoint not empty, Fqdn and SpaceName empty: connect to the app in the
-//                    same namespace. The constructed fqdn is internal and is:
-//                    ${Endpoint}.${CURRENT_SPACE_NAME}.svc.cluster.local
+//
+//	same namespace. The constructed fqdn is internal and is:
+//	${Endpoint}.${CURRENT_SPACE_NAME}.svc.cluster.local
+//
 // Endpoint and SpaceName not empty, Fqdn empty: connect to the app in the
-//                    specified space. The constructed fqdn is internal and is:
-//                    ${Endpoint}.${SpaceName}.svc.cluster.local
+//
+//	specified space. The constructed fqdn is internal and is:
+//	${Endpoint}.${SpaceName}.svc.cluster.local
 type TlsEgress struct {
 	Fqdn                          string `json:"fqdn"`
 	Endpoint                      string `json:"endpoint"`
