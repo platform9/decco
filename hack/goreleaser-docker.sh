@@ -7,7 +7,7 @@ set -o errexit
 set -o pipefail
 
 GORELEASER_IMAGE=${GORELEASER_IMAGE:=goreleaser/goreleaser}
-GORELEASER_VERSION=${GORELEASER_VERSION:=v0.131.1}
+GORELEASER_VERSION=${GORELEASER_VERSION:=v1.24.0}
 
 docker run --rm --privileged \
   -v "$PWD:$PWD" \

@@ -1,6 +1,6 @@
 module github.com/platform9/decco
 
-go 1.17
+go 1.21
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
