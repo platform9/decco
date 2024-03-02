@@ -8,7 +8,7 @@ require (
 	github.com/drone/envsubst v1.0.2
 	github.com/onsi/ginkgo v1.12.1
 	github.com/onsi/gomega v1.10.0
-	github.com/sirupsen/logrus v1.4.2
+	github.com/sirupsen/logrus v1.9.3
 	k8s.io/api v0.17.16
 	k8s.io/apiextensions-apiserver v0.17.3
 	k8s.io/apimachinery v0.17.16
@@ -32,7 +32,6 @@ require (
 	github.com/imdario/mergo v0.3.6 // indirect
 	github.com/jmespath/go-jmespath v0.3.0 // indirect
 	github.com/json-iterator/go v1.1.8 // indirect
-	github.com/konsorten/go-windows-terminal-sequences v1.0.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/nxadm/tail v1.4.4 // indirect
